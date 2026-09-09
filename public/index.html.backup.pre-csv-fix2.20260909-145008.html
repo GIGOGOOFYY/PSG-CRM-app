@@ -1113,7 +1113,6 @@ function parseCSV(text){
   return rows.filter(r=>r.some(v=>String(v).trim()!==""));
 }
 const CSV_FIELD_MAP = {
-  "client id":"_id","id":"_id",
   "company":"company","company name":"company",
   "contact":"contact","contact person":"contact","contact name":"contact",
   "designation":"designation","title":"designation",
@@ -1124,14 +1123,13 @@ const CSV_FIELD_MAP = {
   "lead source":"leadSource","leadsource":"leadSource","source":"leadSource",
   "priority":"priority",
   "assigned to":"assignedTo","assignedto":"assignedTo","rep":"assignedTo","sales rep":"assignedTo",
-  "first contact":"firstContact","firstcontact":"firstContact","first contact date":"firstContact",
-  "last contact":"lastContact","lastcontact":"lastContact","last contact date":"lastContact",
+  "first contact":"firstContact","firstcontact":"firstContact",
+  "last contact":"lastContact","lastcontact":"lastContact",
   "status":"status",
   "notes":"notes","note":"notes",
   "revenue potential":"revenuePotential","revenuepotential":"revenuePotential",
-  "annual revenue potential (pkr)":"revenuePotential","revenue potential (pkr)":"revenuePotential",
   "record type":"recordType","type":"recordType",
-  "active":"active","active?":"active",
+  "active":"active",
 };
 function downloadClientCsvTemplate(){
   const headers=["Company","Contact","Designation","Phone","Email","City","Industry","Lead Source","Priority","Assigned To","First Contact","Status","Notes","Revenue Potential","Record Type"];
@@ -1145,31 +1143,21 @@ async function importClientsCsv(file){
   try{ text = await file.text(); }catch(e){ toast("Could not read file"); return; }
   const rows = parseCSV(text);
   if(rows.length<2){ toast("CSV has no data rows"); return; }
+  const headers = rows[0].map(h=>String(h||"").trim().toLowerCase());
+  const fieldFor = headers.map(h=>CSV_FIELD_MAP[h]||null);
+  if(!fieldFor.includes("company")){ toast("CSV must have a Company column"); return; }
 
-  // Auto-detect the real header row: scan the first few rows for one that
-  // contains a recognizable "company" column — skips title/banner rows like
-  // "PSG CRM — SHARED CLIENT DATABASE" that sometimes sit above the headers.
-  let headerIdx=-1, fieldFor=null;
-  for(let i=0;i<Math.min(5,rows.length);i++){
-    const headers=rows[i].map(h=>String(h||"").trim().toLowerCase());
-    const mapped=headers.map(h=>CSV_FIELD_MAP[h]||null);
-    if(mapped.includes("company")){ headerIdx=i; fieldFor=mapped; break; }
-  }
-  if(headerIdx===-1){ toast("CSV must have a Company (or Company Name) column"); return; }
-
-  const newClients=[]; let updated=0;
-  for(let i=headerIdx+1;i<rows.length;i++){
+  const newClients=[];
+  for(let i=1;i<rows.length;i++){
     const r=rows[i]; const obj={};
     fieldFor.forEach((f,idx)=>{ if(f) obj[f]=String(r[idx]??"").trim(); });
     if(!obj.company) continue;
-    const suppliedId=obj._id; delete obj._id;
-    obj.id = suppliedId || nextIdForImport();
+    obj.id = nextIdForImport();
     obj.recordType = obj.recordType && /client/i.test(obj.recordType) ? "Client" : (obj.recordType && /lead/i.test(obj.recordType) ? "Lead" : (obj.recordType||"Lead"));
     obj.active = obj.active ? !/^(no|false|0)$/i.test(obj.active) : true;
     obj.revenuePotential = num(obj.revenuePotential);
-    const existing = state.clients.find(x=>x.id===obj.id);
-    if(existing){ Object.assign(existing, obj); updated++; newClients.push(existing); }
-    else { state.clients.push(obj); newClients.push(obj); }
+    state.clients.push(obj);
+    newClients.push(obj);
   }
   if(!newClients.length){ toast("No valid rows found (need at least Company)"); return; }
 
@@ -1186,7 +1174,7 @@ async function importClientsCsv(file){
     }
     cloudOK = fail===0 ? true : cloudOK;
     renderConn();
-    toast(fail? ("Imported "+ok+" ("+updated+" updated) · "+fail+" failed to sync") : ("Imported "+ok+" clients ("+updated+" updated)"));
+    toast(fail? ("Imported "+ok+" · "+fail+" failed to sync (saved locally)") : ("Imported "+ok+" clients"));
   } else {
     toast("Imported "+newClients.length+" clients locally — connect cloud to sync");
   }
