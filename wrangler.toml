@@ -1,0 +1,9 @@
+name = "psg-crm"
+compatibility_date = "2025-06-01"
+
+# Serve the single-file app as a static asset. No server code needed —
+# the app talks to Supabase directly from the browser (same Supabase
+# project as psg-planner — see README.md).
+[assets]
+directory = "./public"
+not_found_handling = "single-page-application"
