@@ -606,8 +606,7 @@ const DD = {
   interest:["1","2","3","4","5"]
 };
 /* union a base list with distinct values found in the seeded data (nothing lost) */
-function activeRepNames(){ const emp=(state.users||[]).filter(u=>u.role==="employee").map(u=>u.repName||u.username).filter(Boolean); return emp.length? [...new Set(emp)] : [...DD.reps]; }
-function vocab(key, extra){ const base = key==="reps" ? activeRepNames() : DD[key]; const s=[...base]; (extra||[]).forEach(v=>{ if(v && !s.includes(v)) s.push(v); }); return s; }
+function vocab(key, extra){ const s=[...DD[key]]; (extra||[]).forEach(v=>{ if(v && !s.includes(v)) s.push(v); }); return s; }
 
 /* ---------- state ---------- */
 let state = { users:[], clients:[], calls:[], meetings:[], deals:[], repTargets:[] };
@@ -924,12 +923,11 @@ function statusPill(s){
    generic list rendering helpers
    ====================================================================== */
 function matchSearch(obj){ if(!searchTerm)return true; const t=searchTerm.toLowerCase(); return Object.values(obj).some(v=>String(v??"").toLowerCase().includes(t)); }
-function pagehead(title,sub,addLabel,addFn,withSearch,extraHtml){
+function pagehead(title,sub,addLabel,addFn,withSearch){
   return `<div class="pagehead">
     <div><h2>${title}</h2><div class="sub">${sub}</div></div>
     <div class="toolbar">
       ${withSearch?`<div class="search"><input placeholder="Search…" value="${esc(searchTerm)}" oninput="searchTerm=this.value;rerender()"></div>`:""}
-      ${extraHtml||""}
       <button class="btn ghost sm" onclick="window.print()">🖨 Print</button>
       ${addLabel?`<button class="btn primary" onclick="${addFn}">＋ ${addLabel}</button>`:""}
     </div></div>`;
@@ -954,10 +952,7 @@ function renderClients(v){
     <td class="num">${clientTotalSales(c.id)?PKR(clientTotalSales(c.id)):"—"}</td>
     <td class="no-print"><div class="rowbtns"><button class="btn sm ghost" title="Activity History" onclick="openClientHistory('${esc(c.id)}')">📋</button><button class="btn sm ghost" title="Send WhatsApp" onclick="waClient('${esc(c.id)}')">💬</button>${c.recordType==='Lead'?`<button class="btn sm ghost" title="Convert to Client" onclick="convertLead('${esc(c.id)}')">➔ Client</button>`:""}<button class="btn sm ghost" onclick="edit_client('${esc(c.id)}')">Edit</button><button class="btn sm ghost danger" onclick="del_client('${esc(c.id)}')">✕</button></div></td></tr>`).join("")
     : `<tr><td colspan="10"><div class="empty">No clients found. Click “Add Client” to create one.</div></td></tr>`;
-  const importBtns=`<input type="file" id="csvImportInput" accept=".csv" style="display:none" onchange="importClientsCsv(this.files[0]);this.value='';">
-    <button class="btn ghost sm" onclick="document.getElementById('csvImportInput').click()">⇪ Import CSV</button>
-    <button class="btn ghost sm" onclick="downloadClientCsvTemplate()">Template</button>`;
-  v.innerHTML = pagehead("Clients","Unified clients & leads — "+vClients().length+" records"+(isAdmin()?"":" (yours)"),"Add Client","addClient()",true,importBtns)+
+  v.innerHTML = pagehead("Clients","Unified clients & leads — "+vClients().length+" records"+(isAdmin()?"":" (yours)"),"Add Client","addClient()",true)+
    `<div class="card tablewrap"><table style="min-width:980px"><colgroup><col style="width:62px"><col style="width:78px"><col style="min-width:160px;white-space:normal"><col style="min-width:130px;white-space:normal"><col style="width:120px"><col style="width:110px"><col style="width:110px"><col style="width:90px"><col style="width:100px"><col style="width:110px"></colgroup><thead><tr><th>Type</th><th>ID</th><th>Company</th><th>Contact</th><th>Phone</th><th>Industry</th><th>Status</th><th>Rep</th><th class="num">Total Sales</th><th></th></tr></thead><tbody>${body}</tbody></table></div>`;
 }
 function clientForm(c){
@@ -1089,99 +1084,6 @@ function addClient(){ let dupOK=false;
     if(dup && !dupOK){ dupOK=true; toast("⚠ Phone matches existing "+(dup.recordType||"record")+": "+dup.company+" — click Save again to add anyway"); return false; } }
   c.id = nextId("C"); state.clients.push(c); await upsert("clients",c); closeModal(); toast("Client added"); go("clients");
 });}
-
-
-/* ======================================================================
-   CSV IMPORT (bulk clients)
-   ====================================================================== */
-function parseCSV(text){
-  const rows=[]; let row=[]; let field=""; let inQuotes=false;
-  text = text.replace(/\r\n/g,"\n").replace(/\r/g,"\n");
-  for(let i=0;i<text.length;i++){
-    const c=text[i];
-    if(inQuotes){
-      if(c==='"'){ if(text[i+1]==='"'){ field+='"'; i++; } else { inQuotes=false; } }
-      else field+=c;
-    } else {
-      if(c==='"') inQuotes=true;
-      else if(c===','){ row.push(field); field=""; }
-      else if(c==='\n'){ row.push(field); rows.push(row); row=[]; field=""; }
-      else field+=c;
-    }
-  }
-  if(field.length || row.length){ row.push(field); rows.push(row); }
-  return rows.filter(r=>r.some(v=>String(v).trim()!==""));
-}
-const CSV_FIELD_MAP = {
-  "company":"company","company name":"company",
-  "contact":"contact","contact person":"contact","contact name":"contact",
-  "designation":"designation","title":"designation",
-  "phone":"phone","phone number":"phone","mobile":"phone","contact number":"phone",
-  "email":"email",
-  "city":"city",
-  "industry":"industry",
-  "lead source":"leadSource","leadsource":"leadSource","source":"leadSource",
-  "priority":"priority",
-  "assigned to":"assignedTo","assignedto":"assignedTo","rep":"assignedTo","sales rep":"assignedTo",
-  "first contact":"firstContact","firstcontact":"firstContact",
-  "last contact":"lastContact","lastcontact":"lastContact",
-  "status":"status",
-  "notes":"notes","note":"notes",
-  "revenue potential":"revenuePotential","revenuepotential":"revenuePotential",
-  "record type":"recordType","type":"recordType",
-  "active":"active",
-};
-function downloadClientCsvTemplate(){
-  const headers=["Company","Contact","Designation","Phone","Email","City","Industry","Lead Source","Priority","Assigned To","First Contact","Status","Notes","Revenue Potential","Record Type"];
-  const csv=headers.join(",")+"\n"+["Acme Glass Ltd","Ali Khan","Procurement Manager","03001234567","ali@acme.com","Karachi","Construction","Referral","High","Noor","2026-01-15","Contacted","Interested in tempered glass","500000","Lead"].join(",")+"\n";
-  const blob=new Blob([csv],{type:"text/csv"}); const url=URL.createObjectURL(blob);
-  const a=document.createElement("a"); a.href=url; a.download="psg_crm_client_import_template.csv"; a.click(); URL.revokeObjectURL(url);
-}
-async function importClientsCsv(file){
-  if(!file) return;
-  let text;
-  try{ text = await file.text(); }catch(e){ toast("Could not read file"); return; }
-  const rows = parseCSV(text);
-  if(rows.length<2){ toast("CSV has no data rows"); return; }
-  const headers = rows[0].map(h=>String(h||"").trim().toLowerCase());
-  const fieldFor = headers.map(h=>CSV_FIELD_MAP[h]||null);
-  if(!fieldFor.includes("company")){ toast("CSV must have a Company column"); return; }
-
-  const newClients=[];
-  for(let i=1;i<rows.length;i++){
-    const r=rows[i]; const obj={};
-    fieldFor.forEach((f,idx)=>{ if(f) obj[f]=String(r[idx]??"").trim(); });
-    if(!obj.company) continue;
-    obj.id = nextIdForImport();
-    obj.recordType = obj.recordType && /client/i.test(obj.recordType) ? "Client" : (obj.recordType && /lead/i.test(obj.recordType) ? "Lead" : (obj.recordType||"Lead"));
-    obj.active = obj.active ? !/^(no|false|0)$/i.test(obj.active) : true;
-    obj.revenuePotential = num(obj.revenuePotential);
-    state.clients.push(obj);
-    newClients.push(obj);
-  }
-  if(!newClients.length){ toast("No valid rows found (need at least Company)"); return; }
-
-  saveLocal();
-  go("clients");
-  toast("Importing "+newClients.length+" clients…");
-
-  if(sb){
-    const CHUNK=300; let ok=0, fail=0;
-    for(let i=0;i<newClients.length;i+=CHUNK){
-      const batch=newClients.slice(i,i+CHUNK).map(MAP.clients.to);
-      try{ const {error}=await sb.from(MAP.clients.table).upsert(batch); if(error) throw error; ok+=batch.length; }
-      catch(e){ fail+=batch.length; console.warn("Import batch failed:",e.message); }
-    }
-    cloudOK = fail===0 ? true : cloudOK;
-    renderConn();
-    toast(fail? ("Imported "+ok+" · "+fail+" failed to sync (saved locally)") : ("Imported "+ok+" clients"));
-  } else {
-    toast("Imported "+newClients.length+" clients locally — connect cloud to sync");
-  }
-  go("clients");
-}
-function nextIdForImport(){ let n=1000+state.clients.length; let id; do{ id=String(++n); }while(state.clients.some(c=>c.id===id)); return id; }
-
 function edit_client(id){ const c=state.clients.find(x=>x.id===id); if(!c)return;
   openModal("Edit Client", clientForm(c), async()=>{ Object.assign(c, readClient(c)); await upsert("clients",c); closeModal(); toast("Client updated"); go("clients"); }); }
 function convertLead(id){ const c=state.clients.find(x=>x.id===id); if(!c)return; if(c.recordType!=="Lead"){toast("Already a client");return;} c.recordType="Client"; if(!c.firstContact) c.firstContact=today(); upsert("clients",c); toast(c.company+" converted to Client"); go("clients"); }
@@ -1324,7 +1226,7 @@ function del_deal(id){ confirmDel("Delete this deal?", async()=>{ state.deals=st
 function renderPerformance(v){
   const admin=isAdmin();
   const reps=admin
-    ? [...new Set([...state.repTargets.map(t=>t.rep),...state.deals.map(d=>d.rep),...activeRepNames()])].filter(Boolean)
+    ? [...new Set([...state.repTargets.map(t=>t.rep),...state.deals.map(d=>d.rep),...DD.reps])].filter(Boolean)
     : [myRep()].filter(Boolean);
   const stats=reps.map(repStats).sort((a,b)=>b.totalSales-a.totalSales);
   const body=stats.map(s=>`<tr>
@@ -1339,7 +1241,7 @@ function renderPerformance(v){
    `<div class="card tablewrap"><table><thead><tr><th>Sales Rep</th><th class="num">Deals</th><th class="num">Total Sales</th><th class="num">Collected</th><th class="num">Commission</th><th class="num">Target</th><th>Achievement</th><th>Tier</th><th class="num">Bonus</th></tr></thead><tbody>${body}</tbody></table></div>`;
 }
 function editTargets(){
-  const reps=[...new Set([...state.repTargets.map(t=>t.rep),...activeRepNames()])];
+  const reps=[...new Set([...state.repTargets.map(t=>t.rep),...DD.reps])];
   const rows=reps.map(r=>`<div class="field"><label>${esc(r)} — Target (PKR)</label><input id="tg_${esc(r)}" type="number" value="${esc(repTarget(r)||"")}"></div><div class="field"><label>${esc(r)} — Default Commission %</label><input id="tc_${esc(r)}" type="number" step="any" value="${esc(repCommRate(r)||"")}"></div>`).join("");
   openModal("Sales Targets & Commission Rates", `<div class="formgrid">${rows}</div>`, async()=>{
     for(const r of reps){ const val=num(document.getElementById("tg_"+r).value); const cr=num(document.getElementById("tc_"+r).value); let t=state.repTargets.find(x=>x.rep===r); if(t){t.target=val;t.commRate=cr;} else {t={rep:r,target:val,commRate:cr};state.repTargets.push(t);} await upsert("repTargets",t); }
