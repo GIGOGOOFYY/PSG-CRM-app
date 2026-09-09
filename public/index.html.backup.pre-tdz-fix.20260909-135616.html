@@ -611,14 +611,14 @@ function vocab(key, extra){ const s=[...DD[key]]; (extra||[]).forEach(v=>{ if(v 
 /* ---------- state ---------- */
 let state = { users:[], clients:[], calls:[], meetings:[], deals:[], repTargets:[] };
 let session = null;          // {username, role, repName}
-const DEFAULT_SB_URL="https://qeyeonucnlsmbeomrrwt.supabase.co";
-const DEFAULT_SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFleWVvbnVjbmxzbWJlb21ycnd0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQxODk0OTksImV4cCI6MjA5OTc2NTQ5OX0.SmacOxNWOR4HLCOQf_gkHYHFTqBWMDNWrpFAKHP5nns";
 let cfg = loadCfg();
 let sb = null;               // supabase client
 let cloudOK = false;
 let route = "dashboard";
 let searchTerm = "";
 
+const DEFAULT_SB_URL="https://qeyeonucnlsmbeomrrwt.supabase.co";
+const DEFAULT_SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFleWVvbnVjbmxzbWJlb21ycnd0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQxODk0OTksImV4cCI6MjA5OTc2NTQ5OX0.SmacOxNWOR4HLCOQf_gkHYHFTqBWMDNWrpFAKHP5nns";
 function loadCfg(){
   try{
     const saved=JSON.parse(localStorage.getItem("psgcrm_cfg"));
