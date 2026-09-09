@@ -484,8 +484,8 @@ const SIDEBAR_NAV = [
   { id:"_agents",     icon:"bot",            label:"Agents",          adminOnly:true, route:"admin" },
 
   { section:"Sales", items:[
-    { id:"_leads",    icon:"target",         label:"Leads",           route:"clients" },
-    { id:"_contacts", icon:"user",           label:"Contacts",        route:"clients" },
+    { id:"_leads",    icon:"target",         label:"Leads",           route:"leads" },
+    { id:"_contacts", icon:"user",           label:"Clients",         route:"clientsOnly" },
     { id:"_accounts", icon:"briefcase",      label:"Accounts",        route:"clients" },
     { id:"deals",     icon:"dollar-sign",    label:"Deals" },
     { id:"_forecast", icon:"bar-chart-2",    label:"Forecasts",       route:"performance" },
@@ -523,7 +523,8 @@ function renderSidebar(){
   const cur   = typeof route!=="undefined" ? route : "dashboard";
 
   // Build set of real route IDs that are "active" — includes aliased ones
-  const routeAliases = { clients:["_wq","_leads","_contacts","_accounts","_tasks","_vend"],
+  const routeAliases = { clients:["_wq","_accounts","_tasks","_vend"],
+    leads:["_leads"], clientsOnly:["_contacts"],
     deals:["_quotes","_so","_po","_inv"], performance:["_forecast"], admin:["_agents"],
     dashboard:["_req"] };
   const activeIds = new Set([cur]);
@@ -797,7 +798,7 @@ function renderConn(){
 function go(r){ route=r; searchTerm=""; renderSidebar(); renderRoute(); window.scrollTo(0,0); }
 function renderRoute(){
   const v=document.getElementById("view");
-  ({dashboard:renderDashboard,analytics:renderAnalytics,clients:renderClients,calls:renderCalls,meetings:renderMeetings,deals:renderDeals,performance:renderPerformance,admin:renderAdmin}[route]||renderDashboard)(v);
+  ({dashboard:renderDashboard,analytics:renderAnalytics,clients:renderClients,leads:renderLeadsOnly,clientsOnly:renderClientsOnly,calls:renderCalls,meetings:renderMeetings,deals:renderDeals,performance:renderPerformance,admin:renderAdmin}[route]||renderDashboard)(v);
 }
 
 /* ======================================================================
@@ -950,8 +951,10 @@ function rowActions(kind,id){ return `<div class="rowbtns"><button class="btn sm
 /* ======================================================================
    CLIENTS
    ====================================================================== */
-function renderClients(v){
-  const rows=vClients().filter(matchSearch);
+function renderClients(v, filterType){
+  let rows=vClients();
+  if(filterType) rows = rows.filter(c=>c.recordType===filterType);
+  rows = rows.filter(matchSearch);
   const body = rows.length? rows.map(c=>`<tr>
     <td><span class="tag ${c.recordType==='Client'?'client':'lead'}">${c.recordType==='Client'?'CLIENT':'LEAD'}</span></td>
     <td>${esc(c.id)}</td>
@@ -963,13 +966,21 @@ function renderClients(v){
     <td>${esc(c.assignedTo)}</td>
     <td class="num">${clientTotalSales(c.id)?PKR(clientTotalSales(c.id)):"—"}</td>
     <td class="no-print"><div class="rowbtns"><button class="btn sm ghost" title="Activity History" onclick="openClientHistory('${esc(c.id)}')">📋</button><button class="btn sm ghost" title="Send WhatsApp" onclick="waClient('${esc(c.id)}')">💬</button>${c.recordType==='Lead'?`<button class="btn sm ghost" title="Convert to Client" onclick="convertLead('${esc(c.id)}')">➔ Client</button>`:""}<button class="btn sm ghost" onclick="edit_client('${esc(c.id)}')">Edit</button><button class="btn sm ghost danger" onclick="del_client('${esc(c.id)}')">✕</button></div></td></tr>`).join("")
-    : `<tr><td colspan="10"><div class="empty">No clients found. Click “Add Client” to create one.</div></td></tr>`;
-  const importBtns=`<input type="file" id="csvImportInput" accept=".csv" style="display:none" onchange="importClientsCsv(this.files[0]);this.value='';">
+    : `<tr><td colspan="10"><div class="empty">No ${filterType==='Lead'?'leads':filterType==='Client'?'clients':'records'} found.${filterType?` Click “Add ${filterType}” to create one.`:''}</div></td></tr>`;
+  const importBtns = filterType ? "" : `<input type="file" id="csvImportInput" accept=".csv" style="display:none" onchange="importClientsCsv(this.files[0]);this.value='';">
     <button class="btn ghost sm" onclick="document.getElementById('csvImportInput').click()">⇪ Import CSV</button>
     <button class="btn ghost sm" onclick="downloadClientCsvTemplate()">Template</button>`;
-  v.innerHTML = pagehead("Clients","Unified clients & leads — "+vClients().length+" records"+(isAdmin()?"":" (yours)"),"Add Client","addClient()",true,importBtns)+
+  const pageTitle = filterType==='Lead' ? "Leads" : filterType==='Client' ? "Clients" : "Accounts";
+  const pageSub = filterType==='Lead' ? (rows.length+" lead"+(rows.length===1?"":"s")+(isAdmin()?"":" (yours)"))
+    : filterType==='Client' ? (rows.length+" client"+(rows.length===1?"":"s")+(isAdmin()?"":" (yours)"))
+    : ("All companies — leads & clients — "+vClients().length+" records"+(isAdmin()?"":" (yours)"));
+  const addLabel = filterType==='Lead' ? "Add Lead" : "Add Client";
+  const addFn = filterType==='Lead' ? "addClient('Lead','leads')" : filterType==='Client' ? "addClient('Client','clientsOnly')" : "addClient('Client','clients')";
+  v.innerHTML = pagehead(pageTitle,pageSub,addLabel,addFn,true,importBtns)+
    `<div class="card tablewrap"><table style="min-width:980px"><colgroup><col style="width:62px"><col style="width:78px"><col style="min-width:160px;white-space:normal"><col style="min-width:130px;white-space:normal"><col style="width:120px"><col style="width:110px"><col style="width:110px"><col style="width:90px"><col style="width:100px"><col style="width:110px"></colgroup><thead><tr><th>Type</th><th>ID</th><th>Company</th><th>Contact</th><th>Phone</th><th>Industry</th><th>Status</th><th>Rep</th><th class="num">Total Sales</th><th></th></tr></thead><tbody>${body}</tbody></table></div>`;
 }
+function renderLeadsOnly(v){ renderClients(v, "Lead"); }
+function renderClientsOnly(v){ renderClients(v, "Client"); }
 function clientForm(c){
   c=c||{}; const rep=myRep();
   const sel=(key,val,extra)=>`<select id="f_${key}"><option value=""></option>${vocab(key,extra).map(o=>`<option ${o===val?"selected":""}>${esc(o)}</option>`).join("")}</select>`;
@@ -1100,12 +1111,13 @@ function normalizePhone(p){
   return d.slice(0,4)+"-"+d.slice(4);
 }
 function phoneDigits(p){ const d=String(p||"").replace(/[^0-9]/g,""); return d.length>10?d.slice(-10):d; }
-function addClient(){ let dupOK=false;
-  openModal("New Client", clientForm({recordType:"Client",assignedTo:myRep()||""}), async()=>{
+function addClient(defaultType, postRoute){ let dupOK=false;
+  const rt = defaultType||"Client"; const dest = postRoute||route||"clients";
+  openModal("New "+rt, clientForm({recordType:rt,assignedTo:myRep()||""}), async()=>{
   const c=readClient(); if(!c.company){toast("Company name is required");return false;}
   if(c.phone){ const pd=phoneDigits(c.phone); const dup=pd && state.clients.find(x=>phoneDigits(x.phone)===pd);
     if(dup && !dupOK){ dupOK=true; toast("⚠ Phone matches existing "+(dup.recordType||"record")+": "+dup.company+" — click Save again to add anyway"); return false; } }
-  c.id = nextId("C"); state.clients.push(c); await upsert("clients",c); closeModal(); toast("Client added"); go("clients");
+  c.id = nextId("C"); state.clients.push(c); await upsert("clients",c); closeModal(); toast(rt+" added"); go(dest);
 });}
 
 
@@ -1214,13 +1226,13 @@ async function importClientsCsv(file){
 function nextIdForImport(){ let n=1000+state.clients.length; let id; do{ id=String(++n); }while(state.clients.some(c=>c.id===id)); return id; }
 
 function edit_client(id){ const c=state.clients.find(x=>x.id===id); if(!c)return;
-  openModal("Edit Client", clientForm(c), async()=>{ Object.assign(c, readClient(c)); await upsert("clients",c); closeModal(); toast("Client updated"); go("clients"); }); }
-function convertLead(id){ const c=state.clients.find(x=>x.id===id); if(!c)return; if(c.recordType!=="Lead"){toast("Already a client");return;} c.recordType="Client"; if(!c.firstContact) c.firstContact=today(); upsert("clients",c); toast(c.company+" converted to Client"); go("clients"); }
+  openModal("Edit Client", clientForm(c), async()=>{ Object.assign(c, readClient(c)); await upsert("clients",c); closeModal(); toast("Client updated"); go(route); }); }
+function convertLead(id){ const c=state.clients.find(x=>x.id===id); if(!c)return; if(c.recordType!=="Lead"){toast("Already a client");return;} c.recordType="Client"; if(!c.firstContact) c.firstContact=today(); upsert("clients",c); toast(c.company+" converted to Client"); go(route); }
 function del_client(id){ confirmDel("Delete this client and all their calls, meetings & deals?", async()=>{
   state.clients=state.clients.filter(x=>x.id!==id);
   // cascade
   for(const k of ["calls","meetings","deals"]){ const gone=state[k].filter(x=>x.clientId===id); state[k]=state[k].filter(x=>x.clientId!==id); for(const g of gone) await remove(k,g.id); }
-  await remove("clients",id); toast("Client deleted"); go("clients"); }); }
+  await remove("clients",id); toast("Client deleted"); go(route); }); }
 
 /* ======================================================================
    CALL LOG
