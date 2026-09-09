@@ -794,10 +794,10 @@ function renderConn(){
   const ob=document.getElementById("offlineBanner");
   if(ob) ob.classList.toggle("hidden", !(sb && !cloudOK));
 }
-function go(r){ route=r; searchTerm=""; renderSidebar();
+function go(r){ route=r; searchTerm=""; renderSidebar(); renderRoute(); window.scrollTo(0,0); }
+function renderRoute(){
   const v=document.getElementById("view");
-  ({dashboard:renderDashboard,analytics:renderAnalytics,clients:renderClients,calls:renderCalls,meetings:renderMeetings,deals:renderDeals,performance:renderPerformance,admin:renderAdmin}[r]||renderDashboard)(v);
-  window.scrollTo(0,0);
+  ({dashboard:renderDashboard,analytics:renderAnalytics,clients:renderClients,calls:renderCalls,meetings:renderMeetings,deals:renderDeals,performance:renderPerformance,admin:renderAdmin}[route]||renderDashboard)(v);
 }
 
 /* ======================================================================
@@ -934,7 +934,17 @@ function pagehead(title,sub,addLabel,addFn,withSearch,extraHtml){
       ${addLabel?`<button class="btn primary" onclick="${addFn}">＋ ${addLabel}</button>`:""}
     </div></div>`;
 }
-function rerender(){ go(route); }
+function rerender(){
+  const active=document.activeElement;
+  const isSearchBox = active && active.matches && active.matches('.pagehead .search input');
+  const selStart = isSearchBox ? active.selectionStart : null;
+  const selEnd   = isSearchBox ? active.selectionEnd   : null;
+  renderRoute();
+  if(isSearchBox){
+    const el=document.querySelector('.pagehead .search input');
+    if(el){ el.focus(); if(selStart!=null){ try{ el.setSelectionRange(selStart, selEnd); }catch(e){} } }
+  }
+}
 function rowActions(kind,id){ return `<div class="rowbtns"><button class="btn sm ghost" onclick="edit_${kind}('${esc(id)}')">Edit</button><button class="btn sm ghost danger" onclick="del_${kind}('${esc(id)}')">✕</button></div>`; }
 
 /* ======================================================================
