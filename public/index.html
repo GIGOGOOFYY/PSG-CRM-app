@@ -988,7 +988,7 @@ function readClient(existing){
   const rep=myRep();
   return Object.assign({}, existing||{}, {
     company:g("company"),recordType:g("recordType"),contact:g("contact"),designation:g("designation"),
-    phone:g("phone"),email:g("email"),city:g("city"),industry:g("industry"),leadSource:g("leadSource"),
+    phone:normalizePhone(g("phone")),email:g("email"),city:g("city"),industry:g("industry"),leadSource:g("leadSource"),
     priority:g("priority"),assignedTo: rep? rep : g("reps"),status:g("clientStatus"),
     firstContact:g("firstContact"),lastContact:g("lastContact"),revenuePotential:num(g("revenuePotential")),
     active:g("active")==="Yes",notes:g("notes")
@@ -1081,6 +1081,14 @@ function openClientHistory(id){
   openInfoModal(`Activity History — ${c.company}`, header+`<div class="timeline">${feed}</div>`);
 }
 
+function normalizePhone(p){
+  let d=String(p||"").replace(/\D/g,"");
+  if(!d) return "";
+  if(d.startsWith("92") && d.length===12) d="0"+d.slice(2);
+  else if(d.length===10) d="0"+d;
+  if(d.length!==11) return String(p||"").trim();
+  return d.slice(0,4)+"-"+d.slice(4);
+}
 function phoneDigits(p){ const d=String(p||"").replace(/[^0-9]/g,""); return d.length>10?d.slice(-10):d; }
 function addClient(){ let dupOK=false;
   openModal("New Client", clientForm({recordType:"Client",assignedTo:myRep()||""}), async()=>{
@@ -1167,6 +1175,7 @@ async function importClientsCsv(file){
     obj.recordType = obj.recordType && /client/i.test(obj.recordType) ? "Client" : (obj.recordType && /lead/i.test(obj.recordType) ? "Lead" : (obj.recordType||"Lead"));
     obj.active = obj.active ? !/^(no|false|0)$/i.test(obj.active) : true;
     obj.revenuePotential = num(obj.revenuePotential);
+    if(obj.phone) obj.phone = normalizePhone(obj.phone);
     const existing = state.clients.find(x=>x.id===obj.id);
     if(existing){ Object.assign(existing, obj); updated++; newClients.push(existing); }
     else { state.clients.push(obj); newClients.push(obj); }
@@ -1373,6 +1382,11 @@ function renderAdmin(v){
         <button class="btn primary" onclick="connectCloud()">Save & Connect</button>
         <button class="btn ghost" onclick="pushAllToCloud()">⤴ Push all local data to cloud</button>
      </div></div>
+     <div class="card"><h3>🧹 Data cleanup</h3><div style="padding:16px">
+        <div class="help" style="margin-bottom:10px">One-click fixes for bulk-imported data.</div>
+        <button class="btn ghost" onclick="normalizeAllPhones()">📞 Normalize all phone numbers</button><br><br>
+        <button class="btn ghost" onclick="convertAllLeadsToClients()">➔ Convert all leads to clients</button>
+     </div></div>
      <div class="card"><h3>🎨 Appearance</h3><div style="padding:16px">
         <div class="settings-row"><label class="help">Brand accent colour</label><input id="cfg_accent" type="color" value="${esc(cfg.accent||'#1f7a4d')}" onchange="setAccent(this.value)"></div>
         <div class="settings-row"><label class="help">Top-bar title</label><input id="cfg_title" value="${esc(cfg.title||'PSG CRM')}" onchange="cfg.title=this.value;saveCfg();applyBrand()"></div>
@@ -1383,6 +1397,29 @@ function renderAdmin(v){
    ${waAdminCard()}
    <div class="card" style="margin-top:16px"><h3>👤 Users & access</h3><div class="tablewrap"><table><thead><tr><th>Username</th><th>Role</th><th>Rep</th><th>Password</th><th></th></tr></thead><tbody>${users}</tbody></table></div>
       <div style="padding:14px"><button class="btn primary" onclick="addUser()">＋ Add User</button></div></div>`;
+}
+
+async function normalizeAllPhones(){
+  let changed=0;
+  for(const c of state.clients){ const n=normalizePhone(c.phone); if(n!==c.phone){ c.phone=n; changed++; } }
+  if(!changed){ toast("All phone numbers already normalized"); return; }
+  saveLocal();
+  if(sb){
+    const CHUNK=300; const rows=state.clients.map(MAP.clients.to);
+    for(let i=0;i<rows.length;i+=CHUNK){ try{ await sb.from(MAP.clients.table).upsert(rows.slice(i,i+CHUNK)); }catch(e){ console.warn("normalize sync failed:",e.message); } }
+  }
+  toast("Normalized "+changed+" phone number(s)"); go("admin");
+}
+async function convertAllLeadsToClients(){
+  let changed=0;
+  for(const c of state.clients){ if(c.recordType==="Lead"){ c.recordType="Client"; if(!c.firstContact) c.firstContact=today(); changed++; } }
+  if(!changed){ toast("No leads to convert"); return; }
+  saveLocal();
+  if(sb){
+    const CHUNK=300; const rows=state.clients.map(MAP.clients.to);
+    for(let i=0;i<rows.length;i+=CHUNK){ try{ await sb.from(MAP.clients.table).upsert(rows.slice(i,i+CHUNK)); }catch(e){ console.warn("convert sync failed:",e.message); } }
+  }
+  toast("Converted "+changed+" lead(s) to client(s)"); go("admin");
 }
 function connectCloud(){ cfg.url=document.getElementById("cfg_url").value.trim(); cfg.key=document.getElementById("cfg_key").value.trim(); saveCfg(); initSupabase();
   cloudPull().then(ok=>{ renderConn(); if(ok){toast("Connected — cloud data loaded");} else if(sb){toast("Could not read tables — check keys & schema");} go("admin"); }); }
