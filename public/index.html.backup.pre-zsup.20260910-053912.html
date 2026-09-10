@@ -594,7 +594,7 @@ const SEED = {"clients": [{"id": "5449", "company": "Al Nisa Aluminum and Glass 
 
 /* ---------- dropdown vocabularies (from Excel data-validation lists) ---------- */
 const DD = {
-  industry:["Construction","Architecture","Interior Design","Real Estate Developer","Automotive","Hospitality","Government","Healthcare","Education","Retail","Glass Shop","Glass Trader","Residential","Architect","Supplier","Other"],
+  industry:["Construction","Architecture","Interior Design","Real Estate Developer","Automotive","Hospitality","Government","Healthcare","Education","Retail","Glass Shop","Glass Trader","Residential","Architect","Other"],
   leadSource:["Cold Call","Referral","Website","Trade Show","LinkedIn","Walk-In","Existing Client","WhatsApp Bot"],
   priority:["High","Medium","Low"],
   clientStatus:["Interested","Not Interested","Interested – Not Now","Follow-Up Required","Meeting Scheduled","Proposal Sent","Deal Closed","No Answer","Voicemail Left"],
@@ -1407,8 +1407,7 @@ function renderAdmin(v){
      <div class="card"><h3>🧹 Data cleanup</h3><div style="padding:16px">
         <div class="help" style="margin-bottom:10px">One-click fixes for bulk-imported data.</div>
         <button class="btn ghost" onclick="normalizeAllPhones()">📞 Normalize all phone numbers</button><br><br>
-        <button class="btn ghost" onclick="convertAllLeadsToClients()">➔ Convert all leads to clients</button><br><br>
-        <button class="btn ghost" onclick="renameZSuppliers()">🏷 Rename "Z Suppliers" industry to "Supplier"</button>
+        <button class="btn ghost" onclick="convertAllLeadsToClients()">➔ Convert all leads to clients</button>
      </div></div>
      <div class="card"><h3>🎨 Appearance</h3><div style="padding:16px">
         <div class="settings-row"><label class="help">Brand accent colour</label><input id="cfg_accent" type="color" value="${esc(cfg.accent||'#1f7a4d')}" onchange="setAccent(this.value)"></div>
@@ -1443,17 +1442,6 @@ async function convertAllLeadsToClients(){
     for(let i=0;i<rows.length;i+=CHUNK){ try{ await sb.from(MAP.clients.table).upsert(rows.slice(i,i+CHUNK)); }catch(e){ console.warn("convert sync failed:",e.message); } }
   }
   toast("Converted "+changed+" lead(s) to client(s)"); go("admin");
-}
-async function renameZSuppliers(){
-  let changed=0;
-  for(const c of state.clients){ if(c.industry==="Z Suppliers"){ c.industry="Supplier"; changed++; } }
-  if(!changed){ toast('No records with industry "Z Suppliers" found'); return; }
-  saveLocal();
-  if(sb){
-    const CHUNK=300; const rows=state.clients.map(MAP.clients.to);
-    for(let i=0;i<rows.length;i+=CHUNK){ try{ await sb.from(MAP.clients.table).upsert(rows.slice(i,i+CHUNK)); }catch(e){ console.warn("industry rename sync failed:",e.message); } }
-  }
-  toast('Renamed '+changed+' record(s) to "Supplier"'); go("admin");
 }
 function connectCloud(){ cfg.url=document.getElementById("cfg_url").value.trim(); cfg.key=document.getElementById("cfg_key").value.trim(); saveCfg(); initSupabase();
   cloudPull().then(ok=>{ renderConn(); if(ok){toast("Connected — cloud data loaded");} else if(sb){toast("Could not read tables — check keys & schema");} go("admin"); }); }
