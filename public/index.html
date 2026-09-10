@@ -989,7 +989,7 @@ function renderClients(v, filterType){
     <td>${c.status?statusPill(c.status):""}</td>
     <td>${esc(c.assignedTo)}</td>
     <td class="num">${clientTotalSales(c.id)?PKR(clientTotalSales(c.id)):"—"}</td>
-    <td class="no-print"><div class="rowbtns"><button class="btn sm ghost" title="Activity History" onclick="openClientHistory('${esc(c.id)}')">📋</button><button class="btn sm ghost" title="Send WhatsApp" onclick="waClient('${esc(c.id)}')">💬</button>${c.recordType==='Lead'?`<button class="btn sm ghost" title="Convert to Client" onclick="convertLead('${esc(c.id)}')">➔ Client</button>`:""}<button class="btn sm ghost" onclick="edit_client('${esc(c.id)}')">Edit</button><button class="btn sm ghost danger" onclick="del_client('${esc(c.id)}')">✕</button></div></td></tr>`).join("")
+    <td class="no-print"><div class="rowbtns"><button class="btn sm ghost" title="Activity History" onclick="openClientHistory('${esc(c.id)}')">📋</button><button class="btn sm ghost" title="Send WhatsApp" onclick="waClient('${esc(c.id)}')">💬</button>${c.recordType==='Lead'?`<button class="btn sm ghost" title="Convert to Client" onclick="convertLead('${esc(c.id)}')">➔ Client</button>`:""}<button class="btn sm ghost" onclick="edit_client('${esc(c.id)}')">Edit</button>${isAdmin()?`<button class="btn sm ghost danger" onclick="del_client('${esc(c.id)}')">✕</button>`:""}</div></td></tr>`).join("")
     : `<tr><td colspan="10"><div class="empty">No ${filterType==='Lead'?'leads':filterType==='Client'?'clients':'records'} found.${filterType?` Click “Add ${filterType}” to create one.`:''}</div></td></tr>`;
   const importBtns = filterType ? "" : `<input type="file" id="csvImportInput" accept=".csv" style="display:none" onchange="importClientsCsv(this.files[0]);this.value='';">
     <button class="btn ghost sm" onclick="document.getElementById('csvImportInput').click()">⇪ Import CSV</button>
@@ -1135,12 +1135,26 @@ function normalizePhone(p){
   return d.slice(0,4)+"-"+d.slice(4);
 }
 function phoneDigits(p){ const d=String(p||"").replace(/[^0-9]/g,""); return d.length>10?d.slice(-10):d; }
+function normCompanyName(s){ return String(s||"").trim().toLowerCase().replace(/\s+/g," "); }
+/* Finds an existing client that looks like the same real-world company: same
+   phone number (last 10 digits), or same company name (case/whitespace-insensitive)
+   when no phone is on file. excludeId lets edit flows skip matching themselves. */
+function findDupClient(candidate, excludeId){
+  const pd=phoneDigits(candidate.phone);
+  const cn=normCompanyName(candidate.company);
+  return state.clients.find(x=>{
+    if(excludeId && x.id===excludeId) return false;
+    if(pd && phoneDigits(x.phone)===pd) return true;
+    if(!pd && cn && normCompanyName(x.company)===cn) return true;
+    return false;
+  });
+}
 function addClient(defaultType, postRoute){ let dupOK=false;
   const rt = defaultType||"Client"; const dest = postRoute||route||"clients";
   openModal("New "+rt, clientForm({recordType:rt,assignedTo:myRep()||""}), async()=>{
   const c=readClient(); if(!c.company){toast("Company name is required");return false;}
-  if(c.phone){ const pd=phoneDigits(c.phone); const dup=pd && state.clients.find(x=>phoneDigits(x.phone)===pd);
-    if(dup && !dupOK){ dupOK=true; toast("⚠ Phone matches existing "+(dup.recordType||"record")+": "+dup.company+" — click Save again to add anyway"); return false; } }
+  const dup=findDupClient(c);
+  if(dup && !dupOK){ dupOK=true; toast("⚠ Possible duplicate of existing "+(dup.recordType||"record")+": "+dup.company+(dup.phone?" ("+dup.phone+")":"")+" — click Save again to add anyway"); return false; }
   c.id = nextId("C"); state.clients.push(c); await upsert("clients",c); closeModal(); toast(rt+" added"); go(dest);
 });}
 
@@ -1217,14 +1231,16 @@ async function importClientsCsv(file){
     fieldFor.forEach((f,idx)=>{ if(f) obj[f]=String(r[idx]??"").trim(); });
     if(!obj.company) continue;
     const suppliedId=obj._id; delete obj._id;
-    obj.id = suppliedId || nextIdForImport();
     obj.recordType = obj.recordType && /client/i.test(obj.recordType) ? "Client" : (obj.recordType && /lead/i.test(obj.recordType) ? "Lead" : (obj.recordType||"Lead"));
     obj.active = obj.active ? !/^(no|false|0)$/i.test(obj.active) : true;
     obj.revenuePotential = num(obj.revenuePotential);
     if(obj.phone) obj.phone = normalizePhone(obj.phone);
-    const existing = state.clients.find(x=>x.id===obj.id);
+    // Match by supplied ID first, then fall back to phone/company so re-importing
+    // the same client under a different ID doesn't create a duplicate row.
+    let existing = suppliedId ? state.clients.find(x=>x.id===suppliedId) : null;
+    if(!existing) existing = findDupClient(obj);
     if(existing){ Object.assign(existing, obj); updated++; newClients.push(existing); }
-    else { state.clients.push(obj); newClients.push(obj); }
+    else { obj.id = suppliedId || nextIdForImport(); state.clients.push(obj); newClients.push(obj); }
   }
   if(!newClients.length){ toast("No valid rows found (need at least Company)"); return; }
 
@@ -1252,7 +1268,8 @@ function nextIdForImport(){ return nextClientId(); }
 function edit_client(id){ const c=state.clients.find(x=>x.id===id); if(!c)return;
   openModal("Edit Client", clientForm(c), async()=>{ Object.assign(c, readClient(c)); await upsert("clients",c); closeModal(); toast("Client updated"); go(route); }); }
 function convertLead(id){ const c=state.clients.find(x=>x.id===id); if(!c)return; if(c.recordType!=="Lead"){toast("Already a client");return;} c.recordType="Client"; if(!c.firstContact) c.firstContact=today(); upsert("clients",c); toast(c.company+" converted to Client"); go(route); }
-function del_client(id){ confirmDel("Delete this client and all their calls, meetings & deals?", async()=>{
+function del_client(id){ if(!isAdmin()){ toast("Only admins can delete records"); return; }
+  confirmDel("Delete this client and all their calls, meetings & deals?", async()=>{
   state.clients=state.clients.filter(x=>x.id!==id);
   // cascade
   for(const k of ["calls","meetings","deals"]){ const gone=state[k].filter(x=>x.clientId===id); state[k]=state[k].filter(x=>x.clientId!==id); for(const g of gone) await remove(k,g.id); }
