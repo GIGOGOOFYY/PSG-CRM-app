@@ -1275,7 +1275,7 @@ async function importClientsCsv(file){
     fieldFor.forEach((f,idx)=>{ if(f) obj[f]=String(r[idx]??"").trim(); });
     if(!obj.company) continue;
     const suppliedId=obj._id; delete obj._id;
-    obj.recordType = (()=>{ const raw=String(obj.recordType||"").trim(); if(!raw) return "New Lead"; const known=STAGE_ORDER.concat([STAGE_LOST]).find(s=>s.toLowerCase()===raw.toLowerCase()); return known||raw; })();
+    obj.recordType = (()=>{ const raw=String(obj.recordType||"").trim(); if(!raw) return "Won – Order Confirmed"; const known=STAGE_ORDER.concat([STAGE_LOST]).find(s=>s.toLowerCase()===raw.toLowerCase()); return known||raw; })();
     obj.active = obj.active ? !/^(no|false|0)$/i.test(obj.active) : true;
     obj.revenuePotential = num(obj.revenuePotential);
     if(obj.phone) obj.phone = normalizePhone(obj.phone);
