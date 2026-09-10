@@ -985,7 +985,7 @@ function rowActions(kind,id){ return `<div class="rowbtns"><button class="btn sm
 // 10-stage sales pipeline (record_type) -- replaced the old flat Prospect/Lead/Client scheme.
 // Won and Lost are closed/terminal: advanceStage() never reaches past Won, and markLost() is a
 // separate explicit action -- nothing here auto-reopens a closed record.
-const STAGE_ORDER = ['New Lead','Contacted','Qualified','Requirement Received','Quotation Sent','Negotiation','Technical Approval','PO Pending','Won \u2013 Order Confirmed'];
+const STAGE_ORDER = ['New Lead','Contacted','Qualified','Requirement Received','Quotation Sent','Negotiation','Technical Approval','PO Pending','Won \u2013 Order Confirmed','Client'];
 const STAGE_LOST = 'Lost';
 const STAGE_COLORS = {
   'New Lead':              {bg:'rgba(100,116,139,.12)', fg:'#475569'},
@@ -997,18 +997,19 @@ const STAGE_COLORS = {
   'Technical Approval':    {bg:'rgba(147,51,234,.12)',  fg:'#7e22ce'},
   'PO Pending':            {bg:'rgba(219,39,119,.12)',  fg:'#be185d'},
   'Won \u2013 Order Confirmed': {bg:'rgba(31,122,77,.12)', fg:'#1f7a4d'},
+  'Client':                {bg:'rgba(21,87,36,.16)',    fg:'#155724'},
   'Lost':                  {bg:'rgba(220,38,38,.12)',   fg:'#b91c1c'}
 };
 const STAGE_BUCKETS = {
   prospects:  { stages:['New Lead','Contacted'], title:'Prospects', noun:'prospect', addStage:'New Lead', route:'prospects' },
-  leads:      { stages:['Qualified','Requirement Received','Quotation Sent','Negotiation','Technical Approval','PO Pending'], title:'Leads', noun:'lead', addStage:'Qualified', route:'leads' },
-  clientsOnly:{ stages:['Won \u2013 Order Confirmed'], title:'Clients', noun:'client', addStage:'Won \u2013 Order Confirmed', route:'clientsOnly' }
+  leads:      { stages:['Qualified','Requirement Received','Quotation Sent','Negotiation','Technical Approval','PO Pending','Won \u2013 Order Confirmed'], title:'Leads', noun:'lead', addStage:'Qualified', route:'leads' },
+  clientsOnly:{ stages:['Client'], title:'Clients', noun:'client', addStage:'Client', route:'clientsOnly' }
 };
 function stageColor(rt){ return STAGE_COLORS[rt] || {bg:'rgba(100,116,139,.10)', fg:'#64748b'}; }
 function stageLabel(rt){ return rt ? String(rt).toUpperCase() : 'UNKNOWN'; }
 function nextStage(rt){ const i=STAGE_ORDER.indexOf(rt); return (i===-1||i===STAGE_ORDER.length-1) ? null : STAGE_ORDER[i+1]; }
-function isClosedStage(rt){ return rt==='Won \u2013 Order Confirmed' || rt===STAGE_LOST; }
-const PIPE_SHORT={'New Lead':'New Lead','Contacted':'Contacted','Qualified':'Qualified','Requirement Received':'Requirement','Quotation Sent':'Quotation','Negotiation':'Negotiation','Technical Approval':'Tech. Approval','PO Pending':'PO Pending','Won \u2013 Order Confirmed':'Won'};
+function isClosedStage(rt){ return rt==='Client' || rt===STAGE_LOST; }
+const PIPE_SHORT={'New Lead':'New Lead','Contacted':'Contacted','Qualified':'Qualified','Requirement Received':'Requirement','Quotation Sent':'Quotation','Negotiation':'Negotiation','Technical Approval':'Tech. Approval','PO Pending':'PO Pending','Won \u2013 Order Confirmed':'Won','Client':'Client'};
 
 function renderClients(v, bucketKey){
   const bucket = bucketKey ? STAGE_BUCKETS[bucketKey] : null;
@@ -1276,7 +1277,7 @@ async function importClientsCsv(file){
     fieldFor.forEach((f,idx)=>{ if(f) obj[f]=String(r[idx]??"").trim(); });
     if(!obj.company) continue;
     const suppliedId=obj._id; delete obj._id;
-    obj.recordType = (()=>{ const raw=String(obj.recordType||"").trim(); if(!raw) return "Won – Order Confirmed"; const known=STAGE_ORDER.concat([STAGE_LOST]).find(s=>s.toLowerCase()===raw.toLowerCase()); return known||raw; })();
+    obj.recordType = (()=>{ const raw=String(obj.recordType||"").trim(); if(!raw) return "Client"; const known=STAGE_ORDER.concat([STAGE_LOST]).find(s=>s.toLowerCase()===raw.toLowerCase()); return known||raw; })();
     obj.active = obj.active ? !/^(no|false|0)$/i.test(obj.active) : true;
     obj.revenuePotential = num(obj.revenuePotential);
     if(obj.phone) obj.phone = normalizePhone(obj.phone);
