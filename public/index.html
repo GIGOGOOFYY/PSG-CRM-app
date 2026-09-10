@@ -994,13 +994,14 @@ function renderClients(v, filterType){
   const importBtns = filterType ? "" : `<input type="file" id="csvImportInput" accept=".csv" style="display:none" onchange="importClientsCsv(this.files[0]);this.value='';">
     <button class="btn ghost sm" onclick="document.getElementById('csvImportInput').click()">⇪ Import CSV</button>
     <button class="btn ghost sm" onclick="downloadClientCsvTemplate()">Template</button>`;
+  const deleteAllBtn = isAdmin() ? `<button class="btn ghost sm danger" onclick="deleteAllClients(${filterType?`'${filterType}'`:'null'})">🗑 Delete All</button>` : "";
   const pageTitle = filterType==='Lead' ? "Leads" : filterType==='Client' ? "Clients" : "Accounts";
   const pageSub = filterType==='Lead' ? (rows.length+" lead"+(rows.length===1?"":"s")+(isAdmin()?"":" (yours)"))
     : filterType==='Client' ? (rows.length+" client"+(rows.length===1?"":"s")+(isAdmin()?"":" (yours)"))
     : ("All companies — leads & clients — "+vClients().length+" records"+(isAdmin()?"":" (yours)"));
   const addLabel = filterType==='Lead' ? "Add Lead" : "Add Client";
   const addFn = filterType==='Lead' ? "addClient('Lead','leads')" : filterType==='Client' ? "addClient('Client','clientsOnly')" : "addClient('Client','clients')";
-  v.innerHTML = pagehead(pageTitle,pageSub,addLabel,addFn,true,importBtns)+
+  v.innerHTML = pagehead(pageTitle,pageSub,addLabel,addFn,true,importBtns+deleteAllBtn)+
    `<div class="card tablewrap"><table style="min-width:980px"><colgroup><col style="width:62px"><col style="width:78px"><col style="min-width:160px;white-space:normal"><col style="min-width:130px;white-space:normal"><col style="width:120px"><col style="width:110px"><col style="width:110px"><col style="width:90px"><col style="width:100px"><col style="width:110px"></colgroup><thead><tr><th>Type</th><th>ID</th><th>Company</th><th>Contact</th><th>Phone</th><th>Industry</th><th>Status</th><th>Rep</th><th class="num">Total Sales</th><th></th></tr></thead><tbody>${body}</tbody></table></div>`;
 }
 function renderLeadsOnly(v){ renderClients(v, "Lead"); }
@@ -1274,6 +1275,28 @@ function del_client(id){ if(!isAdmin()){ toast("Only admins can delete records")
   // cascade
   for(const k of ["calls","meetings","deals"]){ const gone=state[k].filter(x=>x.clientId===id); state[k]=state[k].filter(x=>x.clientId!==id); for(const g of gone) await remove(k,g.id); }
   await remove("clients",id); toast("Client deleted"); go(route); }); }
+async function deleteAllClients(filterType){
+  if(!isAdmin()){ toast("Only admins can delete records"); return; }
+  const rows = filterType ? state.clients.filter(c=>c.recordType===filterType) : state.clients;
+  if(!rows.length){ toast("Nothing to delete"); return; }
+  const label = filterType==="Lead" ? ("lead"+(rows.length===1?"":"s"))
+    : filterType==="Client" ? ("client"+(rows.length===1?"":"s"))
+    : ("record"+(rows.length===1?"":"s")+" (all leads & clients)");
+  confirmDel("Delete ALL "+rows.length+" "+label+"? This also deletes every call, meeting, deal & task linked to them. This cannot be undone.", async()=>{
+    const idSet=new Set(rows.map(c=>String(c.id)));
+    state.clients=state.clients.filter(c=>!idSet.has(String(c.id)));
+    for(const k of ["calls","meetings","deals","tasks"]){ state[k]=state[k].filter(x=>!idSet.has(String(x.clientId))); }
+    saveLocal();
+    if(sb){
+      const CHUNK=200; const ids=[...idSet];
+      for(const k of ["calls","meetings","deals","tasks"]){
+        for(let i=0;i<ids.length;i+=CHUNK){ try{ await sb.from(MAP[k].table).delete().in("client_id", ids.slice(i,i+CHUNK)); }catch(e){ console.warn(k+" bulk delete failed:",e.message); } }
+      }
+      for(let i=0;i<ids.length;i+=CHUNK){ try{ await sb.from(MAP.clients.table).delete().in(MAP.clients.pk, ids.slice(i,i+CHUNK)); }catch(e){ console.warn("bulk client delete failed:",e.message); } }
+    }
+    toast("Deleted "+rows.length+" "+label); go(route);
+  });
+}
 
 /* ======================================================================
    CALL LOG
@@ -1514,7 +1537,7 @@ function renderAdmin(v){
         <button class="btn ghost" onclick="normalizeAllPhones()">📞 Normalize all phone numbers</button><br><br>
         <button class="btn ghost" onclick="convertAllLeadsToClients()">➔ Convert all leads to clients</button><br><br>
         <button class="btn ghost" onclick="renameZSuppliers()">🏷 Rename "Z Suppliers" industry to "Supplier"</button><br><br>
-        <button class="btn ghost" onclick="normalizeClientIds()">🔢 Strip leading zeros from Client IDs</button>
+        <button class="btn ghost" onclick="normalizeClientIds()">🔢 Normalize Client IDs to plain numbers</button>
      </div></div>
      <div class="card"><h3>🎨 Appearance</h3><div style="padding:16px">
         <div class="settings-row"><label class="help">Brand accent colour</label><input id="cfg_accent" type="color" value="${esc(cfg.accent||'#1f7a4d')}" onchange="setAccent(this.value)"></div>
@@ -1562,8 +1585,8 @@ async function renameZSuppliers(){
   toast('Renamed '+changed+' record(s) to "Supplier"'); go("admin");
 }
 async function normalizeClientIds(){
-  // Strips leading zeros from client IDs like "0000020" -> "20", and cascades the ID change to
-  // every call/meeting/deal/task that references it, so nothing gets orphaned.
+  // Pass 1: strip leading zeros from purely-numeric IDs like "0000020" -> "20" (skip if the
+  // target number already belongs to a different record).
   const renames=[];
   for(const c of state.clients){
     const idStr=String(c.id);
@@ -1572,10 +1595,25 @@ async function normalizeClientIds(){
       if(newId!==idStr && !state.clients.some(x=>x!==c && String(x.id)===newId)) renames.push({oldId:idStr,newId,client:c});
     }
   }
+  for(const r of renames) r.client.id=r.newId;
+
+  // Pass 2: renumber anything still non-numeric (e.g. a WhatsApp-bot lead that was stamped
+  // with the Google Sheet's own "PSG-00007" Client ID) to the next free plain number, so
+  // every client/lead ID ends up an ordinary ascending integer regardless of source.
+  const used=new Set(state.clients.map(c=>String(c.id)).filter(id=>/^\d+$/.test(id)).map(id=>parseInt(id,10)));
+  function nextFree(){ let n=1; while(used.has(n)) n++; used.add(n); return n; }
+  for(const c of state.clients){
+    const idStr=String(c.id);
+    if(!/^\d+$/.test(idStr)){
+      const newId=String(nextFree());
+      renames.push({oldId:idStr,newId,client:c});
+      c.id=newId;
+    }
+  }
+
   if(!renames.length){ toast("No client IDs need normalizing"); return; }
 
   for(const r of renames){
-    r.client.id=r.newId;
     for(const k of ["calls","meetings","deals","tasks"]){
       for(const x of state[k]){ if(x.clientId===r.oldId) x.clientId=r.newId; }
     }
@@ -1594,7 +1632,7 @@ async function normalizeClientIds(){
       for(let i=0;i<rows.length;i+=CHUNK){ try{ await sb.from(MAP[k].table).upsert(rows.slice(i,i+CHUNK)); }catch(e){ console.warn(k+" id-cascade sync failed:",e.message); } }
     }
   }
-  toast("Normalized "+renames.length+" client ID(s) (leading zeros removed)"); go("admin");
+  toast("Normalized "+renames.length+" client ID(s)"); go("admin");
 }
 function connectCloud(){ cfg.url=document.getElementById("cfg_url").value.trim(); cfg.key=document.getElementById("cfg_key").value.trim(); saveCfg(); initSupabase();
   cloudPull().then(ok=>{ renderConn(); if(ok){toast("Connected — cloud data loaded");} else if(sb){toast("Could not read tables — check keys & schema");} go("admin"); }); }
