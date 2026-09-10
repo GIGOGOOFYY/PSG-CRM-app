@@ -982,13 +982,45 @@ function rowActions(kind,id){ return `<div class="rowbtns"><button class="btn sm
 /* ======================================================================
    CLIENTS
    ====================================================================== */
-function renderClients(v, filterType){
+// 10-stage sales pipeline (record_type) -- replaced the old flat Prospect/Lead/Client scheme.
+// Won and Lost are closed/terminal: advanceStage() never reaches past Won, and markLost() is a
+// separate explicit action -- nothing here auto-reopens a closed record.
+const STAGE_ORDER = ['New Lead','Contacted','Qualified','Requirement Received','Quotation Sent','Negotiation','Technical Approval','PO Pending','Won \u2013 Order Confirmed'];
+const STAGE_LOST = 'Lost';
+const STAGE_COLORS = {
+  'New Lead':              {bg:'rgba(100,116,139,.12)', fg:'#475569'},
+  'Contacted':             {bg:'rgba(33,150,243,.10)',  fg:'#1565c0'},
+  'Qualified':             {bg:'rgba(99,102,241,.12)',  fg:'#4338ca'},
+  'Requirement Received':  {bg:'rgba(20,184,166,.12)',  fg:'#0f766e'},
+  'Quotation Sent':        {bg:'rgba(255,152,0,.12)',   fg:'#e65100'},
+  'Negotiation':           {bg:'rgba(234,88,12,.12)',   fg:'#c2410c'},
+  'Technical Approval':    {bg:'rgba(147,51,234,.12)',  fg:'#7e22ce'},
+  'PO Pending':            {bg:'rgba(219,39,119,.12)',  fg:'#be185d'},
+  'Won \u2013 Order Confirmed': {bg:'rgba(31,122,77,.12)', fg:'#1f7a4d'},
+  'Lost':                  {bg:'rgba(220,38,38,.12)',   fg:'#b91c1c'}
+};
+const STAGE_BUCKETS = {
+  prospects:  { stages:['New Lead','Contacted'], title:'Prospects', noun:'prospect', addStage:'New Lead', route:'prospects' },
+  leads:      { stages:['Qualified','Requirement Received','Quotation Sent','Negotiation','Technical Approval','PO Pending'], title:'Leads', noun:'lead', addStage:'Qualified', route:'leads' },
+  clientsOnly:{ stages:['Won \u2013 Order Confirmed'], title:'Clients', noun:'client', addStage:'Won \u2013 Order Confirmed', route:'clientsOnly' }
+};
+function stageColor(rt){ return STAGE_COLORS[rt] || {bg:'rgba(100,116,139,.10)', fg:'#64748b'}; }
+function stageLabel(rt){ return rt ? String(rt).toUpperCase() : 'UNKNOWN'; }
+function nextStage(rt){ const i=STAGE_ORDER.indexOf(rt); return (i===-1||i===STAGE_ORDER.length-1) ? null : STAGE_ORDER[i+1]; }
+function isClosedStage(rt){ return rt==='Won \u2013 Order Confirmed' || rt===STAGE_LOST; }
+
+function renderClients(v, bucketKey){
+  const bucket = bucketKey ? STAGE_BUCKETS[bucketKey] : null;
   let rows=vClients();
-  if(filterType) rows = rows.filter(c=>c.recordType===filterType);
+  if(bucket) rows = rows.filter(c=>bucket.stages.includes(c.recordType));
   rows = rows.filter(matchSearch);
   rows = rows.slice().sort(idSort);
-  const body = rows.length? rows.map(c=>`<tr>
-    <td><span class="tag ${c.recordType==='Client'?'client':c.recordType==='Prospect'?'prospect':'lead'}">${c.recordType==='Client'?'CLIENT':c.recordType==='Prospect'?'PROSPECT':'LEAD'}</span></td>
+  const body = rows.length? rows.map(c=>{
+    const sc = stageColor(c.recordType);
+    const ns = nextStage(c.recordType);
+    const closed = isClosedStage(c.recordType);
+    return `<tr>
+    <td><span class="tag" style="background:${sc.bg};color:${sc.fg}">${esc(stageLabel(c.recordType))}</span></td>
     <td>${esc(c.id)}</td>
     <td><b>${esc(c.company)}</b>${c.city?`<br><span class="help">${esc(c.city)}</span>`:""}</td>
     <td>${esc(c.contact)}${c.designation?`<br><span class="help">${esc(c.designation)}</span>`:""}</td>
@@ -997,31 +1029,32 @@ function renderClients(v, filterType){
     <td>${c.status?statusPill(c.status):""}</td>
     <td>${esc(c.assignedTo)}</td>
     <td class="num">${clientTotalSales(c.id)?PKR(clientTotalSales(c.id)):"—"}</td>
-    <td class="no-print"><div class="rowbtns"><button class="btn sm ghost" title="Activity History" onclick="openClientHistory('${esc(c.id)}')">📋</button><button class="btn sm ghost" title="Send WhatsApp" onclick="waClient('${esc(c.id)}')">💬</button>${c.recordType==='Prospect'?`<button class="btn sm ghost" title="Promote to Lead" onclick="promoteProspect('${esc(c.id)}')">➔ Lead</button>`:""}${c.recordType==='Lead'?`<button class="btn sm ghost" title="Convert to Client" onclick="convertLead('${esc(c.id)}')">➔ Client</button>`:""}<button class="btn sm ghost" onclick="edit_client('${esc(c.id)}')">Edit</button>${isAdmin()?`<button class="btn sm ghost danger" onclick="del_client('${esc(c.id)}')">✕</button>`:""}</div></td></tr>`).join("")
-    : `<tr><td colspan="10"><div class="empty">No ${filterType==='Lead'?'leads':filterType==='Client'?'clients':filterType==='Prospect'?'prospects':'records'} found.${filterType?` Click “Add ${filterType}” to create one.`:''}</div></td></tr>`;
-  const importBtns = filterType ? "" : `<input type="file" id="csvImportInput" accept=".csv" style="display:none" onchange="importClientsCsv(this.files[0]);this.value='';">
+    <td class="no-print"><div class="rowbtns"><button class="btn sm ghost" title="Activity History" onclick="openClientHistory('${esc(c.id)}')">📋</button><button class="btn sm ghost" title="Send WhatsApp" onclick="waClient('${esc(c.id)}')">💬</button>${ns?`<button class="btn sm ghost" title="Advance to ${esc(ns)}" onclick="advanceStage('${esc(c.id)}')">➔ ${esc(ns)}</button>`:""}${!closed?`<button class="btn sm ghost danger" title="Mark Lost" onclick="markLost('${esc(c.id)}')">Lost</button>`:""}<button class="btn sm ghost" onclick="edit_client('${esc(c.id)}')">Edit</button>${isAdmin()?`<button class="btn sm ghost danger" onclick="del_client('${esc(c.id)}')">✕</button>`:""}</div></td></tr>`;
+  }).join("")
+    : `<tr><td colspan="10"><div class="empty">No ${bucket?bucket.noun+'s':'records'} found.${bucket?` Click "Add ${bucket.title.slice(0,-1)}" to create one.`:''}</div></td></tr>`;
+  const importBtns = bucket ? "" : `<input type="file" id="csvImportInput" accept=".csv" style="display:none" onchange="importClientsCsv(this.files[0]);this.value='';">
     <button class="btn ghost sm" onclick="document.getElementById('csvImportInput').click()">⇪ Import CSV</button>
     <button class="btn ghost sm" onclick="downloadClientCsvTemplate()">Template</button>`;
-  const deleteAllBtn = isAdmin() ? `<button class="btn ghost sm danger" onclick="deleteAllClients(${filterType?`'${filterType}'`:'null'})">🗑 Delete All</button>` : "";
-  const pageTitle = filterType==='Lead' ? "Leads" : filterType==='Client' ? "Clients" : filterType==='Prospect' ? "Prospects" : "Accounts";
-  const pageSub = filterType==='Lead' ? (rows.length+" lead"+(rows.length===1?"":"s")+(isAdmin()?"":" (yours)"))
-    : filterType==='Client' ? (rows.length+" client"+(rows.length===1?"":"s")+(isAdmin()?"":" (yours)"))
-    : filterType==='Prospect' ? (rows.length+" prospect"+(rows.length===1?"":"s")+(isAdmin()?"":" (yours)"))
-    : ("All companies — prospects, leads & clients — "+vClients().length+" records"+(isAdmin()?"":" (yours)"));
-  const addLabel = filterType==='Lead' ? "Add Lead" : filterType==='Prospect' ? "Add Prospect" : "Add Client";
-  const addFn = filterType==='Lead' ? "addClient('Lead','leads')" : filterType==='Client' ? "addClient('Client','clientsOnly')" : filterType==='Prospect' ? "addClient('Prospect','prospects')" : "addClient('Client','clients')";
+  const deleteAllBtn = isAdmin() ? `<button class="btn ghost sm danger" onclick="deleteAllClients(${bucketKey?`'${bucketKey}'`:'null'})">🗑 Delete All</button>` : "";
+  const pageTitle = bucket ? bucket.title : "Accounts";
+  const pageSub = bucket ? (rows.length+" "+bucket.noun+(rows.length===1?"":"s")+(isAdmin()?"":" (yours)"))
+    : ("All companies — every pipeline stage — "+vClients().length+" records"+(isAdmin()?"":" (yours)"));
+  const addLabel = bucket ? "Add "+bucket.title.replace(/s$/,"") : "Add Record";
+  const addFn = bucket ? `addClient('${bucket.addStage}','${bucket.route}','${bucket.title.replace(/s$/,"")}')` : "addClient('New Lead','clients','Record')";
   v.innerHTML = pagehead(pageTitle,pageSub,addLabel,addFn,true,importBtns+deleteAllBtn)+
-   `<div class="card tablewrap"><table style="min-width:980px"><colgroup><col style="width:62px"><col style="width:78px"><col style="min-width:160px;white-space:normal"><col style="min-width:130px;white-space:normal"><col style="width:120px"><col style="width:110px"><col style="width:110px"><col style="width:90px"><col style="width:100px"><col style="width:110px"></colgroup><thead><tr><th>Type</th><th>ID</th><th>Company</th><th>Contact</th><th>Phone</th><th>Industry</th><th>Status</th><th>Rep</th><th class="num">Total Sales</th><th></th></tr></thead><tbody>${body}</tbody></table></div>`;
+   `<div class="card tablewrap"><table style="min-width:980px"><colgroup><col style="width:62px"><col style="width:78px"><col style="min-width:160px;white-space:normal"><col style="min-width:130px;white-space:normal"><col style="width:120px"><col style="width:110px"><col style="width:110px"><col style="width:90px"><col style="width:100px"><col style="width:110px"></colgroup><thead><tr><th>Stage</th><th>ID</th><th>Company</th><th>Contact</th><th>Phone</th><th>Industry</th><th>Status</th><th>Rep</th><th class="num">Total Sales</th><th></th></tr></thead><tbody>${body}</tbody></table></div>`;
 }
-function renderLeadsOnly(v){ renderClients(v, "Lead"); }
-function renderClientsOnly(v){ renderClients(v, "Client"); }
-function renderProspectsOnly(v){ renderClients(v, "Prospect"); }
+function renderLeadsOnly(v){ renderClients(v, "leads"); }
+function renderClientsOnly(v){ renderClients(v, "clientsOnly"); }
+function renderProspectsOnly(v){ renderClients(v, "prospects"); }
+function advanceStage(id){ const c=state.clients.find(x=>x.id===id); if(!c)return; const ns=nextStage(c.recordType); if(!ns){toast("Already at the final stage");return;} c.recordType=ns; if(ns==='Won \u2013 Order Confirmed' && !c.firstContact) c.firstContact=today(); upsert("clients",c); toast(c.company+" advanced to "+ns); go(route); }
+function markLost(id){ const c=state.clients.find(x=>x.id===id); if(!c)return; if(isClosedStage(c.recordType)){toast("Already closed");return;} c.recordType=STAGE_LOST; upsert("clients",c); toast(c.company+" marked Lost"); go(route); }
 function clientForm(c){
   c=c||{}; const rep=myRep();
   const sel=(key,val,extra)=>`<select id="f_${key}"><option value=""></option>${vocab(key,extra).map(o=>`<option ${o===val?"selected":""}>${esc(o)}</option>`).join("")}</select>`;
   return `<div class="formgrid">
     <div class="field"><label>Company Name</label><input id="f_company" value="${esc(c.company||"")}"></div>
-    <div class="field"><label>Record Type</label><select id="f_recordType"><option ${c.recordType!=="Lead"?"selected":""}>Client</option><option ${c.recordType==="Lead"?"selected":""}>Lead</option></select></div>
+    <div class="field"><label>Record Type</label><select id="f_recordType">${STAGE_ORDER.concat([STAGE_LOST]).map(s=>`<option ${c.recordType===s?"selected":""}>${esc(s)}</option>`).join("")}</select></div>
     <div class="field"><label>Contact Person</label><input id="f_contact" value="${esc(c.contact||"")}"></div>
     <div class="field"><label>Designation</label><input id="f_designation" value="${esc(c.designation||"")}"></div>
     <div class="field"><label>Phone</label><input id="f_phone" value="${esc(c.phone||"")}"></div>
@@ -1160,13 +1193,13 @@ function findDupClient(candidate, excludeId){
     return false;
   });
 }
-function addClient(defaultType, postRoute){ let dupOK=false;
-  const rt = defaultType||"Client"; const dest = postRoute||route||"clients";
-  openModal("New "+rt, clientForm({recordType:rt,assignedTo:myRep()||""}), async()=>{
+function addClient(defaultType, postRoute, label){ let dupOK=false;
+  const rt = defaultType||"New Lead"; const dest = postRoute||route||"clients"; const lbl = label||rt;
+  openModal("New "+lbl, clientForm({recordType:rt,assignedTo:myRep()||""}), async()=>{
   const c=readClient(); if(!c.company){toast("Company name is required");return false;}
   const dup=findDupClient(c);
   if(dup && !dupOK){ dupOK=true; toast("⚠ Possible duplicate of existing "+(dup.recordType||"record")+": "+dup.company+(dup.phone?" ("+dup.phone+")":"")+" — click Save again to add anyway"); return false; }
-  c.id = nextId("C"); state.clients.push(c); await upsert("clients",c); closeModal(); toast(rt+" added"); go(dest);
+  c.id = nextId("C"); state.clients.push(c); await upsert("clients",c); closeModal(); toast(lbl+" added"); go(dest);
 });}
 
 
@@ -1242,7 +1275,7 @@ async function importClientsCsv(file){
     fieldFor.forEach((f,idx)=>{ if(f) obj[f]=String(r[idx]??"").trim(); });
     if(!obj.company) continue;
     const suppliedId=obj._id; delete obj._id;
-    obj.recordType = obj.recordType && /client/i.test(obj.recordType) ? "Client" : (obj.recordType && /lead/i.test(obj.recordType) ? "Lead" : (obj.recordType||"Lead"));
+    obj.recordType = (()=>{ const raw=String(obj.recordType||"").trim(); if(!raw) return "New Lead"; const known=STAGE_ORDER.concat([STAGE_LOST]).find(s=>s.toLowerCase()===raw.toLowerCase()); return known||raw; })();
     obj.active = obj.active ? !/^(no|false|0)$/i.test(obj.active) : true;
     obj.revenuePotential = num(obj.revenuePotential);
     if(obj.phone) obj.phone = normalizePhone(obj.phone);
@@ -1278,22 +1311,19 @@ function nextIdForImport(){ return nextClientId(); }
 
 function edit_client(id){ const c=state.clients.find(x=>x.id===id); if(!c)return;
   openModal("Edit Client", clientForm(c), async()=>{ Object.assign(c, readClient(c)); await upsert("clients",c); closeModal(); toast("Client updated"); go(route); }); }
-function convertLead(id){ const c=state.clients.find(x=>x.id===id); if(!c)return; if(c.recordType!=="Lead"){toast("Already a client");return;} c.recordType="Client"; if(!c.firstContact) c.firstContact=today(); upsert("clients",c); toast(c.company+" converted to Client"); go(route); }
-function promoteProspect(id){ const c=state.clients.find(x=>x.id===id); if(!c)return; if(c.recordType!=="Prospect"){toast("Not a prospect");return;} c.recordType="Lead"; upsert("clients",c); toast(c.company+" promoted to Lead"); go(route); }
 function del_client(id){ if(!isAdmin()){ toast("Only admins can delete records"); return; }
   confirmDel("Delete this client and all their calls, meetings & deals?", async()=>{
   state.clients=state.clients.filter(x=>x.id!==id);
   // cascade
   for(const k of ["calls","meetings","deals"]){ const gone=state[k].filter(x=>x.clientId===id); state[k]=state[k].filter(x=>x.clientId!==id); for(const g of gone) await remove(k,g.id); }
   await remove("clients",id); toast("Client deleted"); go(route); }); }
-async function deleteAllClients(filterType){
+async function deleteAllClients(bucketKey){
   if(!isAdmin()){ toast("Only admins can delete records"); return; }
-  const rows = filterType ? state.clients.filter(c=>c.recordType===filterType) : state.clients;
+  const bucket = bucketKey ? STAGE_BUCKETS[bucketKey] : null;
+  const rows = bucket ? state.clients.filter(c=>bucket.stages.includes(c.recordType)) : state.clients;
   if(!rows.length){ toast("Nothing to delete"); return; }
-  const label = filterType==="Lead" ? ("lead"+(rows.length===1?"":"s"))
-    : filterType==="Client" ? ("client"+(rows.length===1?"":"s"))
-    : filterType==="Prospect" ? ("prospect"+(rows.length===1?"":"s"))
-    : ("record"+(rows.length===1?"":"s")+" (all prospects, leads & clients)");
+  const label = bucket ? (bucket.noun+(rows.length===1?"":"s"))
+    : ("record"+(rows.length===1?"":"s")+" (every pipeline stage)");
   confirmDel("Delete ALL "+rows.length+" "+label+"? This also deletes every call, meeting, deal & task linked to them. This cannot be undone.", async()=>{
     const idSet=new Set(rows.map(c=>String(c.id)));
     state.clients=state.clients.filter(c=>!idSet.has(String(c.id)));
@@ -1547,7 +1577,6 @@ function renderAdmin(v){
      <div class="card"><h3>🧹 Data cleanup</h3><div style="padding:16px">
         <div class="help" style="margin-bottom:10px">One-click fixes for bulk-imported data.</div>
         <button class="btn ghost" onclick="normalizeAllPhones()">📞 Normalize all phone numbers</button><br><br>
-        <button class="btn ghost" onclick="convertAllLeadsToClients()">➔ Convert all leads to clients</button><br><br>
         <button class="btn ghost" onclick="renameZSuppliers()">🏷 Rename "Z Suppliers" industry to "Supplier"</button><br><br>
         <button class="btn ghost" onclick="normalizeClientIds()">🔢 Normalize Client IDs to plain numbers</button>
      </div></div>
@@ -1573,17 +1602,6 @@ async function normalizeAllPhones(){
     for(let i=0;i<rows.length;i+=CHUNK){ try{ await sb.from(MAP.clients.table).upsert(rows.slice(i,i+CHUNK)); }catch(e){ console.warn("normalize sync failed:",e.message); } }
   }
   toast("Normalized "+changed+" phone number(s)"); go("admin");
-}
-async function convertAllLeadsToClients(){
-  let changed=0;
-  for(const c of state.clients){ if(c.recordType==="Lead"){ c.recordType="Client"; if(!c.firstContact) c.firstContact=today(); changed++; } }
-  if(!changed){ toast("No leads to convert"); return; }
-  saveLocal();
-  if(sb){
-    const CHUNK=300; const rows=state.clients.map(MAP.clients.to);
-    for(let i=0;i<rows.length;i+=CHUNK){ try{ await sb.from(MAP.clients.table).upsert(rows.slice(i,i+CHUNK)); }catch(e){ console.warn("convert sync failed:",e.message); } }
-  }
-  toast("Converted "+changed+" lead(s) to client(s)"); go("admin");
 }
 async function renameZSuppliers(){
   let changed=0;
@@ -1809,7 +1827,8 @@ function waDelTpl(i){ const t=waFromDom(); t.splice(i,1); cfg.waTemplates=t; sav
   if(sb){ loaded=await cloudPull(); }
   if(!loaded){ loadLocalOrSeed(); }
   // login hint
-  document.getElementById("lg_hint").innerHTML = "Master demo: <b>Munis / PSG123</b> &nbsp;·&nbsp; Employee demo: <b>Danish / psg123</b>";
+  const lgHintEl = document.getElementById("lg_hint");
+  if (lgHintEl) lgHintEl.innerHTML = "Master demo: <b>Munis / PSG123</b> &nbsp;·&nbsp; Employee demo: <b>Danish / psg123</b>"; // element no longer exists in the login markup -- guarded so it can never again silently abort the rest of boot() (session restore, Enter-key handlers)
   // restore session if present
   const ss=sessionStorage.getItem("psgcrm_session");
   if(ss){ try{ session=JSON.parse(ss); startApp(); }catch(e){} }
@@ -1904,13 +1923,13 @@ window.renderDashboard=function(v){
 
   const tbl=(items,cols,empty,rowFn)=>items.length?`<table class="mini-tbl"><thead><tr>${cols.map(c=>`<th>${c}</th>`).join("")}</tr></thead><tbody>${items.map(rowFn).join("")}</tbody></table>`:`<div class="card-empty">${empty}</div>`;
 
-  const stageOrder=["Prospect","Qualified","Proposal","Negotiation","Closed Won"];
-  const sc=stageOrder.map(s=>myD.filter(d=>(d.stage||d.dealStage||"")===s).length);
+  const sc=STAGE_ORDER.map(s=>myC.filter(c=>(c.recordType||"")===s).length);
   const mx=Math.max(...sc,1);
+  const pipeShort={'New Lead':'New Lead','Contacted':'Contacted','Qualified':'Qualified','Requirement Received':'Requirement','Quotation Sent':'Quotation','Negotiation':'Negotiation','Technical Approval':'Tech. Approval','PO Pending':'PO Pending','Won – Order Confirmed':'Won'};
   const pipeHtml=`<div class="dash-card" style="margin-bottom:14px">
     <div class="dc-hdr"><h3>Pipeline</h3></div>
     <div style="padding:12px 18px 16px">
-      <div class="pipe-bars">${stageOrder.map((s,i)=>`<div class="pipe-col"><div class="pipe-bar" style="height:${Math.max(6,(sc[i]/mx)*60)}px" title="${s}: ${sc[i]}"></div><div class="pipe-lbl">${s.replace("Closed ","")}<br><b>${sc[i]}</b></div></div>`).join("")}</div>
+      <div class="pipe-bars">${STAGE_ORDER.map((s,i)=>`<div class="pipe-col"><div class="pipe-bar" style="height:${Math.max(6,(sc[i]/mx)*60)}px" title="${s}: ${sc[i]}"></div><div class="pipe-lbl">${pipeShort[s]||s}<br><b>${sc[i]}</b></div></div>`).join("")}</div>
     </div></div>`;
 
   v.innerHTML=`<div class="dash-pg">
