@@ -494,7 +494,7 @@ const SIDEBAR_NAV = [
   ]},
 
   { section:"Activities", items:[
-    { id:"_tasks",    icon:"check-square",   label:"Tasks",           route:"clients" },
+    { id:"_tasks",    icon:"check-square",   label:"Tasks",           route:"tasks" },
     { id:"meetings",  icon:"calendar",       label:"Meetings" },
     { id:"calls",     icon:"phone",          label:"Calls" },
   ]},
@@ -523,8 +523,8 @@ function renderSidebar(){
   const cur   = typeof route!=="undefined" ? route : "dashboard";
 
   // Build set of real route IDs that are "active" — includes aliased ones
-  const routeAliases = { clients:["_wq","_accounts","_tasks","_vend"],
-    leads:["_leads"], clientsOnly:["_contacts"],
+  const routeAliases = { clients:["_wq","_accounts","_vend"],
+    leads:["_leads"], clientsOnly:["_contacts"], tasks:["_tasks"],
     deals:["_quotes","_so","_po","_inv"], performance:["_forecast"], admin:["_agents"],
     dashboard:["_req"] };
   const activeIds = new Set([cur]);
@@ -604,14 +604,15 @@ const DD = {
   product:["Tempered 6mm","Tempered 8mm","Tempered 10mm","Tempered 12mm","DGU 4+9+4mm","DGU 6+12+6mm","DGU 8+12+8mm","Laminated Glass","Fire-Rated Glass","Frosted Tempered","Bent/Curved Glass","Printed Glass"],
   collectStatus:["Received","Partial","Pending"],
   yesno:["Yes","No"],
-  interest:["1","2","3","4","5"]
+  interest:["1","2","3","4","5"],
+  taskStatus:["Open","In Progress","Done"]
 };
 /* union a base list with distinct values found in the seeded data (nothing lost) */
 function activeRepNames(){ const emp=(state.users||[]).filter(u=>u.role==="employee").map(u=>u.repName||u.username).filter(Boolean); return emp.length? [...new Set(emp)] : [...DD.reps]; }
 function vocab(key, extra){ const base = key==="reps" ? activeRepNames() : DD[key]; const s=[...base]; (extra||[]).forEach(v=>{ if(v && !s.includes(v)) s.push(v); }); return s; }
 
 /* ---------- state ---------- */
-let state = { users:[], clients:[], calls:[], meetings:[], deals:[], repTargets:[] };
+let state = { users:[], clients:[], calls:[], meetings:[], deals:[], tasks:[], repTargets:[] };
 let session = null;          // {username, role, repName}
 const DEFAULT_SB_URL="https://qeyeonucnlsmbeomrrwt.supabase.co";
 const DEFAULT_SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFleWVvbnVjbmxzbWJlb21ycnd0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQxODk0OTksImV4cCI6MjA5OTc2NTQ5OX0.SmacOxNWOR4HLCOQf_gkHYHFTqBWMDNWrpFAKHP5nns";
@@ -698,6 +699,9 @@ const MAP = {
   deals:{table:"crm_deals", pk:"id",
     to:d=>({id:d.id,close_date:d.closeDate||null,rep:d.rep,client_id:d.clientId,company:d.company,product:d.product,qty:num(d.qty),unit_price:num(d.unitPrice),deal_value:dealValue(d),collect_status:d.collectStatus,collected:dealCollected(d),comm_rate:num(d.commRate),comm_earned:dealCommission(d),remarks:d.remarks}),
     from:r=>({id:r.id,closeDate:r.close_date||"",rep:r.rep,clientId:r.client_id,company:r.company,product:r.product,qty:r.qty,unitPrice:r.unit_price,collectStatus:r.collect_status,commRate:r.comm_rate,remarks:r.remarks}) },
+  tasks:{table:"crm_tasks", pk:"id",
+    to:t=>({id:t.id,title:t.title,due_date:t.dueDate||null,assigned_to:t.assignedTo,assigned_by:t.assignedBy,priority:t.priority,status:t.status,client_id:t.clientId||null,company:t.company||"",notes:t.notes}),
+    from:r=>({id:r.id,title:r.title,dueDate:r.due_date||"",assignedTo:r.assigned_to,assignedBy:r.assigned_by,priority:r.priority,status:r.status,clientId:r.client_id||"",company:r.company||"",notes:r.notes}) },
   users:{table:"crm_users", pk:"username",
     to:u=>({username:u.username,password:u.password,role:u.role,rep_name:u.repName,active:true}),
     from:r=>({username:r.username,password:r.password,role:r.role,repName:r.rep_name}) },
@@ -714,15 +718,17 @@ function initSupabase(){
 }
 async function cloudPull(){
   if(!sb) return false;
-  try{
-    for(const k of ["users","clients","calls","meetings","deals","repTargets"]){
+  let anyOK=false;
+  for(const k of ["users","clients","calls","meetings","deals","tasks","repTargets"]){
+    try{
       const {data,error}=await sb.from(MAP[k].table).select("*");
       if(error) throw error;
       state[k]=(data||[]).map(MAP[k].from);
-    }
-    if(!state.users||!state.users.length) state.users=seedUsers();
-    cloudOK=true; return true;
-  }catch(e){ console.warn("Cloud pull failed:",e.message); cloudOK=false; return false; }
+      anyOK=true;
+    }catch(e){ console.warn("Cloud pull failed for "+k+":", e.message); }
+  }
+  if(!state.users||!state.users.length) state.users=seedUsers();
+  cloudOK=anyOK; return anyOK;
 }
 async function upsert(kind, obj){
   saveLocal();
@@ -759,6 +765,7 @@ function vClients(){ const r=myRep(); return r? state.clients.filter(c=>c.assign
 function vCalls(){ const r=myRep(); return r? state.calls.filter(c=>c.rep===r) : state.calls; }
 function vMeetings(){ const r=myRep(); return r? state.meetings.filter(m=>m.rep===r) : state.meetings; }
 function vDeals(){ const r=myRep(); return r? state.deals.filter(d=>d.rep===r) : state.deals; }
+function vTasks(){ const r=myRep(); return r? state.tasks.filter(t=>t.assignedTo===r) : state.tasks; }
 
 /* ======================================================================
    RENDER — shell
@@ -798,7 +805,7 @@ function renderConn(){
 function go(r){ route=r; searchTerm=""; renderSidebar(); renderRoute(); window.scrollTo(0,0); }
 function renderRoute(){
   const v=document.getElementById("view");
-  ({dashboard:renderDashboard,analytics:renderAnalytics,clients:renderClients,leads:renderLeadsOnly,clientsOnly:renderClientsOnly,calls:renderCalls,meetings:renderMeetings,deals:renderDeals,performance:renderPerformance,admin:renderAdmin}[route]||renderDashboard)(v);
+  ({dashboard:renderDashboard,analytics:renderAnalytics,clients:renderClients,leads:renderLeadsOnly,clientsOnly:renderClientsOnly,tasks:renderTasks,calls:renderCalls,meetings:renderMeetings,deals:renderDeals,performance:renderPerformance,admin:renderAdmin}[route]||renderDashboard)(v);
 }
 
 /* ======================================================================
@@ -1316,6 +1323,53 @@ function edit_meeting(id){ const m=state.meetings.find(x=>x.id===id); if(!m)retu
 function del_meeting(id){ confirmDel("Delete this meeting?", async()=>{ state.meetings=state.meetings.filter(x=>x.id!==id); await remove("meetings",id); toast("Deleted"); go("meetings"); }); }
 
 /* ======================================================================
+   TASKS
+   ====================================================================== */
+function taskStatusPill(s){ const c={Open:"blue","In Progress":"amber",Done:"green"}[s]||"gray"; return `<span class="pill ${c}">${esc(s||"")}</span>`; }
+function renderTasks(v){
+  const rows=vTasks().filter(matchSearch).slice().sort((a,b)=>(a.dueDate||"9999-99-99").localeCompare(b.dueDate||"9999-99-99"));
+  const td=today();
+  const body=rows.length?rows.map(t=>{
+    const overdue = t.dueDate && t.dueDate<td && t.status!=="Done";
+    const prPill = t.priority?`<span class="pill ${t.priority==='High'?'red':t.priority==='Medium'?'amber':'gray'}">${esc(t.priority)}</span>`:"";
+    return `<tr>
+    <td>${esc(t.id)}</td>
+    <td>${t.dueDate?esc(t.dueDate):"—"}${overdue?` <span class="pill red">OVERDUE</span>`:""}</td>
+    <td><b>${esc(t.title)}</b>${t.company?`<br><span class="help">${esc(t.company)}</span>`:""}</td>
+    <td>${esc(t.assignedTo||"")}</td>
+    <td>${esc(t.assignedBy||"")}</td>
+    <td>${prPill}</td>
+    <td>${taskStatusPill(t.status)}</td>
+    <td class="no-print"><div class="rowbtns">${t.status!=="Done"?`<button class="btn sm ghost" title="Mark Done" onclick="markTaskDone('${esc(t.id)}')">✓</button>`:""}<button class="btn sm ghost" onclick="edit_task('${esc(t.id)}')">Edit</button><button class="btn sm ghost danger" onclick="del_task('${esc(t.id)}')">✕</button></div></td></tr>`;
+  }).join("")
+    :`<tr><td colspan="8"><div class="empty">No tasks yet. Click "Add Task" to create one.</div></td></tr>`;
+  v.innerHTML=pagehead("Tasks","To-dos assigned to your team — "+vTasks().length+(isAdmin()?"":" (yours)"),"Add Task","addTask()",true)+
+   `<div class="card tablewrap"><table><thead><tr><th>ID</th><th>Due</th><th>Task</th><th>Assigned To</th><th>Assigned By</th><th>Priority</th><th>Status</th><th></th></tr></thead><tbody>${body}</tbody></table></div>`;
+}
+function taskForm(t){ t=t||{}; const rep=myRep();
+  const sel=(key,val,extra)=>`<select id="f_${key}"><option value=""></option>${vocab(key,extra).map(o=>`<option ${o===val?"selected":""}>${esc(o)}</option>`).join("")}</select>`;
+  return `<div class="formgrid">
+    <div class="field full"><label>Task</label><input id="f_title" value="${esc(t.title||"")}" placeholder="e.g. Send quotation to Al Rafey Glass"></div>
+    <div class="field ${rep?'locked':''}"><label>Assigned To</label>${sel("reps",t.assignedTo||rep,[t.assignedTo])}</div>
+    <div class="field"><label>Due Date</label><input id="f_dueDate" type="date" value="${esc(t.dueDate||"")}"></div>
+    <div class="field"><label>Priority</label>${sel("priority",t.priority||"Medium",[t.priority])}</div>
+    <div class="field"><label>Status</label>${sel("taskStatus",t.status||"Open",[t.status])}</div>
+    <div class="field full"><label>Related Client (optional)</label><select id="f_clientId">${clientOptions(t.clientId)}</select></div>
+    <div class="field full"><label>Notes</label><textarea id="f_notes">${esc(t.notes||"")}</textarea></div>
+  </div>`;
+}
+function readTask(existing){ const g=id=>document.getElementById("f_"+id).value; const rep=myRep(); const id=g("clientId"); const cl=state.clients.find(x=>x.id===id);
+  return Object.assign({},existing||{},{title:g("title"),assignedTo:rep?rep:g("reps"),dueDate:g("dueDate"),priority:g("priority"),status:g("taskStatus"),clientId:id,company:cl?cl.company:"",notes:g("notes")}); }
+function addTask(){ openModal("New Task", taskForm({assignedTo:myRep()||"",status:"Open",priority:"Medium"}), async()=>{
+  const t=readTask(); if(!t.title){toast("Task description is required");return false;}
+  t.id=nextId("TS",t.assignedTo); t.assignedBy=(session.repName||session.username);
+  state.tasks.push(t); await upsert("tasks",t); closeModal(); toast("Task added"); go("tasks");
+}); }
+function edit_task(id){ const t=state.tasks.find(x=>x.id===id); if(!t)return; openModal("Edit Task", taskForm(t), async()=>{ Object.assign(t,readTask(t)); await upsert("tasks",t); closeModal(); toast("Task updated"); go("tasks"); }); }
+function del_task(id){ confirmDel("Delete this task?", async()=>{ state.tasks=state.tasks.filter(x=>x.id!==id); await remove("tasks",id); toast("Deleted"); go("tasks"); }); }
+async function markTaskDone(id){ const t=state.tasks.find(x=>x.id===id); if(!t)return; t.status="Done"; await upsert("tasks",t); toast("Task marked done"); go("tasks"); }
+
+/* ======================================================================
    SALES TRACKER (deals)
    ====================================================================== */
 function renderDeals(v){
@@ -1481,7 +1535,7 @@ function nextId(kind, rep){
   if(kind==="C"){ // client numeric-ish unique
     let n=1000+state.clients.length; let id; do{ id=String(++n); }while(state.clients.some(c=>c.id===id)); return id; }
   const prefix=repCode(rep)+"-"+kind+"-";
-  const nums=state[{CL:"calls",MT:"meetings",DL:"deals"}[kind]].filter(x=>String(x.id).startsWith(prefix)).map(x=>num(String(x.id).split("-").pop()));
+  const nums=state[{CL:"calls",MT:"meetings",DL:"deals",TS:"tasks"}[kind]].filter(x=>String(x.id).startsWith(prefix)).map(x=>num(String(x.id).split("-").pop()));
   const next=(nums.length?Math.max(...nums):0)+1;
   return prefix+String(next).padStart(3,"0");
 }
