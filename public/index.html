@@ -202,6 +202,7 @@ td .help{font-size:11.5px;color:var(--muted);margin-top:1px;display:block}
 .tag{display:inline-block;padding:2px 7px;border-radius:5px;font-size:10.5px;font-weight:700;letter-spacing:.04em}
 .tag.client{background:rgba(31,122,77,.12);color:#1f7a4d}
 .tag.lead{background:rgba(33,150,243,.1);color:#1565c0}
+.tag.prospect{background:rgba(255,152,0,.12);color:#e65100}
 
 /* ── ROW ACTIONS ── */
 .rowbtns{display:flex;gap:5px;align-items:center;justify-content:flex-end}
@@ -484,6 +485,7 @@ const SIDEBAR_NAV = [
   { id:"_agents",     icon:"bot",            label:"Agents",          adminOnly:true, route:"admin" },
 
   { section:"Sales", items:[
+    { id:"_prospects",icon:"eye",            label:"Prospects",       route:"prospects" },
     { id:"_leads",    icon:"target",         label:"Leads",           route:"leads" },
     { id:"_contacts", icon:"user",           label:"Clients",         route:"clientsOnly" },
     { id:"_accounts", icon:"briefcase",      label:"Accounts",        route:"clients" },
@@ -827,7 +829,7 @@ function renderConn(){
 function go(r){ route=r; searchTerm=""; renderSidebar(); renderRoute(); window.scrollTo(0,0); }
 function renderRoute(){
   const v=document.getElementById("view");
-  ({dashboard:renderDashboard,analytics:renderAnalytics,clients:renderClients,leads:renderLeadsOnly,clientsOnly:renderClientsOnly,tasks:renderTasks,calls:renderCalls,meetings:renderMeetings,deals:renderDeals,performance:renderPerformance,admin:renderAdmin}[route]||renderDashboard)(v);
+  ({dashboard:renderDashboard,analytics:renderAnalytics,clients:renderClients,leads:renderLeadsOnly,clientsOnly:renderClientsOnly,prospects:renderProspectsOnly,tasks:renderTasks,calls:renderCalls,meetings:renderMeetings,deals:renderDeals,performance:renderPerformance,admin:renderAdmin}[route]||renderDashboard)(v);
 }
 
 /* ======================================================================
@@ -986,7 +988,7 @@ function renderClients(v, filterType){
   rows = rows.filter(matchSearch);
   rows = rows.slice().sort(idSort);
   const body = rows.length? rows.map(c=>`<tr>
-    <td><span class="tag ${c.recordType==='Client'?'client':'lead'}">${c.recordType==='Client'?'CLIENT':'LEAD'}</span></td>
+    <td><span class="tag ${c.recordType==='Client'?'client':c.recordType==='Prospect'?'prospect':'lead'}">${c.recordType==='Client'?'CLIENT':c.recordType==='Prospect'?'PROSPECT':'LEAD'}</span></td>
     <td>${esc(c.id)}</td>
     <td><b>${esc(c.company)}</b>${c.city?`<br><span class="help">${esc(c.city)}</span>`:""}</td>
     <td>${esc(c.contact)}${c.designation?`<br><span class="help">${esc(c.designation)}</span>`:""}</td>
@@ -995,23 +997,25 @@ function renderClients(v, filterType){
     <td>${c.status?statusPill(c.status):""}</td>
     <td>${esc(c.assignedTo)}</td>
     <td class="num">${clientTotalSales(c.id)?PKR(clientTotalSales(c.id)):"—"}</td>
-    <td class="no-print"><div class="rowbtns"><button class="btn sm ghost" title="Activity History" onclick="openClientHistory('${esc(c.id)}')">📋</button><button class="btn sm ghost" title="Send WhatsApp" onclick="waClient('${esc(c.id)}')">💬</button>${c.recordType==='Lead'?`<button class="btn sm ghost" title="Convert to Client" onclick="convertLead('${esc(c.id)}')">➔ Client</button>`:""}<button class="btn sm ghost" onclick="edit_client('${esc(c.id)}')">Edit</button>${isAdmin()?`<button class="btn sm ghost danger" onclick="del_client('${esc(c.id)}')">✕</button>`:""}</div></td></tr>`).join("")
-    : `<tr><td colspan="10"><div class="empty">No ${filterType==='Lead'?'leads':filterType==='Client'?'clients':'records'} found.${filterType?` Click “Add ${filterType}” to create one.`:''}</div></td></tr>`;
+    <td class="no-print"><div class="rowbtns"><button class="btn sm ghost" title="Activity History" onclick="openClientHistory('${esc(c.id)}')">📋</button><button class="btn sm ghost" title="Send WhatsApp" onclick="waClient('${esc(c.id)}')">💬</button>${c.recordType==='Prospect'?`<button class="btn sm ghost" title="Promote to Lead" onclick="promoteProspect('${esc(c.id)}')">➔ Lead</button>`:""}${c.recordType==='Lead'?`<button class="btn sm ghost" title="Convert to Client" onclick="convertLead('${esc(c.id)}')">➔ Client</button>`:""}<button class="btn sm ghost" onclick="edit_client('${esc(c.id)}')">Edit</button>${isAdmin()?`<button class="btn sm ghost danger" onclick="del_client('${esc(c.id)}')">✕</button>`:""}</div></td></tr>`).join("")
+    : `<tr><td colspan="10"><div class="empty">No ${filterType==='Lead'?'leads':filterType==='Client'?'clients':filterType==='Prospect'?'prospects':'records'} found.${filterType?` Click “Add ${filterType}” to create one.`:''}</div></td></tr>`;
   const importBtns = filterType ? "" : `<input type="file" id="csvImportInput" accept=".csv" style="display:none" onchange="importClientsCsv(this.files[0]);this.value='';">
     <button class="btn ghost sm" onclick="document.getElementById('csvImportInput').click()">⇪ Import CSV</button>
     <button class="btn ghost sm" onclick="downloadClientCsvTemplate()">Template</button>`;
   const deleteAllBtn = isAdmin() ? `<button class="btn ghost sm danger" onclick="deleteAllClients(${filterType?`'${filterType}'`:'null'})">🗑 Delete All</button>` : "";
-  const pageTitle = filterType==='Lead' ? "Leads" : filterType==='Client' ? "Clients" : "Accounts";
+  const pageTitle = filterType==='Lead' ? "Leads" : filterType==='Client' ? "Clients" : filterType==='Prospect' ? "Prospects" : "Accounts";
   const pageSub = filterType==='Lead' ? (rows.length+" lead"+(rows.length===1?"":"s")+(isAdmin()?"":" (yours)"))
     : filterType==='Client' ? (rows.length+" client"+(rows.length===1?"":"s")+(isAdmin()?"":" (yours)"))
-    : ("All companies — leads & clients — "+vClients().length+" records"+(isAdmin()?"":" (yours)"));
-  const addLabel = filterType==='Lead' ? "Add Lead" : "Add Client";
-  const addFn = filterType==='Lead' ? "addClient('Lead','leads')" : filterType==='Client' ? "addClient('Client','clientsOnly')" : "addClient('Client','clients')";
+    : filterType==='Prospect' ? (rows.length+" prospect"+(rows.length===1?"":"s")+(isAdmin()?"":" (yours)"))
+    : ("All companies — prospects, leads & clients — "+vClients().length+" records"+(isAdmin()?"":" (yours)"));
+  const addLabel = filterType==='Lead' ? "Add Lead" : filterType==='Prospect' ? "Add Prospect" : "Add Client";
+  const addFn = filterType==='Lead' ? "addClient('Lead','leads')" : filterType==='Client' ? "addClient('Client','clientsOnly')" : filterType==='Prospect' ? "addClient('Prospect','prospects')" : "addClient('Client','clients')";
   v.innerHTML = pagehead(pageTitle,pageSub,addLabel,addFn,true,importBtns+deleteAllBtn)+
    `<div class="card tablewrap"><table style="min-width:980px"><colgroup><col style="width:62px"><col style="width:78px"><col style="min-width:160px;white-space:normal"><col style="min-width:130px;white-space:normal"><col style="width:120px"><col style="width:110px"><col style="width:110px"><col style="width:90px"><col style="width:100px"><col style="width:110px"></colgroup><thead><tr><th>Type</th><th>ID</th><th>Company</th><th>Contact</th><th>Phone</th><th>Industry</th><th>Status</th><th>Rep</th><th class="num">Total Sales</th><th></th></tr></thead><tbody>${body}</tbody></table></div>`;
 }
 function renderLeadsOnly(v){ renderClients(v, "Lead"); }
 function renderClientsOnly(v){ renderClients(v, "Client"); }
+function renderProspectsOnly(v){ renderClients(v, "Prospect"); }
 function clientForm(c){
   c=c||{}; const rep=myRep();
   const sel=(key,val,extra)=>`<select id="f_${key}"><option value=""></option>${vocab(key,extra).map(o=>`<option ${o===val?"selected":""}>${esc(o)}</option>`).join("")}</select>`;
@@ -1275,6 +1279,7 @@ function nextIdForImport(){ return nextClientId(); }
 function edit_client(id){ const c=state.clients.find(x=>x.id===id); if(!c)return;
   openModal("Edit Client", clientForm(c), async()=>{ Object.assign(c, readClient(c)); await upsert("clients",c); closeModal(); toast("Client updated"); go(route); }); }
 function convertLead(id){ const c=state.clients.find(x=>x.id===id); if(!c)return; if(c.recordType!=="Lead"){toast("Already a client");return;} c.recordType="Client"; if(!c.firstContact) c.firstContact=today(); upsert("clients",c); toast(c.company+" converted to Client"); go(route); }
+function promoteProspect(id){ const c=state.clients.find(x=>x.id===id); if(!c)return; if(c.recordType!=="Prospect"){toast("Not a prospect");return;} c.recordType="Lead"; upsert("clients",c); toast(c.company+" promoted to Lead"); go(route); }
 function del_client(id){ if(!isAdmin()){ toast("Only admins can delete records"); return; }
   confirmDel("Delete this client and all their calls, meetings & deals?", async()=>{
   state.clients=state.clients.filter(x=>x.id!==id);
@@ -1287,7 +1292,8 @@ async function deleteAllClients(filterType){
   if(!rows.length){ toast("Nothing to delete"); return; }
   const label = filterType==="Lead" ? ("lead"+(rows.length===1?"":"s"))
     : filterType==="Client" ? ("client"+(rows.length===1?"":"s"))
-    : ("record"+(rows.length===1?"":"s")+" (all leads & clients)");
+    : filterType==="Prospect" ? ("prospect"+(rows.length===1?"":"s"))
+    : ("record"+(rows.length===1?"":"s")+" (all prospects, leads & clients)");
   confirmDel("Delete ALL "+rows.length+" "+label+"? This also deletes every call, meeting, deal & task linked to them. This cannot be undone.", async()=>{
     const idSet=new Set(rows.map(c=>String(c.id)));
     state.clients=state.clients.filter(c=>!idSet.has(String(c.id)));
