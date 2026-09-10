@@ -761,11 +761,27 @@ function isAdmin(){ return session && session.role==="admin"; }
 function myRep(){ return isAdmin()? null : session.repName; }
 
 /* filter helpers — employees only ever see their own rows */
-function vClients(){ const r=myRep(); return r? state.clients.filter(c=>c.assignedTo===r) : state.clients; }
+function vClients(){ const r=myRep(); return r? state.clients.filter(c=>c.assignedTo===r || !c.assignedTo) : state.clients; }
 function vCalls(){ const r=myRep(); return r? state.calls.filter(c=>c.rep===r) : state.calls; }
 function vMeetings(){ const r=myRep(); return r? state.meetings.filter(m=>m.rep===r) : state.meetings; }
 function vDeals(){ const r=myRep(); return r? state.deals.filter(d=>d.rep===r) : state.deals; }
 function vTasks(){ const r=myRep(); return r? state.tasks.filter(t=>t.assignedTo===r) : state.tasks; }
+
+/* Ascending ID sort for Leads/Clients/Accounts: numeric IDs sort as numbers (1, 2, 20, 343...),
+   non-numeric IDs (e.g. WhatsApp-bot leads like "PSG-00006") sort after, alphabetically. */
+function idSort(a,b){
+  const aId=String(a.id), bId=String(b.id);
+  const aNum=/^\d+$/.test(aId), bNum=/^\d+$/.test(bId);
+  if(aNum && bNum) return parseInt(aId,10)-parseInt(bId,10);
+  if(aNum && !bNum) return -1;
+  if(!aNum && bNum) return 1;
+  return aId.localeCompare(bId);
+}
+function nextClientId(){
+  const used=new Set(state.clients.map(c=>String(c.id)).filter(id=>/^\d+$/.test(id)).map(id=>parseInt(id,10)));
+  let n=1; while(used.has(n)) n++;
+  return String(n);
+}
 
 /* ======================================================================
    RENDER — shell
@@ -962,6 +978,7 @@ function renderClients(v, filterType){
   let rows=vClients();
   if(filterType) rows = rows.filter(c=>c.recordType===filterType);
   rows = rows.filter(matchSearch);
+  rows = rows.slice().sort(idSort);
   const body = rows.length? rows.map(c=>`<tr>
     <td><span class="tag ${c.recordType==='Client'?'client':'lead'}">${c.recordType==='Client'?'CLIENT':'LEAD'}</span></td>
     <td>${esc(c.id)}</td>
@@ -1230,7 +1247,7 @@ async function importClientsCsv(file){
   }
   go("clients");
 }
-function nextIdForImport(){ let n=1000+state.clients.length; let id; do{ id=String(++n); }while(state.clients.some(c=>c.id===id)); return id; }
+function nextIdForImport(){ return nextClientId(); }
 
 function edit_client(id){ const c=state.clients.find(x=>x.id===id); if(!c)return;
   openModal("Edit Client", clientForm(c), async()=>{ Object.assign(c, readClient(c)); await upsert("clients",c); closeModal(); toast("Client updated"); go(route); }); }
@@ -1479,7 +1496,8 @@ function renderAdmin(v){
         <div class="help" style="margin-bottom:10px">One-click fixes for bulk-imported data.</div>
         <button class="btn ghost" onclick="normalizeAllPhones()">📞 Normalize all phone numbers</button><br><br>
         <button class="btn ghost" onclick="convertAllLeadsToClients()">➔ Convert all leads to clients</button><br><br>
-        <button class="btn ghost" onclick="renameZSuppliers()">🏷 Rename "Z Suppliers" industry to "Supplier"</button>
+        <button class="btn ghost" onclick="renameZSuppliers()">🏷 Rename "Z Suppliers" industry to "Supplier"</button><br><br>
+        <button class="btn ghost" onclick="normalizeClientIds()">🔢 Strip leading zeros from Client IDs</button>
      </div></div>
      <div class="card"><h3>🎨 Appearance</h3><div style="padding:16px">
         <div class="settings-row"><label class="help">Brand accent colour</label><input id="cfg_accent" type="color" value="${esc(cfg.accent||'#1f7a4d')}" onchange="setAccent(this.value)"></div>
@@ -1526,6 +1544,41 @@ async function renameZSuppliers(){
   }
   toast('Renamed '+changed+' record(s) to "Supplier"'); go("admin");
 }
+async function normalizeClientIds(){
+  // Strips leading zeros from client IDs like "0000020" -> "20", and cascades the ID change to
+  // every call/meeting/deal/task that references it, so nothing gets orphaned.
+  const renames=[];
+  for(const c of state.clients){
+    const idStr=String(c.id);
+    if(/^0+\d+$/.test(idStr)){
+      const newId=String(parseInt(idStr,10));
+      if(newId!==idStr && !state.clients.some(x=>x!==c && String(x.id)===newId)) renames.push({oldId:idStr,newId,client:c});
+    }
+  }
+  if(!renames.length){ toast("No client IDs need normalizing"); return; }
+
+  for(const r of renames){
+    r.client.id=r.newId;
+    for(const k of ["calls","meetings","deals","tasks"]){
+      for(const x of state[k]){ if(x.clientId===r.oldId) x.clientId=r.newId; }
+    }
+  }
+  saveLocal();
+
+  if(sb){
+    for(const r of renames){
+      try{ await sb.from(MAP.clients.table).delete().eq(MAP.clients.pk, r.oldId); }catch(e){ console.warn("old client id delete failed:",e.message); }
+    }
+    const CHUNK=300;
+    const clientRows=state.clients.map(MAP.clients.to);
+    for(let i=0;i<clientRows.length;i+=CHUNK){ try{ await sb.from(MAP.clients.table).upsert(clientRows.slice(i,i+CHUNK)); }catch(e){ console.warn("client id sync failed:",e.message); } }
+    for(const k of ["calls","meetings","deals","tasks"]){
+      const rows=state[k].map(MAP[k].to);
+      for(let i=0;i<rows.length;i+=CHUNK){ try{ await sb.from(MAP[k].table).upsert(rows.slice(i,i+CHUNK)); }catch(e){ console.warn(k+" id-cascade sync failed:",e.message); } }
+    }
+  }
+  toast("Normalized "+renames.length+" client ID(s) (leading zeros removed)"); go("admin");
+}
 function connectCloud(){ cfg.url=document.getElementById("cfg_url").value.trim(); cfg.key=document.getElementById("cfg_key").value.trim(); saveCfg(); initSupabase();
   cloudPull().then(ok=>{ renderConn(); if(ok){toast("Connected — cloud data loaded");} else if(sb){toast("Could not read tables — check keys & schema");} go("admin"); }); }
 async function pushAllToCloud(){ if(!sb){toast("Connect a database first");return;} let n=0;
@@ -1549,8 +1602,7 @@ function delUser(name){ confirmDel("Delete user "+name+"?", async()=>{ state.use
 function today(){ return new Date().toISOString().slice(0,10); }
 function repCode(rep){ return (rep||"GEN").replace(/[^A-Za-z]/g,"").slice(0,3).toUpperCase()||"GEN"; }
 function nextId(kind, rep){
-  if(kind==="C"){ // client numeric-ish unique
-    let n=1000+state.clients.length; let id; do{ id=String(++n); }while(state.clients.some(c=>c.id===id)); return id; }
+  if(kind==="C"){ return nextClientId(); }
   const prefix=repCode(rep)+"-"+kind+"-";
   const nums=state[{CL:"calls",MT:"meetings",DL:"deals",TS:"tasks"}[kind]].filter(x=>String(x.id).startsWith(prefix)).map(x=>num(String(x.id).split("-").pop()));
   const next=(nums.length?Math.max(...nums):0)+1;
