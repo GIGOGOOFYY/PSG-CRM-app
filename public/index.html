@@ -982,9 +982,10 @@ function rowActions(kind,id){ return `<div class="rowbtns"><button class="btn sm
 /* ======================================================================
    CLIENTS
    ====================================================================== */
-// 10-stage sales pipeline (record_type) -- replaced the old flat Prospect/Lead/Client scheme.
-// Won and Lost are closed/terminal: advanceStage() never reaches past Won, and markLost() is a
-// separate explicit action -- nothing here auto-reopens a closed record.
+// 11-stage sales pipeline (record_type) -- replaced the old flat Prospect/Lead/Client scheme.
+// Client and Lost are closed/terminal: advanceStage() never reaches past Client, and markLost() is a
+// separate explicit action -- nothing here auto-reopens a closed record. Won -- Order Confirmed means
+// the first order was won; a record only becomes Client once it has repeat orders.
 const STAGE_ORDER = ['New Lead','Contacted','Qualified','Requirement Received','Quotation Sent','Negotiation','Technical Approval','PO Pending','Won \u2013 Order Confirmed','Client'];
 const STAGE_LOST = 'Lost';
 const STAGE_COLORS = {
