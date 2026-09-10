@@ -1008,6 +1008,7 @@ function stageColor(rt){ return STAGE_COLORS[rt] || {bg:'rgba(100,116,139,.10)',
 function stageLabel(rt){ return rt ? String(rt).toUpperCase() : 'UNKNOWN'; }
 function nextStage(rt){ const i=STAGE_ORDER.indexOf(rt); return (i===-1||i===STAGE_ORDER.length-1) ? null : STAGE_ORDER[i+1]; }
 function isClosedStage(rt){ return rt==='Won \u2013 Order Confirmed' || rt===STAGE_LOST; }
+const PIPE_SHORT={'New Lead':'New Lead','Contacted':'Contacted','Qualified':'Qualified','Requirement Received':'Requirement','Quotation Sent':'Quotation','Negotiation':'Negotiation','Technical Approval':'Tech. Approval','PO Pending':'PO Pending','Won \u2013 Order Confirmed':'Won'};
 
 function renderClients(v, bucketKey){
   const bucket = bucketKey ? STAGE_BUCKETS[bucketKey] : null;
@@ -1863,8 +1864,8 @@ function renderAnalytics(v){
   const ind={};cl.forEach(c=>{const k=c.industry||"Other";ind[k]=(ind[k]||0)+1;});
   const indL=Object.keys(ind).slice(0,8),indD=indL.map(k=>ind[k]);
 
-  const stages=["Prospect","Qualified","Proposal","Negotiation","Closed Won","Closed Lost"];
-  const stageCt=stages.map(s=>de.filter(d=>(d.stage||d.dealStage||"")===s).length);
+  const stages=STAGE_ORDER.map(s=>PIPE_SHORT[s]||s);
+  const stageCt=STAGE_ORDER.map(s=>cl.filter(c=>(c.recordType||"")===s).length);
 
   const P=["#4caf89","#1f7a4d","#7ab63f","#2196f3","#ff9800","#e91e63","#9c27b0","#00bcd4"];
   const G="rgba(255,255,255,0.07)";const T="#8899aa";
@@ -1901,7 +1902,7 @@ window.renderDashboard=function(v){
   const de=state.deals||[];
   const admin=typeof isAdmin==="function"&&isAdmin();
   const rep=typeof session!=="undefined"?(session.repName||session.username||""):"";
-  const myC=admin?ca:ca.filter(c=>c.assignedTo===rep||c.rep===rep);
+  const myC=vClients(); // same visibility rule as the Clients/Leads pages: your records + unassigned ones
   const myD=admin?de:de.filter(d=>d.rep===rep);
   const myCl=admin?cl:cl.filter(c=>c.rep===rep);
   const myM=admin?me:me.filter(m=>m.rep===rep);
@@ -1925,11 +1926,10 @@ window.renderDashboard=function(v){
 
   const sc=STAGE_ORDER.map(s=>myC.filter(c=>(c.recordType||"")===s).length);
   const mx=Math.max(...sc,1);
-  const pipeShort={'New Lead':'New Lead','Contacted':'Contacted','Qualified':'Qualified','Requirement Received':'Requirement','Quotation Sent':'Quotation','Negotiation':'Negotiation','Technical Approval':'Tech. Approval','PO Pending':'PO Pending','Won – Order Confirmed':'Won'};
   const pipeHtml=`<div class="dash-card" style="margin-bottom:14px">
     <div class="dc-hdr"><h3>Pipeline</h3></div>
     <div style="padding:12px 18px 16px">
-      <div class="pipe-bars">${STAGE_ORDER.map((s,i)=>`<div class="pipe-col"><div class="pipe-bar" style="height:${Math.max(6,(sc[i]/mx)*60)}px" title="${s}: ${sc[i]}"></div><div class="pipe-lbl">${pipeShort[s]||s}<br><b>${sc[i]}</b></div></div>`).join("")}</div>
+      <div class="pipe-bars">${STAGE_ORDER.map((s,i)=>`<div class="pipe-col"><div class="pipe-bar" style="height:${Math.max(6,(sc[i]/mx)*60)}px" title="${s}: ${sc[i]}"></div><div class="pipe-lbl">${PIPE_SHORT[s]||s}<br><b>${sc[i]}</b></div></div>`).join("")}</div>
     </div></div>`;
 
   v.innerHTML=`<div class="dash-pg">
