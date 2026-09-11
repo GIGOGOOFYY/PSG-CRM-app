@@ -1296,15 +1296,43 @@ async function importClientsCsv(file){
   toast("Importing "+newClients.length+" clients…");
 
   if(sb){
-    const CHUNK=300; let ok=0, fail=0;
+    // Sync in chunks of 300, but never let one bad row silently swallow the rest of its
+    // chunk: on a batch failure, split in half and retry recursively until either it
+    // succeeds or we've isolated the exact row(s) that failed, so a single malformed
+    // value (a bad date, a stray character) can't wipe out hundreds of good rows.
+    let ok=0, fail=0; const failedRows=[];
+    async function syncBatch(batch){
+      if(!batch.length) return;
+      try{
+        const {error}=await sb.from(MAP.clients.table).upsert(batch.map(MAP.clients.to));
+        if(error) throw error;
+        ok+=batch.length;
+      }catch(e){
+        if(batch.length===1){
+          fail+=1;
+          failedRows.push({company:batch[0].company||"(no company)", reason:(e&&e.message)||String(e)});
+        } else {
+          const mid=Math.ceil(batch.length/2);
+          await syncBatch(batch.slice(0,mid));
+          await syncBatch(batch.slice(mid));
+        }
+      }
+    }
+    const CHUNK=300;
     for(let i=0;i<newClients.length;i+=CHUNK){
-      const batch=newClients.slice(i,i+CHUNK).map(MAP.clients.to);
-      try{ const {error}=await sb.from(MAP.clients.table).upsert(batch); if(error) throw error; ok+=batch.length; }
-      catch(e){ fail+=batch.length; console.warn("Import batch failed:",e.message); }
+      await syncBatch(newClients.slice(i,i+CHUNK));
     }
     cloudOK = fail===0 ? true : cloudOK;
     renderConn();
-    toast(fail? ("Imported "+ok+" ("+updated+" updated) · "+fail+" failed to sync") : ("Imported "+ok+" clients ("+updated+" updated)"));
+    if(fail){
+      console.warn("Import rows that failed to sync:", failedRows);
+      const list=failedRows.slice(0,50).map(r=>"<li><b>"+esc(r.company)+"</b> — "+esc(r.reason)+"</li>").join("");
+      const more=failedRows.length>50?('<p style="margin-top:8px;color:var(--muted)">+'+(failedRows.length-50)+' more — see browser console for the full list.</p>'):"";
+      openModal("Import sync report", "<p>"+ok+" synced to the cloud, "+fail+" FAILED and were saved locally only.</p><ul style=\"max-height:280px;overflow:auto;margin:10px 0 0;padding-left:20px\">"+list+"</ul>"+more, async()=>{ closeModal(); });
+      toast("Imported "+ok+" ("+updated+" updated) · "+fail+" FAILED to sync — see report");
+    } else {
+      toast("Imported "+ok+" clients ("+updated+" updated)");
+    }
   } else {
     toast("Imported "+newClients.length+" clients locally — connect cloud to sync");
   }
