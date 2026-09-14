@@ -699,8 +699,8 @@ const MAP = {
     to:m=>({id:m.id,meet_date:m.date||null,meet_time:m.time,rep:m.rep,client_id:m.clientId,company:m.company,contact:m.contact,type:m.type,location:m.location,agenda:m.agenda,status:m.status,follow_notes:m.followNotes,source_call:m.sourceCall}),
     from:r=>({id:r.id,date:r.meet_date||"",time:r.meet_time,rep:r.rep,clientId:r.client_id,company:r.company,contact:r.contact,type:r.type,location:r.location,agenda:r.agenda,status:r.status,followNotes:r.follow_notes,sourceCall:r.source_call}) },
   deals:{table:"crm_deals", pk:"id",
-    to:d=>({id:d.id,close_date:d.closeDate||null,rep:d.rep,client_id:d.clientId,company:d.company,product:d.product,qty:num(d.qty),unit_price:num(d.unitPrice),deal_value:dealValue(d),collect_status:d.collectStatus,collected:dealCollected(d),comm_rate:num(d.commRate),comm_earned:dealCommission(d),remarks:d.remarks}),
-    from:r=>({id:r.id,closeDate:r.close_date||"",rep:r.rep,clientId:r.client_id,company:r.company,product:r.product,qty:r.qty,unitPrice:r.unit_price,collectStatus:r.collect_status,commRate:r.comm_rate,remarks:r.remarks}) },
+    to:d=>({id:d.id,close_date:d.closeDate||null,rep:d.rep,client_id:d.clientId,company:d.company,product:d.product,qty:num(d.qty),unit_price:num(d.unitPrice),deal_value:dealValue(d),collect_status:d.collectStatus,collected:dealCollected(d),comm_rate:num(d.commRate),comm_earned:dealCommission(d),remarks:d.remarks,quote_no:d.quoteNo||null,po_number:d.poNumber||null}),
+    from:r=>({id:r.id,closeDate:r.close_date||"",rep:r.rep,clientId:r.client_id,company:r.company,product:r.product,qty:r.qty,unitPrice:r.unit_price,collectStatus:r.collect_status,commRate:r.comm_rate,remarks:r.remarks,quoteNo:r.quote_no||"",poNumber:r.po_number||""}) },
   tasks:{table:"crm_tasks", pk:"id",
     to:t=>({id:t.id,title:t.title,due_date:t.dueDate||null,assigned_to:t.assignedTo,assigned_by:t.assignedBy,priority:t.priority,status:t.status,client_id:t.clientId||null,company:t.company||"",notes:t.notes,approved:!!t.approved,created_by_admin:!!t.createdByAdmin}),
     from:r=>({id:r.id,title:r.title,dueDate:r.due_date||"",assignedTo:r.assigned_to,assignedBy:r.assigned_by,priority:r.priority,status:r.status,clientId:r.client_id||"",company:r.company||"",notes:r.notes,approved:!!r.approved,createdByAdmin:!!r.created_by_admin}) },
@@ -1544,6 +1544,8 @@ function dealForm(d){ d=d||{}; const rep=myRep();
     <div class="field ${rep?'locked':''}"><label>Sales Rep</label>${sel("reps",d.rep||rep,[d.rep])}</div>
     <div class="field full"><label>Client</label><select id="f_clientId" onchange="fillCompany('deal')">${clientOptions(d.clientId)}</select></div>
     <div class="field"><label>Product / Service</label>${sel("product",d.product,[d.product])}</div>
+    <div class="field"><label>Quote #</label><input id="f_quoteNo" value="${esc(d.quoteNo||"")}"></div>
+    <div class="field"><label>PO #</label><input id="f_poNumber" value="${esc(d.poNumber||"")}"></div>
     <div class="field"><label>Collection Status</label>${sel("collectStatus",d.collectStatus,[d.collectStatus])}</div>
     <div class="field"><label>Qty (sqft)</label><input id="f_qty" type="number" step="any" value="${esc(d.qty||"")}" oninput="calcDeal()"></div>
     <div class="field"><label>Unit Price (PKR)</label><input id="f_unitPrice" type="number" step="any" value="${esc(d.unitPrice||"")}" oninput="calcDeal()"></div>
@@ -1557,7 +1559,7 @@ function calcDeal(){ const d={qty:document.getElementById("f_qty").value,unitPri
   document.getElementById("f_dealValue").value=PKR(dealValue(d));
   document.getElementById("f_commEarned").value=PKR(dealCommission(d)); }
 function readDeal(existing){ const g=id=>document.getElementById("f_"+id).value; const rep=myRep(); const id=g("clientId"); const cl=state.clients.find(x=>x.id===id);
-  return Object.assign({},existing||{},{closeDate:g("closeDate"),rep:rep?rep:g("reps"),clientId:id,company:cl?cl.company:"",product:g("product"),collectStatus:g("collectStatus"),qty:num(g("qty")),unitPrice:num(g("unitPrice")),commRate:num(g("commRate")),remarks:g("remarks")}); }
+  return Object.assign({},existing||{},{closeDate:g("closeDate"),rep:rep?rep:g("reps"),clientId:id,company:cl?cl.company:"",product:g("product"),quoteNo:g("quoteNo"),poNumber:g("poNumber"),collectStatus:g("collectStatus"),qty:num(g("qty")),unitPrice:num(g("unitPrice")),commRate:num(g("commRate")),remarks:g("remarks")}); }
 function addDeal(){ openModal("New Deal", dealForm({rep:myRep()||"",collectStatus:"Pending"}), async()=>{ const d=readDeal(); if(!d.clientId){toast("Pick a client");return false;} d.id=nextId("DL",d.rep); state.deals.push(d); await upsert("deals",d); closeModal(); toast("Deal added"); go("deals"); }, calcDeal); }
 function edit_deal(id){ const d=state.deals.find(x=>x.id===id); if(!d)return; openModal("Edit Deal", dealForm(d), async()=>{ Object.assign(d,readDeal(d)); await upsert("deals",d); closeModal(); toast("Deal updated"); go("deals"); }, calcDeal); }
 function del_deal(id){ confirmDel("Delete this deal?", async()=>{ state.deals=state.deals.filter(x=>x.id!==id); await remove("deals",id); toast("Deleted"); go("deals"); }); }
@@ -1748,11 +1750,22 @@ function applyBrand(){
    WHATSAPP  (click-to-send via wa.me — no API/keys; user presses send)
    ====================================================================== */
 const WA_DEFAULT_TEMPLATES = [
-  {name:"Introduction", body:"Assalam-o-Alaikum {contact}, this is {rep} from Pakistan Safety Glass (Est. 1969, Karachi). Thank you for your interest in our tempered & safety glass. How may we assist {company}?"},
+  {name:"Introduction", body:"Assalam-o-Alaikum {contact}, this is {rep} from Pakistan Safety Glass (Est. 1969, Karachi). Thank you for contacting Pakistan Safety Glass. How may we assist {company}?"},
+  {name:"Requirement confirmation", body:"Dear {contact}, thank you for sharing your requirements for {company}. Our team is preparing your quotation and will share it with you shortly. — {rep}, Pakistan Safety Glass"},
+  {name:"Missing info \u2014 sizes", body:"Dear {contact}, thank you for reaching out to {company}. Could you please share the sizes/quantities so we can prepare an accurate quotation? — {rep}, Pakistan Safety Glass"},
+  {name:"Missing info \u2014 spec/drawing", body:"Dear {contact}, to prepare your quotation for {company}, please share the technical drawing/specification for your requirement. — {rep}, Pakistan Safety Glass"},
+  {name:"Quotation ready", body:"Dear {contact}, your quotation for {company} (Ref# {quoteNo}) is ready and has been shared with you. Please let us know if you have any questions. — {rep}, Pakistan Safety Glass"},
   {name:"Quotation follow-up", body:"Dear {contact}, following up on your enquiry for {company}. Please share the required sizes/specifications so we can prepare your quotation. — {rep}, Pakistan Safety Glass"},
+  {name:"Revised quotation sent", body:"Dear {contact}, as discussed, we've revised the quotation for {company} (Ref# {quoteNo}). Updated pricing/terms have been shared. Please confirm to proceed. — {rep}, Pakistan Safety Glass"},
+  {name:"Site visit / sample request", body:"Dear {contact}, to proceed with technical approval for {company}, we'd like to schedule a site visit/sample review. Please suggest a convenient date. — {rep}, Pakistan Safety Glass"},
   {name:"Meeting reminder", body:"Dear {contact}, a reminder for our meeting on {date} {time} ({type}) regarding: {agenda}. — {rep}, Pakistan Safety Glass"},
+  {name:"Technical approval confirmation", body:"Dear {contact}, thank you for confirming technical approval for {company}. We can now proceed to order confirmation. — {rep}, Pakistan Safety Glass"},
+  {name:"PO request", body:"Dear {contact}, following technical approval for {company}, kindly share your Purchase Order (PO) so we can begin processing your order. — {rep}, Pakistan Safety Glass"},
+  {name:"PO / order confirmation", body:"Dear {contact}, we've received PO {poNumber} for {company}. Your order is confirmed and now in production. Estimated completion: {date}. — {rep}, Pakistan Safety Glass"},
   {name:"Payment reminder", body:"Dear {contact}, a gentle reminder about the pending amount for your order ({product}, value {dealValue}). Kindly advise on the payment. — {rep}, Pakistan Safety Glass"},
-  {name:"Thank you", body:"Dear {contact}, thank you for choosing Pakistan Safety Glass. We look forward to serving {company} again. — {rep}"}
+  {name:"Dispatch notification", body:"Dear {contact}, good news — your order (PO {poNumber}) for {company} has been dispatched and is on its way. Expected delivery: {date}. — {rep}, Pakistan Safety Glass"},
+  {name:"Thank you", body:"Dear {contact}, thank you for choosing Pakistan Safety Glass. We look forward to serving {company} again. — {rep}"},
+  {name:"Win-back", body:"Assalam-o-Alaikum {contact}, it's been a while since we last connected with {company}. We've recently updated our pricing/catalog — happy to share if you're still interested. — {rep}, Pakistan Safety Glass"}
 ];
 function waTemplates(){ return (cfg.waTemplates && cfg.waTemplates.length)? cfg.waTemplates : WA_DEFAULT_TEMPLATES; }
 function waCountry(){ return (cfg.waCountry||"92").replace(/[^0-9]/g,"") || "92"; }
@@ -1826,7 +1839,7 @@ function waOpenModal(phone, ctx, presetName){
 function waPick(){ const name=document.getElementById("wa_tpl").value; const t=(window.__waTpls||[]).find(x=>x.name===name); if(t)document.getElementById("wa_msg").value=mergeMsg(t.body, window.__waCtx||{}); }
 function waClient(id){ const c=state.clients.find(x=>x.id===id); if(!c)return; if(!c.phone){toast("No phone number on this client");} waOpenModal(c.phone,clientCtx(c),"Introduction"); }
 function waMeeting(id){ const m=state.meetings.find(x=>x.id===id); if(!m)return; const c=state.clients.find(x=>x.id===m.clientId)||{}; const ctx=Object.assign(clientCtx(c),{contact:m.contact||c.contact,rep:m.rep,date:m.date,time:m.time,type:m.type,agenda:m.agenda,location:m.location}); waOpenModal(c.phone||"",ctx,"Meeting reminder"); }
-function waDeal(id){ const d=state.deals.find(x=>x.id===id); if(!d)return; const c=state.clients.find(x=>x.id===d.clientId)||{}; const ctx=Object.assign(clientCtx(c),{rep:d.rep,product:d.product,dealValue:PKR(dealValue(d)),closeDate:d.closeDate}); waOpenModal(c.phone||"",ctx,"Payment reminder"); }
+function waDeal(id){ const d=state.deals.find(x=>x.id===id); if(!d)return; const c=state.clients.find(x=>x.id===d.clientId)||{}; const ctx=Object.assign(clientCtx(c),{rep:d.rep,product:d.product,dealValue:PKR(dealValue(d)),closeDate:d.closeDate,date:d.closeDate,quoteNo:d.quoteNo||"",poNumber:d.poNumber||""}); waOpenModal(c.phone||"",ctx,"Payment reminder"); }
 /* Admin template editor */
 function waAdminCard(){
   const tpls=waTemplates();
@@ -1836,7 +1849,7 @@ function waAdminCard(){
       <div class="settings-row" style="max-width:160px"><label class="help">Default country code</label><input id="wa_cc" value="${esc(waCountry())}"></div>
       <div class="settings-row" style="max-width:260px"><label class="help">Open messages in</label><select id="wa_mode"><option value="app" ${waMode()==="app"?"selected":""}>WhatsApp Desktop app</option><option value="web" ${waMode()==="web"?"selected":""}>WhatsApp Web (browser)</option><option value="phone" ${waMode()==="phone"?"selected":""}>wa.me universal link</option></select></div>
     </div>
-    <div class="help" style="margin-bottom:12px">Merge fields: {company} {contact} {rep} {city} {status} {product} {dealValue} {date} {time} {type} {agenda} {location}</div>
+    <div class="help" style="margin-bottom:12px">Merge fields: {company} {contact} {rep} {city} {status} {product} {dealValue} {quoteNo} {poNumber} {date} {time} {type} {agenda} {location}</div>
     ${rows}
     <div style="display:flex;gap:8px;margin-top:10px"><button class="btn ghost" onclick="waAddTpl()">＋ Add template</button><button class="btn primary" onclick="waSaveTpls()">Save WhatsApp settings</button></div>
   </div></div>`;
