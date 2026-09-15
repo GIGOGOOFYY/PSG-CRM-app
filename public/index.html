@@ -2032,7 +2032,7 @@ function waNormalize(phone){
   return d;
 }
 function mergeMsg(body, ctx){ return body.replace(/\{(\w+)\}/g,(m,k)=> (ctx[k]!==undefined&&ctx[k]!==null&&ctx[k]!=="")? ctx[k] : (k==="contact"?"Sir/Madam": k==="rep"?"PSG Team":"")); }
-function clientCtx(c){ c=c||{}; return {company:c.company,contact:c.contact,rep:c.assignedTo,city:c.city,status:c.status}; }
+function clientCtx(c){ c=c||{}; return {clientId:c.id,company:c.company,contact:c.contact,rep:c.assignedTo,city:c.city,status:c.status}; }
 function waMode(){ return cfg.waMode || "app"; }
 function waUrl(mode,num,text){
   const t=encodeURIComponent(text);
@@ -2098,6 +2098,10 @@ function waOpenModal(phone, ctx, presetName){
         const qc=state.clients.find(x=>x.id===q.clientId);
         if(qc && qc.recordType==="Requirement Received"){ qc.recordType="Quotation Sent"; upsert("clients",qc); }
       }
+    }
+    if(ctx.clientId){
+      const cc=state.clients.find(x=>x.id===ctx.clientId);
+      if(cc && cc.recordType==="New Lead"){ cc.recordType="Contacted"; upsert("clients",cc); }
     }
     waFire(waMode(), num, msg);
     closeModal(); toast("Opening WhatsApp…"+pdfNote);
