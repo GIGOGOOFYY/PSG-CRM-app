@@ -1012,31 +1012,35 @@ function rowActions(kind,id){ return `<div class="rowbtns"><button class="btn sm
 // Client and Lost are closed/terminal: advanceStage() never reaches past Client, and markLost() is a
 // separate explicit action -- nothing here auto-reopens a closed record. Won -- Order Confirmed means
 // the first order was won; a record only becomes Client once it has repeat orders.
-const STAGE_ORDER = ['New Lead','Contacted','Qualified','Requirement Received','Quotation Sent','Negotiation','Technical Approval','PO Pending','Won \u2013 Order Confirmed','Client'];
+const STAGE_ORDER = ['New Inquiry','Quotation Sent','Follow-up / Negotiation','Quotation Approved','Order Confirmed','Advance Payment Received','Sales Order Created','Production Order Created','Production In Process','Production Completed & QC Passed','Balance Payment Received','Ready for Dispatch','Dispatched / Delivered','Order Closed'];
 const STAGE_LOST = 'Lost';
 const STAGE_COLORS = {
-  'New Lead':              {bg:'rgba(100,116,139,.12)', fg:'#475569'},
-  'Contacted':             {bg:'rgba(33,150,243,.10)',  fg:'#1565c0'},
-  'Qualified':             {bg:'rgba(99,102,241,.12)',  fg:'#4338ca'},
-  'Requirement Received':  {bg:'rgba(20,184,166,.12)',  fg:'#0f766e'},
-  'Quotation Sent':        {bg:'rgba(255,152,0,.12)',   fg:'#e65100'},
-  'Negotiation':           {bg:'rgba(234,88,12,.12)',   fg:'#c2410c'},
-  'Technical Approval':    {bg:'rgba(147,51,234,.12)',  fg:'#7e22ce'},
-  'PO Pending':            {bg:'rgba(219,39,119,.12)',  fg:'#be185d'},
-  'Won \u2013 Order Confirmed': {bg:'rgba(31,122,77,.12)', fg:'#1f7a4d'},
-  'Client':                {bg:'rgba(21,87,36,.16)',    fg:'#155724'},
-  'Lost':                  {bg:'rgba(220,38,38,.12)',   fg:'#b91c1c'}
+  'New Inquiry':                    {bg:'rgba(100,116,139,.12)', fg:'#475569'},
+  'Quotation Sent':                 {bg:'rgba(255,152,0,.12)',   fg:'#e65100'},
+  'Follow-up / Negotiation':        {bg:'rgba(234,88,12,.12)',   fg:'#c2410c'},
+  'Quotation Approved':             {bg:'rgba(99,102,241,.12)',  fg:'#4338ca'},
+  'Order Confirmed':                {bg:'rgba(147,51,234,.12)',  fg:'#7e22ce'},
+  'Advance Payment Received':       {bg:'rgba(234,179,8,.14)',   fg:'#a16207'},
+  'Sales Order Created':            {bg:'rgba(20,184,166,.12)',  fg:'#0f766e'},
+  'Production Order Created':       {bg:'rgba(59,130,246,.12)',  fg:'#1d4ed8'},
+  'Production In Process':          {bg:'rgba(33,150,243,.10)',  fg:'#1565c0'},
+  'Production Completed & QC Passed':{bg:'rgba(14,165,164,.14)', fg:'#0e7490'},
+  'Balance Payment Received':       {bg:'rgba(234,179,8,.14)',   fg:'#a16207'},
+  'Ready for Dispatch':             {bg:'rgba(219,39,119,.12)',  fg:'#be185d'},
+  'Dispatched / Delivered':         {bg:'rgba(31,122,77,.12)',   fg:'#1f7a4d'},
+  'Order Closed':                   {bg:'rgba(21,87,36,.16)',    fg:'#155724'},
+  'Lost':                           {bg:'rgba(220,38,38,.12)',   fg:'#b91c1c'}
 };
 const STAGE_BUCKETS = {
-  prospects:  { stages:['New Lead','Contacted'], title:'Prospects', noun:'prospect', addStage:'New Lead', route:'prospects' },
-  leads:      { stages:['Qualified','Requirement Received','Quotation Sent','Negotiation','Technical Approval','PO Pending','Won \u2013 Order Confirmed'], title:'Leads', noun:'lead', addStage:'Qualified', route:'leads' },
-  clientsOnly:{ stages:['Client'], title:'Clients', noun:'client', addStage:'Client', route:'clientsOnly' }
+  prospects:  { stages:['New Inquiry'], title:'Prospects', noun:'prospect', addStage:'New Inquiry', route:'prospects' },
+  leads:      { stages:['Quotation Sent','Follow-up / Negotiation','Quotation Approved','Order Confirmed','Advance Payment Received','Sales Order Created','Production Order Created','Production In Process','Production Completed & QC Passed','Balance Payment Received','Ready for Dispatch','Dispatched / Delivered'], title:'Leads', noun:'lead', addStage:'Quotation Sent', route:'leads' },
+  clientsOnly:{ stages:['Order Closed'], title:'Clients', noun:'client', addStage:'Order Closed', route:'clientsOnly' }
 };
 function stageColor(rt){ return STAGE_COLORS[rt] || {bg:'rgba(100,116,139,.10)', fg:'#64748b'}; }
 function stageLabel(rt){ return rt ? String(rt).toUpperCase() : 'UNKNOWN'; }
 function nextStage(rt){ const i=STAGE_ORDER.indexOf(rt); return (i===-1||i===STAGE_ORDER.length-1) ? null : STAGE_ORDER[i+1]; }
-function isClosedStage(rt){ return rt==='Client' || rt===STAGE_LOST; }
-const PIPE_SHORT={'New Lead':'New Lead','Contacted':'Contacted','Qualified':'Qualified','Requirement Received':'Requirement','Quotation Sent':'Quotation','Negotiation':'Negotiation','Technical Approval':'Tech. Approval','PO Pending':'PO Pending','Won \u2013 Order Confirmed':'Won','Client':'Client'};
+function isClosedStage(rt){ return rt==='Order Closed' || rt===STAGE_LOST; }
+const PIPE_SHORT={'New Inquiry':'Inquiry','Quotation Sent':'Quotation','Follow-up / Negotiation':'Negotiation','Quotation Approved':'Q. Approved','Order Confirmed':'Order Conf.','Advance Payment Received':'Adv. Payment','Sales Order Created':'Sales Order','Production Order Created':'Prod. Order','Production In Process':'In Production','Production Completed & QC Passed':'QC Passed','Balance Payment Received':'Bal. Payment','Ready for Dispatch':'Ready','Dispatched / Delivered':'Delivered','Order Closed':'Closed'};
 
 function renderClients(v, bucketKey){
   const bucket = bucketKey ? STAGE_BUCKETS[bucketKey] : null;
@@ -1096,7 +1100,7 @@ function addVendor(){
     c.isVendor=true; c.id = nextId("C"); state.clients.push(c); await upsert("clients",c); closeModal(); toast("Vendor added"); go("vendors");
   });
 }
-function advanceStage(id){ const c=state.clients.find(x=>x.id===id); if(!c)return; const ns=nextStage(c.recordType); if(!ns){toast("Already at the final stage");return;} c.recordType=ns; if(ns==='Won \u2013 Order Confirmed'){ if(!c.firstContact) c.firstContact=today(); autoCreateDealAndOrder(c); } upsert("clients",c); toast(c.company+" advanced to "+ns); go(route); }
+function advanceStage(id){ const c=state.clients.find(x=>x.id===id); if(!c)return; const ns=nextStage(c.recordType); if(!ns){toast("Already at the final stage");return;} c.recordType=ns; if(ns==='Sales Order Created'){ if(!c.firstContact) c.firstContact=today(); autoCreateDealAndOrder(c); } upsert("clients",c); toast(c.company+" advanced to "+ns); go(route); }
 // Reaching Won implies a real sale: auto-fill the Sales Tracker (and the fulfillment Sales
 // Order behind it) from whatever quote this client actually has, instead of leaving reps to
 // retype client/quote/qty by hand. Guarded so re-advancing (or a duplicate click) never creates
