@@ -1645,7 +1645,16 @@ function quoteRenderItems(){
   wrap.innerHTML=(window.__quoteItems||[]).map((it,i)=>quoteItemRowHtml(i,it)).join("") || '<div class="help">No items yet — click "+ Add item" below.</div>';
   const t=document.getElementById("qi_total"); if(t)t.textContent=PKR(quoteTotal(window.__quoteItems));
 }
-function quoteItemEdit(i,field,val){ if(!window.__quoteItems[i])return; const strFields=["desc","code","type"]; window.__quoteItems[i][field]=strFields.includes(field)?val:num(val); const t=document.getElementById("qi_total"); if(t)t.textContent=PKR(quoteTotal(window.__quoteItems)); }
+function quoteItemEdit(i,field,val){
+  if(!window.__quoteItems[i])return;
+  const strFields=["desc","code","type"];
+  window.__quoteItems[i][field]=strFields.includes(field)?val:num(val);
+  if(field==="sizeW"||field==="sizeH"){
+    const it=window.__quoteItems[i]; const w=num(it.sizeW), h=num(it.sizeH);
+    if(w&&h){ it.sqft=Math.round((w*h/92903.04)*100)/100; const sq=document.getElementById("qi_sqft_"+i); if(sq)sq.value=it.sqft; }
+  }
+  const t=document.getElementById("qi_total"); if(t)t.textContent=PKR(quoteTotal(window.__quoteItems));
+}
 function quoteAddItem(){ window.__quoteItems=window.__quoteItems||[]; window.__quoteItems.push({code:"",desc:"",sizeW:"",sizeH:"",sqft:"",pieces:"",unitPrice:"",type:"Glass"}); quoteRenderItems(); }
 function quoteDelItem(i){ window.__quoteItems.splice(i,1); quoteRenderItems(); }
 function quoteAttachFile(input){
@@ -1702,8 +1711,8 @@ function readQuote(existing){
     pdfData:window.__quotePdfData||""
   });
 }
-function addQuote(){ openModal("New Quote", quoteForm({rep:myRep()||"",status:"Draft"}), async()=>{ const q=readQuote(); if(!q.clientId){toast("Pick a client");return false;} if(!q.items.length){toast("Add at least one item");return false;} q.id=nextId("QT",q.rep); state.quotes.push(q); await upsert("quotes",q); closeModal(); toast("Quote added"); go("quotes"); }, quoteRenderItems); }
-function edit_quote(id){ const q=state.quotes.find(x=>x.id===id); if(!q)return; openModal("Edit Quote", quoteForm(q), async()=>{ const upd=readQuote(q); if(!upd.items.length){toast("Add at least one item");return false;} Object.assign(q,upd); await upsert("quotes",q); closeModal(); toast("Quote updated"); go("quotes"); }, quoteRenderItems); }
+function addQuote(){ openModal("New Quote", quoteForm({rep:myRep()||"",status:"Draft"}), async()=>{ const q=readQuote(); if(!q.clientId){toast("Pick a client");return false;} if(!q.items.length){toast("Add at least one item");return false;} q.id=nextId("QT",q.rep); state.quotes.push(q); await upsert("quotes",q); if(q.status==="Sent"){ const c=state.clients.find(x=>x.id===q.clientId); if(c&&c.recordType==="Requirement Received"){ c.recordType="Quotation Sent"; upsert("clients",c); } } closeModal(); toast("Quote added"); go("quotes"); }, quoteRenderItems); }
+function edit_quote(id){ const q=state.quotes.find(x=>x.id===id); if(!q)return; openModal("Edit Quote", quoteForm(q), async()=>{ const upd=readQuote(q); if(!upd.items.length){toast("Add at least one item");return false;} Object.assign(q,upd); await upsert("quotes",q); if(q.status==="Sent"){ const c=state.clients.find(x=>x.id===q.clientId); if(c&&c.recordType==="Requirement Received"){ c.recordType="Quotation Sent"; upsert("clients",c); } } closeModal(); toast("Quote updated"); go("quotes"); }, quoteRenderItems); }
 function del_quote(id){ confirmDel("Delete this quote?", async()=>{ state.quotes=state.quotes.filter(x=>x.id!==id); await remove("quotes",id); toast("Deleted"); go("quotes"); }); }
 function waQuote(id){
   const q=state.quotes.find(x=>x.id===id); if(!q)return;
@@ -2064,13 +2073,35 @@ function waOpenModal(phone, ctx, presetName){
   openModal("Send WhatsApp"+(ctx.company?" · "+ctx.company:""), html, ()=>{
     const num=document.getElementById("wa_num").value.replace(/[^0-9]/g,""); const msg=document.getElementById("wa_msg").value;
     if(!num){toast("Enter a valid WhatsApp number");return false;}
+    const tplName=document.getElementById("wa_tpl").value;
+    const tpl=(window.__waTpls||[]).find(t=>t.name===tplName);
+    let pdfNote="";
+    if(tpl && /\{quoteNo\}/.test(tpl.body) && ctx.quoteNo){
+      const q=state.quotes.find(x=>x.id===ctx.quoteNo);
+      if(q){
+        if(q.pdfData){
+          const a=document.createElement("a"); a.href=q.pdfData; a.download=q.id+".pdf"; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+          pdfNote=" PDF downloaded — attach it manually in WhatsApp.";
+        }
+        if(q.status==="Draft"){ q.status="Sent"; upsert("quotes",q); }
+        const qc=state.clients.find(x=>x.id===q.clientId);
+        if(qc && qc.recordType==="Requirement Received"){ qc.recordType="Quotation Sent"; upsert("clients",qc); }
+      }
+    }
     waFire(waMode(), num, msg);
-    closeModal(); toast("Opening WhatsApp…");
+    closeModal(); toast("Opening WhatsApp…"+pdfNote);
   });
   setTimeout(()=>{ const b=document.querySelector('.modal footer .btn.primary'); if(b)b.textContent = waMode()==="web"?"🌐 Open WhatsApp Web":"📱 Open in WhatsApp"; },0);
 }
 function waPick(){ const name=document.getElementById("wa_tpl").value; const t=(window.__waTpls||[]).find(x=>x.name===name); if(t)document.getElementById("wa_msg").value=mergeMsg(t.body, window.__waCtx||{}); }
-function waClient(id){ const c=state.clients.find(x=>x.id===id); if(!c)return; if(!c.phone){toast("No phone number on this client");} waOpenModal(c.phone,clientCtx(c),"Introduction"); }
+function waClient(id){
+  const c=state.clients.find(x=>x.id===id); if(!c)return;
+  if(!c.phone){toast("No phone number on this client");}
+  const qs=state.quotes.filter(x=>x.clientId===id).slice().sort((a,b)=>(b.quoteDate||"").localeCompare(a.quoteDate||"")||(b.id||"").localeCompare(a.id||""));
+  const latest=qs[0];
+  const ctx=Object.assign(clientCtx(c),{quoteNo:latest?latest.id:""});
+  waOpenModal(c.phone,ctx,"Introduction");
+}
 function waMeeting(id){ const m=state.meetings.find(x=>x.id===id); if(!m)return; const c=state.clients.find(x=>x.id===m.clientId)||{}; const ctx=Object.assign(clientCtx(c),{contact:m.contact||c.contact,rep:m.rep,date:m.date,time:m.time,type:m.type,agenda:m.agenda,location:m.location}); waOpenModal(c.phone||"",ctx,"Meeting reminder"); }
 function waDeal(id){ const d=state.deals.find(x=>x.id===id); if(!d)return; const c=state.clients.find(x=>x.id===d.clientId)||{}; const ctx=Object.assign(clientCtx(c),{rep:d.rep,product:d.product,dealValue:PKR(dealValue(d)),closeDate:d.closeDate,date:d.closeDate,quoteNo:d.quoteNo||"",poNumber:d.poNumber||""}); waOpenModal(c.phone||"",ctx,"Payment reminder"); }
 /* Admin template editor */
