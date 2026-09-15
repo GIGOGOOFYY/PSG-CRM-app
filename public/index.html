@@ -938,6 +938,7 @@ function renderDashboard(v){
 
    <div class="kpis">
      ${kpi("👥","Total Clients / Leads",cs.length)}
+     ${kpi("🏬","Vendors / Suppliers",vVendors().length)}
      ${kpi("📞","Calls This Month",thisMonth)}
      ${kpi("🗓","Meetings Scheduled",meetingsSched)}
      ${kpi("💰","Total Sales",PKR(totalSales))}
@@ -1335,12 +1336,14 @@ const CSV_FIELD_MAP = {
   "notes":"notes","note":"notes",
   "revenue potential":"revenuePotential","revenuepotential":"revenuePotential",
   "annual revenue potential (pkr)":"revenuePotential","revenue potential (pkr)":"revenuePotential",
-  "record type":"recordType","type":"recordType",
+  "record type":"recordType","pipeline status":"recordType","pipeline":"recordType","stage":"recordType",
+  "type":"accountType","account type":"accountType","account_type":"accountType",
   "active":"active","active?":"active",
 };
 function downloadClientCsvTemplate(){
-  const headers=["Company","Contact","Designation","Phone","Email","City","Industry","Lead Source","Priority","Assigned To","First Contact","Status","Notes","Revenue Potential","Record Type"];
-  const csv=headers.join(",")+"\n"+["Acme Glass Ltd","Ali Khan","Procurement Manager","03001234567","ali@acme.com","Karachi","Construction","Referral","High","Noor","2026-01-15","New Inquiry","Interested in tempered glass","500000","Lead"].join(",")+"\n";
+  const headers=["Company","Type","Contact","Designation","Phone","Email","City","Industry","Lead Source","Priority","Assigned To","First Contact","Pipeline Status","Notes","Revenue Potential"];
+  const csv=headers.join(",")+"\n"+["Acme Glass Ltd","Client","Ali Khan","Procurement Manager","03001234567","ali@acme.com","Karachi","Construction","Referral","High","Noor","2026-01-15","New Inquiry","Interested in tempered glass","500000"].join(",")+"\n"
+    +["Star Supplies","Vendor","Bilal","","03009876543","","Karachi","Supplier","","","","","","",""].join(",")+"\n";
   const blob=new Blob([csv],{type:"text/csv"}); const url=URL.createObjectURL(blob);
   const a=document.createElement("a"); a.href=url; a.download="psg_crm_client_import_template.csv"; a.click(); URL.revokeObjectURL(url);
 }
@@ -1368,7 +1371,11 @@ async function importClientsCsv(file){
     fieldFor.forEach((f,idx)=>{ if(f) obj[f]=String(r[idx]??"").trim(); });
     if(!obj.company) continue;
     const suppliedId=obj._id; delete obj._id;
-    obj.recordType = (()=>{ const raw=String(obj.recordType||"").trim(); if(!raw) return "Client"; const known=STAGE_ORDER.concat([STAGE_LOST]).find(s=>s.toLowerCase()===raw.toLowerCase()); return known||raw; })();
+    // No pipeline-status column filled in -- treat an imported row as an already-existing
+    // customer (Order Closed), not a fresh inquiry -- same convention used for the live
+    // pipeline-stage migration.
+    obj.recordType = (()=>{ const raw=String(obj.recordType||"").trim(); if(!raw) return "Order Closed"; const known=STAGE_ORDER.concat([STAGE_LOST]).find(s=>s.toLowerCase()===raw.toLowerCase()); return known||raw; })();
+    obj.accountType = (()=>{ const raw=String(obj.accountType||"").trim(); if(!raw) return "Client"; const known=["Client","Vendor","Supplier"].find(s=>s.toLowerCase()===raw.toLowerCase()); return known||"Client"; })();
     obj.active = obj.active ? !/^(no|false|0)$/i.test(obj.active) : true;
     obj.revenuePotential = num(obj.revenuePotential);
     if(obj.phone) obj.phone = normalizePhone(obj.phone);
