@@ -504,7 +504,7 @@ const SIDEBAR_NAV = [
   { section:"Inventory", items:[
     { id:"_prod",     icon:"package",        label:"Products",        route:"_soon" },
     { id:"_price",    icon:"tag",            label:"Price Books",     route:"_soon" },
-    { id:"_quotes",   icon:"clipboard",      label:"Quotes",          route:"deals" },
+    { id:"_quotes",   icon:"clipboard",      label:"Quotes",          route:"quotes" },
     { id:"_so",       icon:"shopping-cart",  label:"Sales Orders",    route:"deals" },
     { id:"_po",       icon:"truck",          label:"Purchase Orders", route:"deals" },
     { id:"_inv",      icon:"receipt",        label:"Invoices",        route:"deals" },
@@ -527,7 +527,7 @@ function renderSidebar(){
   // Build set of real route IDs that are "active" — includes aliased ones
   const routeAliases = { clients:["_wq","_accounts","_vend"],
     leads:["_leads"], clientsOnly:["_contacts"], tasks:["_tasks"],
-    deals:["_quotes","_so","_po","_inv"], performance:["_forecast"], admin:["_agents"],
+    deals:["_so","_po","_inv"], quotes:[], performance:["_forecast"], admin:["_agents"],
     dashboard:["_req"] };
   const activeIds = new Set([cur]);
   (routeAliases[cur]||[]).forEach(id=>activeIds.add(id));
@@ -607,14 +607,15 @@ const DD = {
   collectStatus:["Received","Partial","Pending"],
   yesno:["Yes","No"],
   interest:["1","2","3","4","5"],
-  taskStatus:["Open","In Progress","Done"]
+  taskStatus:["Open","In Progress","Done"],
+  quoteStatus:["Draft","Sent","Accepted","Rejected","Expired"]
 };
 /* union a base list with distinct values found in the seeded data (nothing lost) */
 function activeRepNames(){ const emp=(state.users||[]).filter(u=>u.role==="employee").map(u=>u.repName||u.username).filter(Boolean); return emp.length? [...new Set(emp)] : [...DD.reps]; }
 function vocab(key, extra){ const base = key==="reps" ? activeRepNames() : DD[key]; const s=[...base]; (extra||[]).forEach(v=>{ if(v && !s.includes(v)) s.push(v); }); return s; }
 
 /* ---------- state ---------- */
-let state = { users:[], clients:[], calls:[], meetings:[], deals:[], tasks:[], repTargets:[] };
+let state = { users:[], clients:[], calls:[], meetings:[], deals:[], tasks:[], repTargets:[], quotes:[] };
 let session = null;          // {username, role, repName}
 const DEFAULT_SB_URL="https://qeyeonucnlsmbeomrrwt.supabase.co";
 const DEFAULT_SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFleWVvbnVjbmxzbWJlb21ycnd0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQxODk0OTksImV4cCI6MjA5OTc2NTQ5OX0.SmacOxNWOR4HLCOQf_gkHYHFTqBWMDNWrpFAKHP5nns";
@@ -675,7 +676,7 @@ function repStats(rep){
    PERSISTENCE
    ====================================================================== */
 function localKey(){ return "psgcrm_data"; }
-function saveLocal(){ localStorage.setItem(localKey(), JSON.stringify({users:state.users,clients:state.clients,calls:state.calls,meetings:state.meetings,deals:state.deals,repTargets:state.repTargets})); }
+function saveLocal(){ localStorage.setItem(localKey(), JSON.stringify({users:state.users,clients:state.clients,calls:state.calls,meetings:state.meetings,deals:state.deals,repTargets:state.repTargets,quotes:state.quotes})); }
 function loadLocalOrSeed(){
   let d=null; try{ d=JSON.parse(localStorage.getItem(localKey())); }catch(e){}
   if(d && d.clients){ state=Object.assign(state,d); }
@@ -701,6 +702,9 @@ const MAP = {
   deals:{table:"crm_deals", pk:"id",
     to:d=>({id:d.id,close_date:d.closeDate||null,rep:d.rep,client_id:d.clientId,company:d.company,product:d.product,qty:num(d.qty),unit_price:num(d.unitPrice),deal_value:dealValue(d),collect_status:d.collectStatus,collected:dealCollected(d),comm_rate:num(d.commRate),comm_earned:dealCommission(d),remarks:d.remarks,quote_no:d.quoteNo||null,po_number:d.poNumber||null}),
     from:r=>({id:r.id,closeDate:r.close_date||"",rep:r.rep,clientId:r.client_id,company:r.company,product:r.product,qty:r.qty,unitPrice:r.unit_price,collectStatus:r.collect_status,commRate:r.comm_rate,remarks:r.remarks,quoteNo:r.quote_no||"",poNumber:r.po_number||""}) },
+  quotes:{table:"crm_quotes", pk:"id",
+    to:q=>({id:q.id,quote_date:q.quoteDate||null,valid_until:q.validUntil||null,rep:q.rep,client_id:q.clientId,company:q.company,contact:q.contact,status:q.status,items:q.items||[],notes:q.notes,pdf_data:q.pdfData||null}),
+    from:r=>({id:r.id,quoteDate:r.quote_date||"",validUntil:r.valid_until||"",rep:r.rep,clientId:r.client_id,company:r.company,contact:r.contact,status:r.status,items:r.items||[],notes:r.notes,pdfData:r.pdf_data||""}) },
   tasks:{table:"crm_tasks", pk:"id",
     to:t=>({id:t.id,title:t.title,due_date:t.dueDate||null,assigned_to:t.assignedTo,assigned_by:t.assignedBy,priority:t.priority,status:t.status,client_id:t.clientId||null,company:t.company||"",notes:t.notes,approved:!!t.approved,created_by_admin:!!t.createdByAdmin}),
     from:r=>({id:r.id,title:r.title,dueDate:r.due_date||"",assignedTo:r.assigned_to,assignedBy:r.assigned_by,priority:r.priority,status:r.status,clientId:r.client_id||"",company:r.company||"",notes:r.notes,approved:!!r.approved,createdByAdmin:!!r.created_by_admin}) },
@@ -721,7 +725,7 @@ function initSupabase(){
 async function cloudPull(){
   if(!sb) return false;
   let anyOK=false;
-  for(const k of ["users","clients","calls","meetings","deals","tasks","repTargets"]){
+  for(const k of ["users","clients","calls","meetings","deals","tasks","repTargets","quotes"]){
     try{
       const PAGE=1000; let all=[]; let offset=0;
       while(true){
@@ -829,7 +833,7 @@ function renderConn(){
 function go(r){ route=r; searchTerm=""; renderSidebar(); renderRoute(); window.scrollTo(0,0); }
 function renderRoute(){
   const v=document.getElementById("view");
-  ({dashboard:renderDashboard,analytics:renderAnalytics,clients:renderClients,leads:renderLeadsOnly,clientsOnly:renderClientsOnly,prospects:renderProspectsOnly,tasks:renderTasks,calls:renderCalls,meetings:renderMeetings,deals:renderDeals,performance:renderPerformance,admin:renderAdmin}[route]||renderDashboard)(v);
+  ({dashboard:renderDashboard,analytics:renderAnalytics,clients:renderClients,leads:renderLeadsOnly,clientsOnly:renderClientsOnly,prospects:renderProspectsOnly,tasks:renderTasks,calls:renderCalls,meetings:renderMeetings,deals:renderDeals,quotes:renderQuotes,quoteView:renderQuoteView,performance:renderPerformance,admin:renderAdmin}[route]||renderDashboard)(v);
 }
 
 /* ======================================================================
@@ -1565,6 +1569,134 @@ function edit_deal(id){ const d=state.deals.find(x=>x.id===id); if(!d)return; op
 function del_deal(id){ confirmDel("Delete this deal?", async()=>{ state.deals=state.deals.filter(x=>x.id!==id); await remove("deals",id); toast("Deleted"); go("deals"); }); }
 
 /* ======================================================================
+   QUOTES
+   ====================================================================== */
+function vQuotes(){ const r=myRep(); return r? state.quotes.filter(q=>q.rep===r) : state.quotes; }
+function quoteTotal(items){ return (items||[]).reduce((s,it)=>s+num(it.qty)*num(it.unitPrice),0); }
+function quoteStatusPill(s){ const c={Draft:"gray",Sent:"amber",Accepted:"green",Rejected:"red",Expired:"gray"}[s]||"gray"; return `<span class="pill ${c}">${esc(s||"Draft")}</span>`; }
+function renderQuotes(v){
+  const rows=vQuotes().filter(matchSearch);
+  const body=rows.length?rows.map(q=>{
+    const total=quoteTotal(q.items);
+    return `<tr>
+    <td>${esc(q.id)}</td><td>${esc(q.quoteDate)}</td><td><b>${esc(q.company)}</b></td><td>${esc(q.contact)}</td><td>${esc(q.rep)}</td>
+    <td class="num">${(q.items||[]).length}</td>
+    <td class="num"><b>${PKR(total)}</b></td>
+    <td>${quoteStatusPill(q.status)}</td>
+    <td>${q.pdfData?"\ud83d\udcce":""}</td>
+    <td class="no-print"><div class="rowbtns">
+      <button class="btn sm ghost" title="View / Print" onclick="viewQuote('${esc(q.id)}')">\ud83d\udc41</button>
+      <button class="btn sm ghost" title="Send WhatsApp" onclick="waQuote('${esc(q.id)}')">\ud83d\udcac</button>
+      <button class="btn sm ghost" title="Convert to Deal" onclick="convertQuoteToDeal('${esc(q.id)}')">\u2794 Deal</button>
+      <button class="btn sm ghost" onclick="edit_quote('${esc(q.id)}')">Edit</button>
+      <button class="btn sm ghost danger" onclick="del_quote('${esc(q.id)}')">\u2715</button>
+    </div></td></tr>`;
+  }).join("")
+    :`<tr><td colspan="10"><div class="empty">No quotes yet.</div></td></tr>`;
+  const grandTotal=rows.reduce((s,q)=>s+quoteTotal(q.items),0);
+  v.innerHTML=pagehead("Quotes","Quotes \u2014 "+vQuotes().length+" \u00b7 Value "+PKR(grandTotal)+(isAdmin()?"":" (yours)"),"Add Quote","addQuote()",true)+
+   `<div class="card tablewrap"><table><thead><tr><th>Quote #</th><th>Date</th><th>Client</th><th>Contact</th><th>Rep</th><th class="num">Items</th><th class="num">Total</th><th>Status</th><th>File</th><th></th></tr></thead><tbody>${body}</tbody></table></div>`;
+}
+function quoteItemRowHtml(i,it){
+  it=it||{};
+  return `<div class="card" style="margin:6px 0;padding:10px;background:var(--panel2)"><div class="formgrid">
+    <div class="field full"><label>Description</label><input id="qi_desc_${i}" list="dl_products" value="${esc(it.desc||"")}" oninput="quoteItemEdit(${i},'desc',this.value)"></div>
+    <div class="field"><label>Qty (sqft)</label><input id="qi_qty_${i}" type="number" step="any" value="${esc(it.qty||"")}" oninput="quoteItemEdit(${i},'qty',this.value)"></div>
+    <div class="field"><label>Unit Price (PKR)</label><input id="qi_price_${i}" type="number" step="any" value="${esc(it.unitPrice||"")}" oninput="quoteItemEdit(${i},'unitPrice',this.value)"></div>
+    <div class="field"><label>Line Total</label><input readonly class="calc" value="${PKR(num(it.qty)*num(it.unitPrice))}"></div>
+  </div><button class="btn sm ghost danger" onclick="quoteDelItem(${i})">Remove item</button></div>`;
+}
+function quoteRenderItems(){
+  const wrap=document.getElementById("qi_rows"); if(!wrap)return;
+  wrap.innerHTML=(window.__quoteItems||[]).map((it,i)=>quoteItemRowHtml(i,it)).join("") || '<div class="help">No items yet \u2014 click "+ Add item" below.</div>';
+  const t=document.getElementById("qi_total"); if(t)t.textContent=PKR(quoteTotal(window.__quoteItems));
+}
+function quoteItemEdit(i,field,val){ if(!window.__quoteItems[i])return; window.__quoteItems[i][field]=field==="desc"?val:num(val); const t=document.getElementById("qi_total"); if(t)t.textContent=PKR(quoteTotal(window.__quoteItems)); }
+function quoteAddItem(){ window.__quoteItems=window.__quoteItems||[]; window.__quoteItems.push({desc:"",qty:"",unitPrice:""}); quoteRenderItems(); }
+function quoteDelItem(i){ window.__quoteItems.splice(i,1); quoteRenderItems(); }
+function quoteAttachFile(input){
+  const f=input.files&&input.files[0]; if(!f)return;
+  if(f.size>6*1024*1024){ toast("PDF too large (max ~6MB)"); input.value=""; return; }
+  const reader=new FileReader();
+  reader.onload=()=>{ window.__quotePdfData=reader.result; window.__quotePdfName=f.name; const s=document.getElementById("qi_pdfname"); if(s)s.textContent="Attached: "+f.name; };
+  reader.readAsDataURL(f);
+}
+function quoteRemoveFile(){ window.__quotePdfData=""; window.__quotePdfName=""; const s=document.getElementById("qi_pdfname"); if(s)s.textContent="No file attached"; const inp=document.getElementById("qi_pdf"); if(inp)inp.value=""; }
+function fillCompanyQuote(){ const id=document.getElementById("qf_clientId").value; const c=state.clients.find(x=>x.id===id); if(c){ const ct=document.getElementById("qf_contact"); if(ct&&!ct.value)ct.value=c.contact||""; } }
+function quoteForm(q){ q=q||{};
+  window.__quoteItems=(q.items&&q.items.length)?q.items.map(it=>Object.assign({},it)):[{desc:"",qty:"",unitPrice:""}];
+  window.__quotePdfData=q.pdfData||""; window.__quotePdfName=q.pdfData?"(existing attachment)":"";
+  const rep=myRep();
+  const sel=(key,val,extra)=>`<select id="qf_${key}"><option value=""></option>${vocab(key,extra).map(o=>`<option ${o===val?"selected":""}>${esc(o)}</option>`).join("")}</select>`;
+  return `<datalist id="dl_products">${DD.product.map(p=>`<option value="${esc(p)}">`).join("")}</datalist>
+    <div class="formgrid">
+      <div class="field"><label>Quote Date</label><input id="qf_quoteDate" type="date" value="${esc(q.quoteDate||today())}"></div>
+      <div class="field"><label>Valid Until</label><input id="qf_validUntil" type="date" value="${esc(q.validUntil||"")}"></div>
+      <div class="field ${rep?'locked':''}"><label>Sales Rep</label>${sel("reps",q.rep||rep,[q.rep])}</div>
+      <div class="field full"><label>Client</label><select id="qf_clientId" onchange="fillCompanyQuote()">${clientOptions(q.clientId)}</select></div>
+      <div class="field"><label>Contact Person</label><input id="qf_contact" value="${esc(q.contact||"")}"></div>
+      <div class="field"><label>Status</label>${sel("quoteStatus",q.status||"Draft",[q.status])}</div>
+    </div>
+    <h4 style="margin:14px 0 4px">Line items</h4>
+    <div id="qi_rows"></div>
+    <div style="display:flex;gap:8px;align-items:center;margin:8px 0"><button class="btn sm ghost" onclick="quoteAddItem()">\uff0b Add item</button><div class="help">Total: <b id="qi_total">${PKR(quoteTotal(window.__quoteItems))}</b></div></div>
+    <div class="field full"><label>Notes / Terms</label><textarea id="qf_notes">${esc(q.notes||"")}</textarea></div>
+    <div class="field full"><label>Attach PDF (optional \u2014 if the quotation was prepared outside the CRM)</label>
+      <input id="qi_pdf" type="file" accept="application/pdf" onchange="quoteAttachFile(this)">
+      <div class="help" id="qi_pdfname">${q.pdfData?"Attached: "+esc(window.__quotePdfName||"file.pdf"):"No file attached"}</div>
+      ${q.pdfData?'<button class="btn sm ghost danger" onclick="quoteRemoveFile()">Remove attachment</button>':""}
+    </div>`;
+}
+function readQuote(existing){
+  const id=document.getElementById("qf_clientId").value; const cl=state.clients.find(x=>x.id===id); const rep=myRep();
+  const items=(window.__quoteItems||[]).filter(it=>(it.desc&&it.desc.trim())||num(it.qty)||num(it.unitPrice));
+  return Object.assign({},existing||{},{
+    quoteDate:document.getElementById("qf_quoteDate").value,
+    validUntil:document.getElementById("qf_validUntil").value,
+    rep:rep?rep:document.getElementById("qf_reps").value,
+    clientId:id, company:cl?cl.company:"", contact:document.getElementById("qf_contact").value,
+    status:document.getElementById("qf_quoteStatus").value||"Draft",
+    items, notes:document.getElementById("qf_notes").value,
+    pdfData:window.__quotePdfData||""
+  });
+}
+function addQuote(){ openModal("New Quote", quoteForm({rep:myRep()||"",status:"Draft"}), async()=>{ const q=readQuote(); if(!q.clientId){toast("Pick a client");return false;} if(!q.items.length){toast("Add at least one item");return false;} q.id=nextId("QT",q.rep); state.quotes.push(q); await upsert("quotes",q); closeModal(); toast("Quote added"); go("quotes"); }, quoteRenderItems); }
+function edit_quote(id){ const q=state.quotes.find(x=>x.id===id); if(!q)return; openModal("Edit Quote", quoteForm(q), async()=>{ const upd=readQuote(q); if(!upd.items.length){toast("Add at least one item");return false;} Object.assign(q,upd); await upsert("quotes",q); closeModal(); toast("Quote updated"); go("quotes"); }, quoteRenderItems); }
+function del_quote(id){ confirmDel("Delete this quote?", async()=>{ state.quotes=state.quotes.filter(x=>x.id!==id); await remove("quotes",id); toast("Deleted"); go("quotes"); }); }
+function waQuote(id){ const q=state.quotes.find(x=>x.id===id); if(!q)return; const c=state.clients.find(x=>x.id===q.clientId)||{}; const ctx=Object.assign(clientCtx(c),{contact:q.contact||c.contact,rep:q.rep,quoteNo:q.id}); waOpenModal(c.phone||"",ctx,"Quotation ready"); }
+function convertQuoteToDeal(id){
+  const q=state.quotes.find(x=>x.id===id); if(!q)return;
+  const total=quoteTotal(q.items);
+  const product=(q.items||[]).map(it=>it.desc).filter(Boolean).join(", ")||"See quote "+q.id;
+  const d={closeDate:today(),rep:q.rep,clientId:q.clientId,company:q.company,product,qty:1,unitPrice:total,quoteNo:q.id,poNumber:"",collectStatus:"Pending",commRate:repCommRate(q.rep),remarks:"Converted from quote "+q.id};
+  d.id=nextId("DL",d.rep); state.deals.push(d);
+  upsert("deals",d);
+  if(q.status!=="Accepted"){ q.status="Accepted"; upsert("quotes",q); }
+  toast("Deal created from quote"); go("deals");
+}
+function viewQuote(id){ window.__quoteViewId=id; go("quoteView"); }
+function renderQuoteView(v){
+  const q=state.quotes.find(x=>x.id===window.__quoteViewId);
+  if(!q){ v.innerHTML='<div class="card" style="padding:20px">Quote not found. <button class="btn sm ghost" onclick="go(\'quotes\')">Back</button></div>'; return; }
+  const c=state.clients.find(x=>x.id===q.clientId)||{};
+  const rows=(q.items||[]).map(it=>`<tr><td>${esc(it.desc)}</td><td class="num">${esc(it.qty)}</td><td class="num">${PKR(it.unitPrice)}</td><td class="num">${PKR(num(it.qty)*num(it.unitPrice))}</td></tr>`).join("");
+  v.innerHTML=`<div class="pagehead no-print"><div><h2>Quote ${esc(q.id)}</h2><div class="sub">${quoteStatusPill(q.status)}</div></div>
+    <div class="toolbar"><button class="btn ghost sm" onclick="go('quotes')">\u2190 Back</button><button class="btn ghost sm" onclick="waQuote('${esc(q.id)}')">\ud83d\udcac WhatsApp</button><button class="btn primary sm" onclick="window.print()">\ud83d\udda8 Print / Save PDF</button></div></div>
+    <div class="card" style="padding:28px;max-width:800px;margin:0 auto">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid var(--accent);padding-bottom:14px;margin-bottom:18px">
+        <div><h2 style="margin:0">Pakistan Safety Glass</h2><div class="help">Est. 1969, Karachi</div></div>
+        <div style="text-align:right"><div><b>Quotation</b></div><div class="help">Quote #: ${esc(q.id)}</div><div class="help">Date: ${esc(q.quoteDate)}</div>${q.validUntil?`<div class="help">Valid until: ${esc(q.validUntil)}</div>`:""}</div>
+      </div>
+      <div style="margin-bottom:16px"><b>To:</b> ${esc(q.company)}${q.contact?" \u2014 "+esc(q.contact):""}${c.phone?"<br>"+esc(c.phone):""}${c.email?"<br>"+esc(c.email):""}</div>
+      <table style="width:100%;border-collapse:collapse"><thead><tr style="border-bottom:1px solid var(--border)"><th style="text-align:left;padding:6px 0">Description</th><th class="num">Qty (sqft)</th><th class="num">Unit \u20a8</th><th class="num">Line Total</th></tr></thead><tbody>${rows}</tbody>
+      <tfoot><tr><td colspan="3" style="text-align:right;padding-top:10px"><b>Total</b></td><td class="num" style="padding-top:10px"><b>${PKR(quoteTotal(q.items))}</b></td></tr></tfoot></table>
+      ${q.notes?`<div style="margin-top:18px"><b>Notes / Terms</b><div style="white-space:pre-wrap">${esc(q.notes)}</div></div>`:""}
+      ${q.pdfData?`<div style="margin-top:14px"><a href="${q.pdfData}" download="${esc(q.id)}.pdf" class="btn sm ghost">\u2b07 Download attached PDF</a></div>`:""}
+      <div class="help" style="margin-top:24px">Prepared by ${esc(q.rep||"")}, Pakistan Safety Glass</div>
+    </div>`;
+}
+
+/* ======================================================================
    PERFORMANCE (admin)
    ====================================================================== */
 function renderPerformance(v){
@@ -1700,7 +1832,7 @@ async function normalizeClientIds(){
 function connectCloud(){ cfg.url=document.getElementById("cfg_url").value.trim(); cfg.key=document.getElementById("cfg_key").value.trim(); saveCfg(); initSupabase();
   cloudPull().then(ok=>{ renderConn(); if(ok){toast("Connected — cloud data loaded");} else if(sb){toast("Could not read tables — check keys & schema");} go("admin"); }); }
 async function pushAllToCloud(){ if(!sb){toast("Connect a database first");return;} let n=0;
-  for(const k of ["users","clients","calls","meetings","deals","repTargets"]){ for(const o of state[k]){ try{ await sb.from(MAP[k].table).upsert(MAP[k].to(o)); n++; }catch(e){} } }
+  for(const k of ["users","clients","calls","meetings","deals","repTargets","quotes"]){ for(const o of state[k]){ try{ await sb.from(MAP[k].table).upsert(MAP[k].to(o)); n++; }catch(e){} } }
   cloudOK=true; renderConn(); toast(n+" records pushed to cloud"); }
 function userForm(u){ u=u||{}; const isEdit=!!u.username;
   return `<div class="formgrid">
@@ -1722,7 +1854,7 @@ function repCode(rep){ return (rep||"GEN").replace(/[^A-Za-z]/g,"").slice(0,3).t
 function nextId(kind, rep){
   if(kind==="C"){ return nextClientId(); }
   const prefix=repCode(rep)+"-"+kind+"-";
-  const nums=state[{CL:"calls",MT:"meetings",DL:"deals",TS:"tasks"}[kind]].filter(x=>String(x.id).startsWith(prefix)).map(x=>num(String(x.id).split("-").pop()));
+  const nums=state[{CL:"calls",MT:"meetings",DL:"deals",TS:"tasks",QT:"quotes"}[kind]].filter(x=>String(x.id).startsWith(prefix)).map(x=>num(String(x.id).split("-").pop()));
   const next=(nums.length?Math.max(...nums):0)+1;
   return prefix+String(next).padStart(3,"0");
 }
