@@ -1073,7 +1073,7 @@ function renderClients(v, bucketKey){
   const pageSub = bucket ? (rows.length+" "+bucket.noun+(rows.length===1?"":"s")+(isAdmin()?"":" (yours)"))
     : ("All companies — every pipeline stage — "+vClients().length+" records"+(isAdmin()?"":" (yours)"));
   const addLabel = bucket ? "Add "+bucket.title.replace(/s$/,"") : "Add Record";
-  const addFn = bucket ? `addClient('${bucket.addStage}','${bucket.route}','${bucket.title.replace(/s$/,"")}')` : "addClient('New Lead','clients','Record')";
+  const addFn = bucket ? `addClient('${bucket.addStage}','${bucket.route}','${bucket.title.replace(/s$/,"")}')` : "addClient('New Inquiry','clients','Record')";
   v.innerHTML = pagehead(pageTitle,pageSub,addLabel,addFn,true,importBtns+deleteAllBtn)+
    `<div class="card tablewrap"><table style="min-width:980px"><colgroup><col style="width:62px"><col style="width:78px"><col style="min-width:160px;white-space:normal"><col style="min-width:130px;white-space:normal"><col style="width:120px"><col style="width:110px"><col style="width:110px"><col style="width:90px"><col style="width:100px"><col style="width:110px"></colgroup><thead><tr><th>Stage</th><th>ID</th><th>Company</th><th>Contact</th><th>Phone</th><th>Industry</th><th>Status</th><th>Rep</th><th class="num">Total Sales</th><th></th></tr></thead><tbody>${body}</tbody></table></div>`;
 }
@@ -1114,10 +1114,10 @@ function autoCreateDealAndOrder(c){
   let deal = bestQuote ? state.deals.find(x=>x.clientId===c.id && x.quoteNo===bestQuote.id) : null;
   if(!deal){
     if(bestQuote){
-      deal = dealFromQuote(bestQuote, {remarks:"Auto-created \u2014 "+c.company+" advanced to Won \u2013 Order Confirmed"});
+      deal = dealFromQuote(bestQuote, {remarks:"Auto-created \u2014 "+c.company+" advanced to Sales Order Created"});
     } else {
       const rep=c.assignedTo||myRep()||"";
-      deal = {closeDate:today(),rep,clientId:c.id,company:c.company,product:"",qty:0,unitPrice:0,quoteNo:"",poNumber:"",collectStatus:"Pending",collected:0,commRate:repCommRate(rep),remarks:"Auto-created \u2014 "+c.company+" advanced to Won \u2013 Order Confirmed (no quote on file yet)"};
+      deal = {closeDate:today(),rep,clientId:c.id,company:c.company,product:"",qty:0,unitPrice:0,quoteNo:"",poNumber:"",collectStatus:"Pending",collected:0,commRate:repCommRate(rep),remarks:"Auto-created \u2014 "+c.company+" advanced to Sales Order Created (no quote on file yet)"};
     }
     deal.id=nextId("DL",deal.rep); state.deals.push(deal); upsert("deals",deal);
     if(bestQuote && bestQuote.status!=="Accepted"){ bestQuote.status="Accepted"; upsert("quotes",bestQuote); }
@@ -1276,7 +1276,7 @@ function findDupClient(candidate, excludeId){
   });
 }
 function addClient(defaultType, postRoute, label){ let dupOK=false;
-  const rt = defaultType||"New Lead"; const dest = postRoute||route||"clients"; const lbl = label||rt;
+  const rt = defaultType||"New Inquiry"; const dest = postRoute||route||"clients"; const lbl = label||rt;
   openModal("New "+lbl, clientForm({recordType:rt,assignedTo:myRep()||""}), async()=>{
   const c=readClient(); if(!c.company){toast("Company name is required");return false;}
   const dup=findDupClient(c);
@@ -1329,7 +1329,7 @@ const CSV_FIELD_MAP = {
 };
 function downloadClientCsvTemplate(){
   const headers=["Company","Contact","Designation","Phone","Email","City","Industry","Lead Source","Priority","Assigned To","First Contact","Status","Notes","Revenue Potential","Record Type"];
-  const csv=headers.join(",")+"\n"+["Acme Glass Ltd","Ali Khan","Procurement Manager","03001234567","ali@acme.com","Karachi","Construction","Referral","High","Noor","2026-01-15","Contacted","Interested in tempered glass","500000","Lead"].join(",")+"\n";
+  const csv=headers.join(",")+"\n"+["Acme Glass Ltd","Ali Khan","Procurement Manager","03001234567","ali@acme.com","Karachi","Construction","Referral","High","Noor","2026-01-15","New Inquiry","Interested in tempered glass","500000","Lead"].join(",")+"\n";
   const blob=new Blob([csv],{type:"text/csv"}); const url=URL.createObjectURL(blob);
   const a=document.createElement("a"); a.href=url; a.download="psg_crm_client_import_template.csv"; a.click(); URL.revokeObjectURL(url);
 }
@@ -1936,8 +1936,8 @@ function readQuote(existing){
     pdfData:window.__quotePdfData||""
   });
 }
-function addQuote(){ openModal("New Quote", quoteForm({rep:myRep()||"",status:"Draft"}), async()=>{ const q=readQuote(); if(!q.clientId){toast("Pick a client");return false;} if(!q.items.length){toast("Add at least one item");return false;} q.id=nextId("QT",q.rep); state.quotes.push(q); await upsert("quotes",q); if(q.status==="Sent"){ const c=state.clients.find(x=>x.id===q.clientId); if(c&&c.recordType==="Requirement Received"){ c.recordType="Quotation Sent"; upsert("clients",c); } } closeModal(); toast("Quote added"); go("quotes"); }, quoteRenderItems); }
-function edit_quote(id){ const q=state.quotes.find(x=>x.id===id); if(!q)return; openModal("Edit Quote", quoteForm(q), async()=>{ const upd=readQuote(q); if(!upd.items.length){toast("Add at least one item");return false;} Object.assign(q,upd); await upsert("quotes",q); if(q.status==="Sent"){ const c=state.clients.find(x=>x.id===q.clientId); if(c&&c.recordType==="Requirement Received"){ c.recordType="Quotation Sent"; upsert("clients",c); } } closeModal(); toast("Quote updated"); go("quotes"); }, quoteRenderItems); }
+function addQuote(){ openModal("New Quote", quoteForm({rep:myRep()||"",status:"Draft"}), async()=>{ const q=readQuote(); if(!q.clientId){toast("Pick a client");return false;} if(!q.items.length){toast("Add at least one item");return false;} q.id=nextId("QT",q.rep); state.quotes.push(q); await upsert("quotes",q); if(q.status==="Sent"){ const c=state.clients.find(x=>x.id===q.clientId); if(c&&c.recordType==="New Inquiry"){ c.recordType="Quotation Sent"; upsert("clients",c); } } closeModal(); toast("Quote added"); go("quotes"); }, quoteRenderItems); }
+function edit_quote(id){ const q=state.quotes.find(x=>x.id===id); if(!q)return; openModal("Edit Quote", quoteForm(q), async()=>{ const upd=readQuote(q); if(!upd.items.length){toast("Add at least one item");return false;} Object.assign(q,upd); await upsert("quotes",q); if(q.status==="Sent"){ const c=state.clients.find(x=>x.id===q.clientId); if(c&&c.recordType==="New Inquiry"){ c.recordType="Quotation Sent"; upsert("clients",c); } } closeModal(); toast("Quote updated"); go("quotes"); }, quoteRenderItems); }
 function del_quote(id){ confirmDel("Delete this quote?", async()=>{ state.quotes=state.quotes.filter(x=>x.id!==id); await remove("quotes",id); toast("Deleted"); go("quotes"); }); }
 function waQuote(id){
   const q=state.quotes.find(x=>x.id===id); if(!q)return;
@@ -2324,13 +2324,10 @@ function waOpenModal(phone, ctx, presetName){
         }
         if(q.status==="Draft"){ q.status="Sent"; upsert("quotes",q); }
         const qc=state.clients.find(x=>x.id===q.clientId);
-        if(qc && qc.recordType==="Requirement Received"){ qc.recordType="Quotation Sent"; upsert("clients",qc); }
+        if(qc && qc.recordType==="New Inquiry"){ qc.recordType="Quotation Sent"; upsert("clients",qc); }
       }
     }
-    if(ctx.clientId){
-      const cc=state.clients.find(x=>x.id===ctx.clientId);
-      if(cc && cc.recordType==="New Lead"){ cc.recordType="Contacted"; upsert("clients",cc); }
-    }
+    // (no auto stage-bump on a plain WhatsApp send \u2014 'New Inquiry' has no finer sub-stage in the unified flow; sending a quote still bumps to 'Quotation Sent' above)
     waFire(waMode(), num, msg);
     closeModal(); toast("Opening WhatsApp…"+pdfNote);
   });
