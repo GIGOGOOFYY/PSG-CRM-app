@@ -692,8 +692,8 @@ function loadLocalOrSeed(){
 /* ----- Supabase field mapping (snake_case DB <-> camelCase app) ----- */
 const MAP = {
   clients:{table:"crm_clients", pk:"id",
-    to:c=>({id:c.id,company:c.company,contact:c.contact,designation:c.designation,phone:c.phone,email:c.email,city:c.city,industry:c.industry,lead_source:c.leadSource,priority:c.priority,assigned_to:c.assignedTo,first_contact:c.firstContact||null,last_contact:c.lastContact||null,status:c.status,notes:c.notes,revenue_potential:num(c.revenuePotential),record_type:c.recordType,active:!!c.active,account_type:c.accountType||'Prospect'}),
-    from:r=>({id:r.id,company:r.company,contact:r.contact,designation:r.designation,phone:r.phone,email:r.email,city:r.city,industry:r.industry,leadSource:r.lead_source,priority:r.priority,assignedTo:r.assigned_to,firstContact:r.first_contact||"",lastContact:r.last_contact||"",status:r.status,notes:r.notes,revenuePotential:r.revenue_potential,recordType:r.record_type,active:r.active,accountType:r.account_type||'Prospect'}) },
+    to:c=>({id:c.id,company:c.company,contact:c.contact,designation:c.designation,phone:c.phone,email:c.email,city:c.city,industry:c.industry,lead_source:c.leadSource,priority:c.priority,assigned_to:c.assignedTo,first_contact:c.firstContact||null,last_contact:c.lastContact||null,status:c.status,notes:c.notes,revenue_potential:num(c.revenuePotential),record_type:c.recordType,active:!!c.active,account_type:c.accountType||'Client'}),
+    from:r=>({id:r.id,company:r.company,contact:r.contact,designation:r.designation,phone:r.phone,email:r.email,city:r.city,industry:r.industry,leadSource:r.lead_source,priority:r.priority,assignedTo:r.assigned_to,firstContact:r.first_contact||"",lastContact:r.last_contact||"",status:r.status,notes:r.notes,revenuePotential:r.revenue_potential,recordType:r.record_type,active:r.active,accountType:r.account_type||'Client'}) },
   calls:{table:"crm_calls", pk:"id",
     to:c=>({id:c.id,call_date:c.date||null,rep:c.rep,client_id:c.clientId,company:c.company,contact:c.contact,duration:num(c.duration),result:c.result,interest:num(c.interest),next_action:c.nextAction,follow_up:c.followUp||null,notes:c.notes,converted:c.converted}),
     from:r=>({id:r.id,date:r.call_date||"",rep:r.rep,clientId:r.client_id,company:r.company,contact:r.contact,duration:r.duration,result:r.result,interest:r.interest,nextAction:r.next_action,followUp:r.follow_up||"",notes:r.notes,converted:r.converted}) },
@@ -794,8 +794,8 @@ function isAdmin(){ return session && session.role==="admin"; }
 function myRep(){ return isAdmin()? null : session.repName; }
 
 /* filter helpers — employees only ever see their own rows */
-function vClients(){ const base=state.clients.filter(c=>c.accountType!=="Vendor"); const r=myRep(); return r? base.filter(c=>c.assignedTo===r || !c.assignedTo) : base; }
-function vVendors(){ return state.clients.filter(c=>c.accountType==="Vendor"); }
+function vClients(){ const base=state.clients.filter(c=>c.accountType!=="Vendor" && c.accountType!=="Supplier"); const r=myRep(); return r? base.filter(c=>c.assignedTo===r || !c.assignedTo) : base; }
+function vVendors(){ return state.clients.filter(c=>c.accountType==="Vendor" || c.accountType==="Supplier"); }
 function vCalls(){ const r=myRep(); return r? state.calls.filter(c=>c.rep===r) : state.calls; }
 function vMeetings(){ const r=myRep(); return r? state.meetings.filter(m=>m.rep===r) : state.meetings; }
 function vDeals(){ const r=myRep(); return r? state.deals.filter(d=>d.rep===r) : state.deals; }
@@ -1055,7 +1055,7 @@ function renderClients(v, bucketKey){
     return `<tr>
     <td><span class="tag" style="background:${sc.bg};color:${sc.fg}">${esc(stageLabel(c.recordType))}</span></td>
     <td>${esc(c.id)}</td>
-    <td><b>${esc(c.company)}</b> <span class="pill ${c.accountType==='Client'?'green':'gray'}" style="font-size:10px">${esc(c.accountType||'Prospect')}</span>${c.city?`<br><span class="help">${esc(c.city)}</span>`:""}</td>
+    <td><b>${esc(c.company)}</b> <span class="pill ${c.accountType==='Client'?'green':'gray'}" style="font-size:10px">${esc(c.accountType||'Client')}</span>${c.city?`<br><span class="help">${esc(c.city)}</span>`:""}</td>
     <td>${esc(c.contact)}${c.designation?`<br><span class="help">${esc(c.designation)}</span>`:""}</td>
     <td>${esc(c.phone)}</td>
     <td>${esc(c.industry)}</td>
@@ -1084,15 +1084,16 @@ function renderVendors(v){
   let rows = vVendors().filter(matchSearch).slice().sort(idSort);
   const body = rows.length? rows.map(c=>`<tr>
     <td>${esc(c.id)}</td>
+    <td><span class="pill ${c.accountType==='Supplier'?'blue':'gray'}">${esc(c.accountType)}</span></td>
     <td><b>${esc(c.company)}</b>${c.city?`<br><span class="help">${esc(c.city)}</span>`:""}</td>
     <td>${esc(c.contact)}${c.designation?`<br><span class="help">${esc(c.designation)}</span>`:""}</td>
     <td>${esc(c.phone)}</td>
     <td>${esc(c.email)}</td>
     <td>${esc(c.industry)}</td>
     <td class="no-print">${rowActions("client", c.id)}</td></tr>`).join("")
-    : `<tr><td colspan="7"><div class="empty">No vendors found. Click "Add Vendor" to create one.</div></td></tr>`;
-  v.innerHTML = pagehead("Vendors", rows.length+" vendor"+(rows.length===1?"":"s"), "Add Vendor", "addVendor()", true)+
-   `<div class="card tablewrap"><table style="min-width:820px"><thead><tr><th>ID</th><th>Company</th><th>Contact</th><th>Phone</th><th>Email</th><th>Category</th><th></th></tr></thead><tbody>${body}</tbody></table></div>`;
+    : `<tr><td colspan="8"><div class="empty">No vendors/suppliers found. Click "Add Vendor" to create one.</div></td></tr>`;
+  v.innerHTML = pagehead("Vendors", rows.length+" vendor/supplier"+(rows.length===1?"":"s"), "Add Vendor", "addVendor()", true)+
+   `<div class="card tablewrap"><table style="min-width:860px"><thead><tr><th>ID</th><th>Type</th><th>Company</th><th>Contact</th><th>Phone</th><th>Email</th><th>Category</th><th></th></tr></thead><tbody>${body}</tbody></table></div>`;
 }
 function addVendor(){
   openModal("New Vendor", clientForm({recordType:"New Inquiry", accountType:"Vendor"}), async()=>{
@@ -1100,7 +1101,7 @@ function addVendor(){
     c.accountType="Vendor"; c.id = nextId("C"); state.clients.push(c); await upsert("clients",c); closeModal(); toast("Vendor added"); go("vendors");
   });
 }
-function advanceStage(id){ const c=state.clients.find(x=>x.id===id); if(!c)return; const ns=nextStage(c.recordType); if(!ns){toast("Already at the final stage");return;} c.recordType=ns; if(ns==='Sales Order Created'){ if(!c.firstContact) c.firstContact=today(); autoCreateDealAndOrder(c); } if(ns==='Order Closed' && c.accountType!=='Vendor'){ c.accountType='Client'; } upsert("clients",c); toast(c.company+" advanced to "+ns); go(route); }
+function advanceStage(id){ const c=state.clients.find(x=>x.id===id); if(!c)return; const ns=nextStage(c.recordType); if(!ns){toast("Already at the final stage");return;} c.recordType=ns; if(ns==='Sales Order Created'){ if(!c.firstContact) c.firstContact=today(); autoCreateDealAndOrder(c); } if(ns==='Order Closed' && c.accountType!=='Vendor' && c.accountType!=='Supplier'){ c.accountType='Client'; } upsert("clients",c); toast(c.company+" advanced to "+ns); go(route); }
 function startNewOrder(id){ const c=state.clients.find(x=>x.id===id); if(!c)return; if(c.recordType!=='Order Closed' && c.recordType!==STAGE_LOST){ toast("Only closed/lost records can start a new order"); return; } c.recordType='New Inquiry'; upsert("clients",c); toast(c.company+" \u2014 new order started"); go(route); }
 // Reaching Won implies a real sale: auto-fill the Sales Tracker (and the fulfillment Sales
 // Order behind it) from whatever quote this client actually has, instead of leaving reps to
@@ -1151,7 +1152,7 @@ function clientForm(c){
     <div class="field"><label>Last Contact Date</label><input id="f_lastContact" type="date" value="${esc(c.lastContact||"")}"></div>
     <div class="field"><label>Annual Revenue Potential (PKR)</label><input id="f_revenuePotential" type="number" value="${esc(c.revenuePotential||"")}"></div>
     <div class="field"><label>Active?</label><select id="f_active"><option ${c.active!==false?"selected":""}>Yes</option><option ${c.active===false?"selected":""}>No</option></select></div>
-    <div class="field"><label>Account Type</label><select id="f_accountType">${["Prospect","Client","Vendor"].map(t=>`<option ${((c.accountType||"Prospect")===t)?"selected":""}>${t}</option>`).join("")}</select><div class="help">Prospect = still in the pipeline. Client = has placed an order (one-time or repeat). Vendor = supplier, not a customer.</div></div>
+    <div class="field"><label>Account Type</label><select id="f_accountType">${["Client","Vendor","Supplier"].map(t=>`<option ${((c.accountType||"Client")===t)?"selected":""}>${t}</option>`).join("")}</select><div class="help">Client = a customer (any pipeline stage, from first inquiry to repeat orders). Vendor / Supplier = not a customer.</div></div>
     <div class="field full"><label>Notes</label><textarea id="f_notes">${esc(c.notes||"")}</textarea></div>
   </div>`;
 }
@@ -1163,7 +1164,7 @@ function readClient(existing){
     phone:normalizePhone(g("phone")),email:g("email"),city:g("city"),industry:g("industry"),leadSource:g("leadSource"),
     priority:g("priority"),assignedTo: rep? rep : g("reps"),status:g("clientStatus"),
     firstContact:g("firstContact"),lastContact:g("lastContact"),revenuePotential:num(g("revenuePotential")),
-    active:g("active")==="Yes",notes:g("notes"),accountType:g("accountType")||"Prospect"
+    active:g("active")==="Yes",notes:g("notes"),accountType:g("accountType")||"Client"
   });
 }
 /* -- View-only modal (no Save button) -- */
