@@ -508,7 +508,7 @@ const SIDEBAR_NAV = [
     { id:"_so",       icon:"shopping-cart",  label:"Sales Orders",    route:"salesOrders" },
     { id:"_po",       icon:"truck",          label:"Purchase Orders", route:"purchaseOrders" },
     { id:"_inv",      icon:"receipt",        label:"Invoices",        route:"invoices" },
-    { id:"_vend",     icon:"store",          label:"Vendors",         route:"clients" },
+    { id:"_vend",     icon:"store",          label:"Vendors",         route:"vendors" },
   ]},
 
   { section:"System", adminSection:true, items:[
@@ -525,7 +525,7 @@ function renderSidebar(){
   const cur   = typeof route!=="undefined" ? route : "dashboard";
 
   // Build set of real route IDs that are "active" — includes aliased ones
-  const routeAliases = { clients:["_wq","_accounts","_vend"],
+  const routeAliases = { clients:["_wq","_accounts"], vendors:["_vend"],
     leads:["_leads"], clientsOnly:["_contacts"], tasks:["_tasks"],
     deals:[], quotes:[], performance:["_forecast"], admin:["_agents"],
     salesOrders:["_so"], purchaseOrders:["_po"], invoices:["_inv"],
@@ -692,8 +692,8 @@ function loadLocalOrSeed(){
 /* ----- Supabase field mapping (snake_case DB <-> camelCase app) ----- */
 const MAP = {
   clients:{table:"crm_clients", pk:"id",
-    to:c=>({id:c.id,company:c.company,contact:c.contact,designation:c.designation,phone:c.phone,email:c.email,city:c.city,industry:c.industry,lead_source:c.leadSource,priority:c.priority,assigned_to:c.assignedTo,first_contact:c.firstContact||null,last_contact:c.lastContact||null,status:c.status,notes:c.notes,revenue_potential:num(c.revenuePotential),record_type:c.recordType,active:!!c.active}),
-    from:r=>({id:r.id,company:r.company,contact:r.contact,designation:r.designation,phone:r.phone,email:r.email,city:r.city,industry:r.industry,leadSource:r.lead_source,priority:r.priority,assignedTo:r.assigned_to,firstContact:r.first_contact||"",lastContact:r.last_contact||"",status:r.status,notes:r.notes,revenuePotential:r.revenue_potential,recordType:r.record_type,active:r.active}) },
+    to:c=>({id:c.id,company:c.company,contact:c.contact,designation:c.designation,phone:c.phone,email:c.email,city:c.city,industry:c.industry,lead_source:c.leadSource,priority:c.priority,assigned_to:c.assignedTo,first_contact:c.firstContact||null,last_contact:c.lastContact||null,status:c.status,notes:c.notes,revenue_potential:num(c.revenuePotential),record_type:c.recordType,active:!!c.active,is_vendor:!!c.isVendor}),
+    from:r=>({id:r.id,company:r.company,contact:r.contact,designation:r.designation,phone:r.phone,email:r.email,city:r.city,industry:r.industry,leadSource:r.lead_source,priority:r.priority,assignedTo:r.assigned_to,firstContact:r.first_contact||"",lastContact:r.last_contact||"",status:r.status,notes:r.notes,revenuePotential:r.revenue_potential,recordType:r.record_type,active:r.active,isVendor:!!r.is_vendor}) },
   calls:{table:"crm_calls", pk:"id",
     to:c=>({id:c.id,call_date:c.date||null,rep:c.rep,client_id:c.clientId,company:c.company,contact:c.contact,duration:num(c.duration),result:c.result,interest:num(c.interest),next_action:c.nextAction,follow_up:c.followUp||null,notes:c.notes,converted:c.converted}),
     from:r=>({id:r.id,date:r.call_date||"",rep:r.rep,clientId:r.client_id,company:r.company,contact:r.contact,duration:r.duration,result:r.result,interest:r.interest,nextAction:r.next_action,followUp:r.follow_up||"",notes:r.notes,converted:r.converted}) },
@@ -794,7 +794,8 @@ function isAdmin(){ return session && session.role==="admin"; }
 function myRep(){ return isAdmin()? null : session.repName; }
 
 /* filter helpers — employees only ever see their own rows */
-function vClients(){ const r=myRep(); return r? state.clients.filter(c=>c.assignedTo===r || !c.assignedTo) : state.clients; }
+function vClients(){ const base=state.clients.filter(c=>!c.isVendor); const r=myRep(); return r? base.filter(c=>c.assignedTo===r || !c.assignedTo) : base; }
+function vVendors(){ return state.clients.filter(c=>c.isVendor); }
 function vCalls(){ const r=myRep(); return r? state.calls.filter(c=>c.rep===r) : state.calls; }
 function vMeetings(){ const r=myRep(); return r? state.meetings.filter(m=>m.rep===r) : state.meetings; }
 function vDeals(){ const r=myRep(); return r? state.deals.filter(d=>d.rep===r) : state.deals; }
@@ -854,7 +855,7 @@ function renderConn(){
 function go(r){ route=r; searchTerm=""; renderSidebar(); renderRoute(); window.scrollTo(0,0); }
 function renderRoute(){
   const v=document.getElementById("view");
-  ({dashboard:renderDashboard,analytics:renderAnalytics,clients:renderClients,leads:renderLeadsOnly,clientsOnly:renderClientsOnly,prospects:renderProspectsOnly,tasks:renderTasks,calls:renderCalls,meetings:renderMeetings,deals:renderDeals,quotes:renderQuotes,quoteView:renderQuoteView,performance:renderPerformance,admin:renderAdmin,salesOrders:renderSalesOrders,invoices:renderInvoices,purchaseOrders:renderPurchaseOrders}[route]||renderDashboard)(v);
+  ({dashboard:renderDashboard,analytics:renderAnalytics,clients:renderClients,leads:renderLeadsOnly,clientsOnly:renderClientsOnly,prospects:renderProspectsOnly,tasks:renderTasks,calls:renderCalls,meetings:renderMeetings,deals:renderDeals,quotes:renderQuotes,quoteView:renderQuoteView,performance:renderPerformance,admin:renderAdmin,salesOrders:renderSalesOrders,invoices:renderInvoices,purchaseOrders:renderPurchaseOrders,vendors:renderVendors}[route]||renderDashboard)(v);
 }
 
 /* ======================================================================
@@ -1075,6 +1076,26 @@ function renderClients(v, bucketKey){
 function renderLeadsOnly(v){ renderClients(v, "leads"); }
 function renderClientsOnly(v){ renderClients(v, "clientsOnly"); }
 function renderProspectsOnly(v){ renderClients(v, "prospects"); }
+function renderVendors(v){
+  let rows = vVendors().filter(matchSearch).slice().sort(idSort);
+  const body = rows.length? rows.map(c=>`<tr>
+    <td>${esc(c.id)}</td>
+    <td><b>${esc(c.company)}</b>${c.city?`<br><span class="help">${esc(c.city)}</span>`:""}</td>
+    <td>${esc(c.contact)}${c.designation?`<br><span class="help">${esc(c.designation)}</span>`:""}</td>
+    <td>${esc(c.phone)}</td>
+    <td>${esc(c.email)}</td>
+    <td>${esc(c.industry)}</td>
+    <td class="no-print">${rowActions("client", c.id)}</td></tr>`).join("")
+    : `<tr><td colspan="7"><div class="empty">No vendors found. Click "Add Vendor" to create one.</div></td></tr>`;
+  v.innerHTML = pagehead("Vendors", rows.length+" vendor"+(rows.length===1?"":"s"), "Add Vendor", "addVendor()", true)+
+   `<div class="card tablewrap"><table style="min-width:820px"><thead><tr><th>ID</th><th>Company</th><th>Contact</th><th>Phone</th><th>Email</th><th>Category</th><th></th></tr></thead><tbody>${body}</tbody></table></div>`;
+}
+function addVendor(){
+  openModal("New Vendor", clientForm({recordType:"Client", isVendor:true}), async()=>{
+    const c=readClient(); if(!c.company){toast("Vendor name is required");return false;}
+    c.isVendor=true; c.id = nextId("C"); state.clients.push(c); await upsert("clients",c); closeModal(); toast("Vendor added"); go("vendors");
+  });
+}
 function advanceStage(id){ const c=state.clients.find(x=>x.id===id); if(!c)return; const ns=nextStage(c.recordType); if(!ns){toast("Already at the final stage");return;} c.recordType=ns; if(ns==='Won \u2013 Order Confirmed'){ if(!c.firstContact) c.firstContact=today(); autoCreateDealAndOrder(c); } upsert("clients",c); toast(c.company+" advanced to "+ns); go(route); }
 // Reaching Won implies a real sale: auto-fill the Sales Tracker (and the fulfillment Sales
 // Order behind it) from whatever quote this client actually has, instead of leaving reps to
@@ -1125,6 +1146,7 @@ function clientForm(c){
     <div class="field"><label>Last Contact Date</label><input id="f_lastContact" type="date" value="${esc(c.lastContact||"")}"></div>
     <div class="field"><label>Annual Revenue Potential (PKR)</label><input id="f_revenuePotential" type="number" value="${esc(c.revenuePotential||"")}"></div>
     <div class="field"><label>Active?</label><select id="f_active"><option ${c.active!==false?"selected":""}>Yes</option><option ${c.active===false?"selected":""}>No</option></select></div>
+    <div class="field"><label>Record Category</label><select id="f_isVendor"><option value="0" ${!c.isVendor?"selected":""}>Client / Lead</option><option value="1" ${c.isVendor?"selected":""}>Vendor</option></select></div>
     <div class="field full"><label>Notes</label><textarea id="f_notes">${esc(c.notes||"")}</textarea></div>
   </div>`;
 }
@@ -1136,7 +1158,7 @@ function readClient(existing){
     phone:normalizePhone(g("phone")),email:g("email"),city:g("city"),industry:g("industry"),leadSource:g("leadSource"),
     priority:g("priority"),assignedTo: rep? rep : g("reps"),status:g("clientStatus"),
     firstContact:g("firstContact"),lastContact:g("lastContact"),revenuePotential:num(g("revenuePotential")),
-    active:g("active")==="Yes",notes:g("notes")
+    active:g("active")==="Yes",notes:g("notes"),isVendor:g("isVendor")==="1"
   });
 }
 /* -- View-only modal (no Save button) -- */
