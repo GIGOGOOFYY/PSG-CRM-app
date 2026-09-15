@@ -742,6 +742,16 @@ async function cloudPull(){
   if(!state.users||!state.users.length) state.users=seedUsers();
   cloudOK=anyOK; return anyOK;
 }
+let __pollTimer=null;
+function startAutoRefresh(){
+  if(__pollTimer || !sb) return;
+  __pollTimer=setInterval(async()=>{
+    if(!session) return;
+    const modalOpen = document.getElementById("modalMount") && document.getElementById("modalMount").innerHTML.trim().length>0;
+    const ok = await cloudPull();
+    if(ok){ renderConn(); if(!modalOpen){ renderRoute(); } }
+  }, 20000);
+}
 async function upsert(kind, obj){
   saveLocal();
   if(sb){ try{ const {error}=await sb.from(MAP[kind].table).upsert(MAP[kind].to(obj)); if(error) throw error; cloudOK=true; }
@@ -767,8 +777,9 @@ function doLogin(){
   sessionStorage.setItem("psgcrm_session", JSON.stringify(session));
   document.getElementById("lg_err").textContent="";
   startApp();
+  startAutoRefresh();
 }
-function logout(){ sessionStorage.removeItem("psgcrm_session"); session=null; location.reload(); }
+function logout(){ sessionStorage.removeItem("psgcrm_session"); session=null; if(__pollTimer){ clearInterval(__pollTimer); __pollTimer=null; } location.reload(); }
 function isAdmin(){ return session && session.role==="admin"; }
 function myRep(){ return isAdmin()? null : session.repName; }
 
@@ -2130,6 +2141,12 @@ function waDelTpl(i){ const t=waFromDom(); t.splice(i,1); cfg.waTemplates=t; sav
   applyTheme(cfg.theme || (matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"));
   applyBrand();
   initSupabase();
+  // restore session FIRST (before any network calls) so an already-signed-in
+  // user sees the app shell immediately instead of a login-screen flash
+  // while cloud data is still loading
+  const ss=sessionStorage.getItem("psgcrm_session");
+  if(ss){ try{ session=JSON.parse(ss); }catch(e){ session=null; } }
+  if(session){ document.getElementById("login").classList.add("hidden"); document.getElementById("app").classList.remove("hidden"); }
   // try cloud first; fall back to local seed
   let loaded=false;
   if(sb){ loaded=await cloudPull(); }
@@ -2137,9 +2154,7 @@ function waDelTpl(i){ const t=waFromDom(); t.splice(i,1); cfg.waTemplates=t; sav
   // login hint
   const lgHintEl = document.getElementById("lg_hint");
   if (lgHintEl) lgHintEl.innerHTML = "Master demo: <b>Munis / PSG123</b> &nbsp;·&nbsp; Employee demo: <b>Danish / psg123</b>"; // element no longer exists in the login markup -- guarded so it can never again silently abort the rest of boot() (session restore, Enter-key handlers)
-  // restore session if present
-  const ss=sessionStorage.getItem("psgcrm_session");
-  if(ss){ try{ session=JSON.parse(ss); startApp(); }catch(e){} }
+  if(session){ startApp(); startAutoRefresh(); }
   document.getElementById("lg_pass").addEventListener("keydown",e=>{ if(e.key==="Enter")doLogin(); });
 })();</script>
 <script>
