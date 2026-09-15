@@ -505,9 +505,9 @@ const SIDEBAR_NAV = [
     { id:"_prod",     icon:"package",        label:"Products",        route:"_soon" },
     { id:"_price",    icon:"tag",            label:"Price Books",     route:"_soon" },
     { id:"_quotes",   icon:"clipboard",      label:"Quotes",          route:"quotes" },
-    { id:"_so",       icon:"shopping-cart",  label:"Sales Orders",    route:"deals" },
-    { id:"_po",       icon:"truck",          label:"Purchase Orders", route:"deals" },
-    { id:"_inv",      icon:"receipt",        label:"Invoices",        route:"deals" },
+    { id:"_so",       icon:"shopping-cart",  label:"Sales Orders",    route:"salesOrders" },
+    { id:"_po",       icon:"truck",          label:"Purchase Orders", route:"purchaseOrders" },
+    { id:"_inv",      icon:"receipt",        label:"Invoices",        route:"invoices" },
     { id:"_vend",     icon:"store",          label:"Vendors",         route:"clients" },
   ]},
 
@@ -527,7 +527,8 @@ function renderSidebar(){
   // Build set of real route IDs that are "active" — includes aliased ones
   const routeAliases = { clients:["_wq","_accounts","_vend"],
     leads:["_leads"], clientsOnly:["_contacts"], tasks:["_tasks"],
-    deals:["_so","_po","_inv"], quotes:[], performance:["_forecast"], admin:["_agents"],
+    deals:[], quotes:[], performance:["_forecast"], admin:["_agents"],
+    salesOrders:["_so"], purchaseOrders:["_po"], invoices:["_inv"],
     dashboard:["_req"] };
   const activeIds = new Set([cur]);
   (routeAliases[cur]||[]).forEach(id=>activeIds.add(id));
@@ -615,7 +616,7 @@ function activeRepNames(){ const emp=(state.users||[]).filter(u=>u.role==="emplo
 function vocab(key, extra){ const base = key==="reps" ? activeRepNames() : DD[key]; const s=[...base]; (extra||[]).forEach(v=>{ if(v && !s.includes(v)) s.push(v); }); return s; }
 
 /* ---------- state ---------- */
-let state = { users:[], clients:[], calls:[], meetings:[], deals:[], tasks:[], repTargets:[], quotes:[] };
+let state = { users:[], clients:[], calls:[], meetings:[], deals:[], tasks:[], repTargets:[], quotes:[], salesOrders:[], invoices:[], purchaseOrders:[] };
 let session = null;          // {username, role, repName}
 const DEFAULT_SB_URL="https://qeyeonucnlsmbeomrrwt.supabase.co";
 const DEFAULT_SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFleWVvbnVjbmxzbWJlb21ycnd0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQxODk0OTksImV4cCI6MjA5OTc2NTQ5OX0.SmacOxNWOR4HLCOQf_gkHYHFTqBWMDNWrpFAKHP5nns";
@@ -654,7 +655,7 @@ const fmtDate = s => s || "";
    COMPUTED FIELDS  (kept derived, exactly like the workbook formulas)
    ====================================================================== */
 function dealValue(d){ return num(d.qty)*num(d.unitPrice); }                        // Qty × Unit Price
-function dealCollected(d){ return d.collectStatus==="Received" ? dealValue(d) : 0; } // = value if Received
+function dealCollected(d){ return num(d.collected); }                              // actual amount received (typed on the deal, not derived from status)
 function dealCommission(d){ return dealCollected(d) * (num(d.commRate)/100); }        // collected × rate%
 function clientTotalSales(id){ return state.deals.filter(d=>d.clientId===id).reduce((s,d)=>s+dealValue(d),0); }
 function repTarget(rep){ const t=state.repTargets.find(x=>x.rep===rep); return t?num(t.target):0; }
@@ -701,7 +702,7 @@ const MAP = {
     from:r=>({id:r.id,date:r.meet_date||"",time:r.meet_time,rep:r.rep,clientId:r.client_id,company:r.company,contact:r.contact,type:r.type,location:r.location,agenda:r.agenda,status:r.status,followNotes:r.follow_notes,sourceCall:r.source_call}) },
   deals:{table:"crm_deals", pk:"id",
     to:d=>({id:d.id,close_date:d.closeDate||null,rep:d.rep,client_id:d.clientId,company:d.company,product:d.product,qty:num(d.qty),unit_price:num(d.unitPrice),deal_value:dealValue(d),collect_status:d.collectStatus,collected:dealCollected(d),comm_rate:num(d.commRate),comm_earned:dealCommission(d),remarks:d.remarks,quote_no:d.quoteNo||null,po_number:d.poNumber||null}),
-    from:r=>({id:r.id,closeDate:r.close_date||"",rep:r.rep,clientId:r.client_id,company:r.company,product:r.product,qty:r.qty,unitPrice:r.unit_price,collectStatus:r.collect_status,commRate:r.comm_rate,remarks:r.remarks,quoteNo:r.quote_no||"",poNumber:r.po_number||""}) },
+    from:r=>({id:r.id,closeDate:r.close_date||"",rep:r.rep,clientId:r.client_id,company:r.company,product:r.product,qty:r.qty,unitPrice:r.unit_price,collectStatus:r.collect_status,collected:r.collected||0,commRate:r.comm_rate,remarks:r.remarks,quoteNo:r.quote_no||"",poNumber:r.po_number||""}) },
   quotes:{table:"crm_quotes", pk:"id",
     to:q=>({id:q.id,quote_date:q.quoteDate||null,valid_until:q.validUntil||null,rep:q.rep,client_id:q.clientId,company:q.company,contact:q.contact,status:q.status,category:q.category||null,customer_code:q.customerCode||null,ntn:q.ntn||null,gst:q.gst||null,items:q.items||[],notes:q.notes,pdf_data:q.pdfData||null}),
     from:r=>({id:r.id,quoteDate:r.quote_date||"",validUntil:r.valid_until||"",rep:r.rep,clientId:r.client_id,company:r.company,contact:r.contact,status:r.status,category:r.category||"",customerCode:r.customer_code||"",ntn:r.ntn||"",gst:r.gst||"",items:r.items||[],notes:r.notes,pdfData:r.pdf_data||""}) },
@@ -713,7 +714,16 @@ const MAP = {
     from:r=>({username:r.username,password:r.password,role:r.role,repName:r.rep_name}) },
   repTargets:{table:"crm_rep_targets", pk:"rep",
     to:t=>({rep:t.rep,target:num(t.target),comm_rate:num(t.commRate)}),
-    from:r=>({rep:r.rep,target:r.target,commRate:r.comm_rate}) }
+    from:r=>({rep:r.rep,target:r.target,commRate:r.comm_rate}) },
+  salesOrders:{table:"crm_sales_orders", pk:"id",
+    to:so=>({id:so.id,so_date:so.soDate||null,deal_id:so.dealId||null,client_id:so.clientId||null,company:so.company,rep:so.rep,quote_no:so.quoteNo,po_number:so.poNumber,product:so.product,qty:num(so.qty),unit_price:num(so.unitPrice),order_value:soValue(so),status:so.status,expected_delivery:so.expectedDelivery||null,notes:so.notes}),
+    from:r=>({id:r.id,soDate:r.so_date||"",dealId:r.deal_id||"",clientId:r.client_id||"",company:r.company,rep:r.rep,quoteNo:r.quote_no||"",poNumber:r.po_number||"",product:r.product,qty:r.qty,unitPrice:r.unit_price,status:r.status,expectedDelivery:r.expected_delivery||"",notes:r.notes}) },
+  invoices:{table:"crm_invoices", pk:"id",
+    to:inv=>({id:inv.id,invoice_date:inv.invoiceDate||null,due_date:inv.dueDate||null,sales_order_id:inv.salesOrderId||null,deal_id:inv.dealId||null,client_id:inv.clientId||null,company:inv.company,rep:inv.rep,amount:num(inv.amount),amount_paid:num(inv.amountPaid),status:inv.status,notes:inv.notes}),
+    from:r=>({id:r.id,invoiceDate:r.invoice_date||"",dueDate:r.due_date||"",salesOrderId:r.sales_order_id||"",dealId:r.deal_id||"",clientId:r.client_id||"",company:r.company,rep:r.rep,amount:r.amount,amountPaid:r.amount_paid,status:r.status,notes:r.notes}) },
+  purchaseOrders:{table:"crm_purchase_orders", pk:"id",
+    to:po=>({id:po.id,po_date:po.poDate||null,vendor:po.vendor,item:po.item,qty:num(po.qty),unit_cost:num(po.unitCost),total_cost:poTotalCost(po),status:po.status,expected_delivery:po.expectedDelivery||null,notes:po.notes}),
+    from:r=>({id:r.id,poDate:r.po_date||"",vendor:r.vendor,item:r.item,qty:r.qty,unitCost:r.unit_cost,status:r.status,expectedDelivery:r.expected_delivery||"",notes:r.notes}) }
 };
 
 function initSupabase(){
@@ -725,7 +735,7 @@ function initSupabase(){
 async function cloudPull(){
   if(!sb) return false;
   let anyOK=false;
-  for(const k of ["users","clients","calls","meetings","deals","tasks","repTargets","quotes"]){
+  for(const k of ["users","clients","calls","meetings","deals","tasks","repTargets","quotes","salesOrders","invoices","purchaseOrders"]){
     try{
       const PAGE=1000; let all=[]; let offset=0;
       while(true){
@@ -844,7 +854,7 @@ function renderConn(){
 function go(r){ route=r; searchTerm=""; renderSidebar(); renderRoute(); window.scrollTo(0,0); }
 function renderRoute(){
   const v=document.getElementById("view");
-  ({dashboard:renderDashboard,analytics:renderAnalytics,clients:renderClients,leads:renderLeadsOnly,clientsOnly:renderClientsOnly,prospects:renderProspectsOnly,tasks:renderTasks,calls:renderCalls,meetings:renderMeetings,deals:renderDeals,quotes:renderQuotes,quoteView:renderQuoteView,performance:renderPerformance,admin:renderAdmin}[route]||renderDashboard)(v);
+  ({dashboard:renderDashboard,analytics:renderAnalytics,clients:renderClients,leads:renderLeadsOnly,clientsOnly:renderClientsOnly,prospects:renderProspectsOnly,tasks:renderTasks,calls:renderCalls,meetings:renderMeetings,deals:renderDeals,quotes:renderQuotes,quoteView:renderQuoteView,performance:renderPerformance,admin:renderAdmin,salesOrders:renderSalesOrders,invoices:renderInvoices,purchaseOrders:renderPurchaseOrders}[route]||renderDashboard)(v);
 }
 
 /* ======================================================================
@@ -1065,7 +1075,35 @@ function renderClients(v, bucketKey){
 function renderLeadsOnly(v){ renderClients(v, "leads"); }
 function renderClientsOnly(v){ renderClients(v, "clientsOnly"); }
 function renderProspectsOnly(v){ renderClients(v, "prospects"); }
-function advanceStage(id){ const c=state.clients.find(x=>x.id===id); if(!c)return; const ns=nextStage(c.recordType); if(!ns){toast("Already at the final stage");return;} c.recordType=ns; if(ns==='Won \u2013 Order Confirmed' && !c.firstContact) c.firstContact=today(); upsert("clients",c); toast(c.company+" advanced to "+ns); go(route); }
+function advanceStage(id){ const c=state.clients.find(x=>x.id===id); if(!c)return; const ns=nextStage(c.recordType); if(!ns){toast("Already at the final stage");return;} c.recordType=ns; if(ns==='Won \u2013 Order Confirmed'){ if(!c.firstContact) c.firstContact=today(); autoCreateDealAndOrder(c); } upsert("clients",c); toast(c.company+" advanced to "+ns); go(route); }
+// Reaching Won implies a real sale: auto-fill the Sales Tracker (and the fulfillment Sales
+// Order behind it) from whatever quote this client actually has, instead of leaving reps to
+// retype client/quote/qty by hand. Guarded so re-advancing (or a duplicate click) never creates
+// a second Deal/SO for the same quote -- it just leaves the existing ones alone.
+function autoCreateDealAndOrder(c){
+  const clientQuotes=state.quotes.filter(x=>x.clientId===c.id);
+  const byRecency=(a,b)=>(b.quoteDate||"").localeCompare(a.quoteDate||"")||(b.id||"").localeCompare(a.id||"");
+  const bestQuote=clientQuotes.filter(x=>x.status==="Sent"||x.status==="Accepted").sort(byRecency)[0]
+    || clientQuotes.slice().sort(byRecency)[0];
+
+  let deal = bestQuote ? state.deals.find(x=>x.clientId===c.id && x.quoteNo===bestQuote.id) : null;
+  if(!deal){
+    if(bestQuote){
+      deal = dealFromQuote(bestQuote, {remarks:"Auto-created \u2014 "+c.company+" advanced to Won \u2013 Order Confirmed"});
+    } else {
+      const rep=c.assignedTo||myRep()||"";
+      deal = {closeDate:today(),rep,clientId:c.id,company:c.company,product:"",qty:0,unitPrice:0,quoteNo:"",poNumber:"",collectStatus:"Pending",collected:0,commRate:repCommRate(rep),remarks:"Auto-created \u2014 "+c.company+" advanced to Won \u2013 Order Confirmed (no quote on file yet)"};
+    }
+    deal.id=nextId("DL",deal.rep); state.deals.push(deal); upsert("deals",deal);
+    if(bestQuote && bestQuote.status!=="Accepted"){ bestQuote.status="Accepted"; upsert("quotes",bestQuote); }
+  }
+
+  let so = state.salesOrders.find(x=>x.dealId===deal.id);
+  if(!so){
+    so = salesOrderFromDeal(deal);
+    so.id=nextId("SO",so.rep); state.salesOrders.push(so); upsert("salesOrders",so);
+  }
+}
 function markLost(id){ const c=state.clients.find(x=>x.id===id); if(!c)return; if(isClosedStage(c.recordType)){toast("Already closed");return;} c.recordType=STAGE_LOST; upsert("clients",c); toast(c.company+" marked Lost"); go(route); }
 function clientForm(c){
   c=c||{}; const rep=myRep();
@@ -1561,7 +1599,8 @@ function dealForm(d){ d=d||{}; const rep=myRep();
     <div class="field"><label>Product / Service</label>${sel("product",d.product,[d.product])}</div>
     <div class="field"><label>Quote #</label><input id="f_quoteNo" value="${esc(d.quoteNo||"")}"></div>
     <div class="field"><label>PO #</label><input id="f_poNumber" value="${esc(d.poNumber||"")}"></div>
-    <div class="field"><label>Collection Status</label>${sel("collectStatus",d.collectStatus,[d.collectStatus])}</div>
+    <div class="field"><label>Collection Status</label><select id="f_collectStatus" onchange="onCollectStatusChange()"><option value=""></option>${vocab("collectStatus",[d.collectStatus]).map(o=>`<option ${o===d.collectStatus?"selected":""}>${esc(o)}</option>`).join("")}</select></div>
+    <div class="field"><label>Amount Collected (PKR)</label><input id="f_collected" type="number" step="any" value="${esc(d.collected!=null?d.collected:"")}" oninput="calcDeal()"><div class="help">Actual amount received so far</div></div>
     <div class="field"><label>Qty (sqft)</label><input id="f_qty" type="number" step="any" value="${esc(d.qty||"")}" oninput="calcDeal()"></div>
     <div class="field"><label>Unit Price (PKR)</label><input id="f_unitPrice" type="number" step="any" value="${esc(d.unitPrice||"")}" oninput="calcDeal()"></div>
     <div class="field"><label>Deal Value (auto)</label><input id="f_dealValue" class="calc" readonly value=""><div class="help">Qty × Unit Price</div></div>
@@ -1570,14 +1609,163 @@ function dealForm(d){ d=d||{}; const rep=myRep();
     <div class="field full"><label>Remarks</label><textarea id="f_remarks">${esc(d.remarks||"")}</textarea></div>
   </div>`;
 }
-function calcDeal(){ const d={qty:document.getElementById("f_qty").value,unitPrice:document.getElementById("f_unitPrice").value,commRate:document.getElementById("f_commRate").value,collectStatus:(document.getElementById("f_collectStatus")||{}).value};
+function calcDeal(){ const d={qty:document.getElementById("f_qty").value,unitPrice:document.getElementById("f_unitPrice").value,commRate:document.getElementById("f_commRate").value,collected:(document.getElementById("f_collected")||{}).value};
   document.getElementById("f_dealValue").value=PKR(dealValue(d));
   document.getElementById("f_commEarned").value=PKR(dealCommission(d)); }
+function onCollectStatusChange(){
+  const st=document.getElementById("f_collectStatus").value;
+  const c=document.getElementById("f_collected");
+  if(!c) return;
+  if(st==="Pending") c.value=0;
+  else if(st==="Received") c.value=num(document.getElementById("f_qty").value)*num(document.getElementById("f_unitPrice").value);
+  calcDeal();
+}
 function readDeal(existing){ const g=id=>document.getElementById("f_"+id).value; const rep=myRep(); const id=g("clientId"); const cl=state.clients.find(x=>x.id===id);
-  return Object.assign({},existing||{},{closeDate:g("closeDate"),rep:rep?rep:g("reps"),clientId:id,company:cl?cl.company:"",product:g("product"),quoteNo:g("quoteNo"),poNumber:g("poNumber"),collectStatus:g("collectStatus"),qty:num(g("qty")),unitPrice:num(g("unitPrice")),commRate:num(g("commRate")),remarks:g("remarks")}); }
+  return Object.assign({},existing||{},{closeDate:g("closeDate"),rep:rep?rep:g("reps"),clientId:id,company:cl?cl.company:"",product:g("product"),quoteNo:g("quoteNo"),poNumber:g("poNumber"),collectStatus:g("collectStatus"),collected:num(g("collected")),qty:num(g("qty")),unitPrice:num(g("unitPrice")),commRate:num(g("commRate")),remarks:g("remarks")}); }
 function addDeal(){ openModal("New Deal", dealForm({rep:myRep()||"",collectStatus:"Pending"}), async()=>{ const d=readDeal(); if(!d.clientId){toast("Pick a client");return false;} d.id=nextId("DL",d.rep); state.deals.push(d); await upsert("deals",d); closeModal(); toast("Deal added"); go("deals"); }, calcDeal); }
 function edit_deal(id){ const d=state.deals.find(x=>x.id===id); if(!d)return; openModal("Edit Deal", dealForm(d), async()=>{ Object.assign(d,readDeal(d)); await upsert("deals",d); closeModal(); toast("Deal updated"); go("deals"); }, calcDeal); }
 function del_deal(id){ confirmDel("Delete this deal?", async()=>{ state.deals=state.deals.filter(x=>x.id!==id); await remove("deals",id); toast("Deleted"); go("deals"); }); }
+
+/* ======================================================================
+   SALES ORDERS -- the fulfillment doc behind a won Deal (production/dispatch
+   tracking that Deals themselves don't carry). Created automatically when a
+   pipeline lead reaches "Won - Order Confirmed" (see autoCreateDealAndOrder),
+   or manually here.
+   ====================================================================== */
+function vSalesOrders(){ const r=myRep(); return r? state.salesOrders.filter(x=>x.rep===r) : state.salesOrders; }
+function soValue(so){ return num(so.qty)*num(so.unitPrice); }
+function salesOrderFromDeal(d){
+  return {soDate:today(),dealId:d.id,clientId:d.clientId,company:d.company,rep:d.rep,quoteNo:d.quoteNo||"",poNumber:d.poNumber||"",product:d.product,qty:d.qty,unitPrice:d.unitPrice,status:"Pending Production",expectedDelivery:"",notes:"Generated from deal "+d.id};
+}
+function soStatusPill(s){ const c={"Pending Production":"gray","In Production":"amber","Ready for Dispatch":"blue","Delivered":"green","Cancelled":"red"}[s]||"gray"; return `<span class="pill ${c}">${esc(s||"")}</span>`; }
+function renderSalesOrders(v){
+  const rows=vSalesOrders().filter(matchSearch);
+  const body=rows.length?rows.map(so=>`<tr>
+    <td>${esc(so.id)}</td><td>${esc(so.soDate)}</td><td><b>${esc(so.company)}</b></td><td>${esc(so.rep)}</td>
+    <td>${esc(so.quoteNo)}</td><td>${esc(so.poNumber)}</td><td>${esc(so.product)}</td>
+    <td class="num">${esc(so.qty)}</td><td class="num">${PKR(soValue(so))}</td>
+    <td>${soStatusPill(so.status)}</td><td>${esc(so.expectedDelivery||"")}</td>
+    <td class="no-print"><div class="rowbtns">${so.status!=="Delivered"&&so.status!=="Cancelled"?`<button class="btn sm ghost" title="Generate Invoice" onclick="generateInvoiceFromSO('${esc(so.id)}')">➔ Invoice</button>`:""}<button class="btn sm ghost" onclick="edit_salesOrder('${esc(so.id)}')">Edit</button><button class="btn sm ghost danger" onclick="del_salesOrder('${esc(so.id)}')">✕</button></div></td></tr>`).join("")
+    :`<tr><td colspan="12"><div class="empty">No sales orders yet.</div></td></tr>`;
+  const total=rows.reduce((s,so)=>s+soValue(so),0);
+  v.innerHTML=pagehead("Sales Orders","Sales Orders — "+vSalesOrders().length+" · Value "+PKR(total)+(isAdmin()?"":" (yours)"),"Add Sales Order","addSalesOrder()",true)+
+   `<div class="card tablewrap"><table><thead><tr><th>SO #</th><th>Date</th><th>Client</th><th>Rep</th><th>Quote #</th><th>PO #</th><th>Product</th><th class="num">Qty (sqft)</th><th class="num">Value</th><th>Status</th><th>Exp. Delivery</th><th></th></tr></thead><tbody>${body}</tbody></table></div>`;
+}
+function salesOrderForm(so){ so=so||{}; const rep=myRep();
+  const statusOpts=["Pending Production","In Production","Ready for Dispatch","Delivered","Cancelled"];
+  return `<div class="formgrid">
+    <div class="field"><label>SO Date</label><input id="f_soDate" type="date" value="${esc(so.soDate||today())}"></div>
+    <div class="field ${rep?'locked':''}"><label>Sales Rep</label><input id="f_rep" value="${esc(so.rep||rep||"")}" ${rep?"readonly":""}></div>
+    <div class="field full"><label>Client</label><select id="f_clientId">${clientOptions(so.clientId)}</select></div>
+    <div class="field"><label>Quote #</label><input id="f_quoteNo" value="${esc(so.quoteNo||"")}"></div>
+    <div class="field"><label>PO #</label><input id="f_poNumber" value="${esc(so.poNumber||"")}"></div>
+    <div class="field full"><label>Product</label><input id="f_product" value="${esc(so.product||"")}"></div>
+    <div class="field"><label>Qty (sqft)</label><input id="f_qty" type="number" step="any" value="${esc(so.qty||"")}"></div>
+    <div class="field"><label>Unit Price (PKR)</label><input id="f_unitPrice" type="number" step="any" value="${esc(so.unitPrice||"")}"></div>
+    <div class="field"><label>Status</label><select id="f_status">${statusOpts.map(o=>`<option ${o===so.status?"selected":""}>${o}</option>`).join("")}</select></div>
+    <div class="field"><label>Expected Delivery</label><input id="f_expectedDelivery" type="date" value="${esc(so.expectedDelivery||"")}"></div>
+    <div class="field full"><label>Notes</label><textarea id="f_notes">${esc(so.notes||"")}</textarea></div>
+  </div>`;
+}
+function readSalesOrder(existing){ const g=id=>document.getElementById("f_"+id).value; const id=g("clientId"); const cl=state.clients.find(x=>x.id===id);
+  return Object.assign({},existing||{},{soDate:g("soDate"),rep:g("rep"),clientId:id,company:cl?cl.company:(existing&&existing.company)||"",quoteNo:g("quoteNo"),poNumber:g("poNumber"),product:g("product"),qty:num(g("qty")),unitPrice:num(g("unitPrice")),status:g("status"),expectedDelivery:g("expectedDelivery"),notes:g("notes")}); }
+function addSalesOrder(){ openModal("New Sales Order", salesOrderForm({rep:myRep()||""}), async()=>{ const so=readSalesOrder(); if(!so.clientId){toast("Pick a client");return false;} so.id=nextId("SO",so.rep); state.salesOrders.push(so); await upsert("salesOrders",so); closeModal(); toast("Sales order added"); go("salesOrders"); }); }
+function edit_salesOrder(id){ const so=state.salesOrders.find(x=>x.id===id); if(!so)return; openModal("Edit Sales Order", salesOrderForm(so), async()=>{ Object.assign(so,readSalesOrder(so)); await upsert("salesOrders",so); closeModal(); toast("Sales order updated"); go("salesOrders"); }); }
+function del_salesOrder(id){ confirmDel("Delete this sales order?", async()=>{ state.salesOrders=state.salesOrders.filter(x=>x.id!==id); await remove("salesOrders",id); toast("Deleted"); go("salesOrders"); }); }
+
+/* ======================================================================
+   INVOICES -- billing against a Sales Order (or standalone). amountPaid is a
+   real typed number, same partial-payment convention as Deals.collected.
+   ====================================================================== */
+function vInvoices(){ const r=myRep(); return r? state.invoices.filter(x=>x.rep===r) : state.invoices; }
+function invoiceBalance(inv){ return num(inv.amount)-num(inv.amountPaid); }
+function invoiceStatusPill(s){ const c={Paid:"green",Partial:"amber",Unpaid:"gray",Overdue:"red"}[s]||"gray"; return `<span class="pill ${c}">${esc(s||"")}</span>`; }
+function invoiceFromSO(so){
+  return {invoiceDate:today(),dueDate:"",salesOrderId:so.id,dealId:so.dealId||"",clientId:so.clientId,company:so.company,rep:so.rep,amount:soValue(so),amountPaid:0,status:"Unpaid",notes:"Generated from sales order "+so.id};
+}
+function generateInvoiceFromSO(soId){
+  const so=state.salesOrders.find(x=>x.id===soId); if(!so)return;
+  const existing=state.invoices.find(x=>x.salesOrderId===soId);
+  if(existing){ toast("An invoice already exists for this sales order"); go("invoices"); return; }
+  const inv=invoiceFromSO(so);
+  inv.id=nextId("IV",inv.rep); state.invoices.push(inv); upsert("invoices",inv);
+  toast("Invoice generated"); go("invoices");
+}
+function renderInvoices(v){
+  const rows=vInvoices().filter(matchSearch);
+  const body=rows.length?rows.map(inv=>`<tr>
+    <td>${esc(inv.id)}</td><td>${esc(inv.invoiceDate)}</td><td><b>${esc(inv.company)}</b></td><td>${esc(inv.rep)}</td>
+    <td>${esc(inv.salesOrderId||"")}</td>
+    <td class="num">${PKR(inv.amount)}</td><td class="num">${PKR(inv.amountPaid)}</td><td class="num">${PKR(invoiceBalance(inv))}</td>
+    <td>${invoiceStatusPill(inv.status)}</td><td>${esc(inv.dueDate||"")}</td>
+    <td class="no-print"><div class="rowbtns"><button class="btn sm ghost" onclick="edit_invoice('${esc(inv.id)}')">Edit</button><button class="btn sm ghost danger" onclick="del_invoice('${esc(inv.id)}')">✕</button></div></td></tr>`).join("")
+    :`<tr><td colspan="11"><div class="empty">No invoices yet.</div></td></tr>`;
+  const total=rows.reduce((s,inv)=>s+num(inv.amount),0), paid=rows.reduce((s,inv)=>s+num(inv.amountPaid),0);
+  v.innerHTML=pagehead("Invoices","Invoices — "+vInvoices().length+" · Billed "+PKR(total)+" · Paid "+PKR(paid)+(isAdmin()?"":" (yours)"),"Add Invoice","addInvoice()",true)+
+   `<div class="card tablewrap"><table><thead><tr><th>Invoice #</th><th>Date</th><th>Client</th><th>Rep</th><th>SO #</th><th class="num">Amount</th><th class="num">Paid</th><th class="num">Balance</th><th>Status</th><th>Due</th><th></th></tr></thead><tbody>${body}</tbody></table></div>`;
+}
+function invoiceForm(inv){ inv=inv||{}; const rep=myRep();
+  const statusOpts=["Unpaid","Partial","Paid","Overdue"];
+  return `<div class="formgrid">
+    <div class="field"><label>Invoice Date</label><input id="f_invoiceDate" type="date" value="${esc(inv.invoiceDate||today())}"></div>
+    <div class="field"><label>Due Date</label><input id="f_dueDate" type="date" value="${esc(inv.dueDate||"")}"></div>
+    <div class="field ${rep?'locked':''}"><label>Sales Rep</label><input id="f_rep" value="${esc(inv.rep||rep||"")}" ${rep?"readonly":""}></div>
+    <div class="field full"><label>Client</label><select id="f_clientId">${clientOptions(inv.clientId)}</select></div>
+    <div class="field"><label>Sales Order #</label><input id="f_salesOrderId" value="${esc(inv.salesOrderId||"")}"></div>
+    <div class="field"><label>Amount (PKR)</label><input id="f_amount" type="number" step="any" value="${esc(inv.amount||"")}" oninput="calcInvoice()"></div>
+    <div class="field"><label>Amount Paid (PKR)</label><input id="f_amountPaid" type="number" step="any" value="${esc(inv.amountPaid!=null?inv.amountPaid:"")}" oninput="calcInvoice()"></div>
+    <div class="field"><label>Balance (auto)</label><input id="f_balance" class="calc" readonly value="${PKR(invoiceBalance(inv))}"></div>
+    <div class="field"><label>Status</label><select id="f_status">${statusOpts.map(o=>`<option ${o===inv.status?"selected":""}>${o}</option>`).join("")}</select></div>
+    <div class="field full"><label>Notes</label><textarea id="f_notes">${esc(inv.notes||"")}</textarea></div>
+  </div>`;
+}
+function calcInvoice(){ const amt=num(document.getElementById("f_amount").value), paid=num(document.getElementById("f_amountPaid").value); document.getElementById("f_balance").value=PKR(amt-paid); }
+function readInvoice(existing){ const g=id=>document.getElementById("f_"+id).value; const id=g("clientId"); const cl=state.clients.find(x=>x.id===id);
+  return Object.assign({},existing||{},{invoiceDate:g("invoiceDate"),dueDate:g("dueDate"),rep:g("rep"),clientId:id,company:cl?cl.company:(existing&&existing.company)||"",salesOrderId:g("salesOrderId"),amount:num(g("amount")),amountPaid:num(g("amountPaid")),status:g("status"),notes:g("notes")}); }
+function addInvoice(){ openModal("New Invoice", invoiceForm({rep:myRep()||""}), async()=>{ const inv=readInvoice(); if(!inv.clientId){toast("Pick a client");return false;} inv.id=nextId("IV",inv.rep); state.invoices.push(inv); await upsert("invoices",inv); closeModal(); toast("Invoice added"); go("invoices"); }, calcInvoice); }
+function edit_invoice(id){ const inv=state.invoices.find(x=>x.id===id); if(!inv)return; openModal("Edit Invoice", invoiceForm(inv), async()=>{ Object.assign(inv,readInvoice(inv)); await upsert("invoices",inv); closeModal(); toast("Invoice updated"); go("invoices"); }, calcInvoice); }
+function del_invoice(id){ confirmDel("Delete this invoice?", async()=>{ state.invoices=state.invoices.filter(x=>x.id!==id); await remove("invoices",id); toast("Deleted"); go("invoices"); }); }
+
+/* ======================================================================
+   PURCHASE ORDERS -- vendor/material procurement (buying raw glass, hardware
+   etc. from suppliers). Independent of the sales pipeline; optionally links
+   to a Sales Order that needs the material.
+   ====================================================================== */
+function poStatusPill(s){ const c={Ordered:"amber",Received:"green",Cancelled:"red"}[s]||"gray"; return `<span class="pill ${c}">${esc(s||"")}</span>`; }
+function poTotalCost(po){ return num(po.qty)*num(po.unitCost); }
+function renderPurchaseOrders(v){
+  const rows=state.purchaseOrders.filter(matchSearch);
+  const body=rows.length?rows.map(po=>`<tr>
+    <td>${esc(po.id)}</td><td>${esc(po.poDate)}</td><td><b>${esc(po.vendor)}</b></td><td>${esc(po.item)}</td>
+    <td class="num">${esc(po.qty)}</td><td class="num">${PKR(po.unitCost)}</td><td class="num">${PKR(poTotalCost(po))}</td>
+    <td>${poStatusPill(po.status)}</td><td>${esc(po.expectedDelivery||"")}</td>
+    <td class="no-print"><div class="rowbtns"><button class="btn sm ghost" onclick="edit_purchaseOrder('${esc(po.id)}')">Edit</button><button class="btn sm ghost danger" onclick="del_purchaseOrder('${esc(po.id)}')">✕</button></div></td></tr>`).join("")
+    :`<tr><td colspan="10"><div class="empty">No purchase orders yet.</div></td></tr>`;
+  const total=rows.reduce((s,po)=>s+poTotalCost(po),0);
+  v.innerHTML=pagehead("Purchase Orders","Purchase Orders — "+rows.length+" · Cost "+PKR(total),"Add Purchase Order","addPurchaseOrder()",true)+
+   `<div class="card tablewrap"><table><thead><tr><th>PO #</th><th>Date</th><th>Vendor</th><th>Item</th><th class="num">Qty</th><th class="num">Unit Cost</th><th class="num">Total</th><th>Status</th><th>Exp. Delivery</th><th></th></tr></thead><tbody>${body}</tbody></table></div>`;
+}
+function purchaseOrderForm(po){ po=po||{};
+  const statusOpts=["Ordered","Received","Cancelled"];
+  return `<div class="formgrid">
+    <div class="field"><label>PO Date</label><input id="f_poDate" type="date" value="${esc(po.poDate||today())}"></div>
+    <div class="field"><label>Vendor</label><input id="f_vendor" value="${esc(po.vendor||"")}"></div>
+    <div class="field full"><label>Item / Material</label><input id="f_item" value="${esc(po.item||"")}"></div>
+    <div class="field"><label>Qty</label><input id="f_qty" type="number" step="any" value="${esc(po.qty||"")}" oninput="calcPO()"></div>
+    <div class="field"><label>Unit Cost (PKR)</label><input id="f_unitCost" type="number" step="any" value="${esc(po.unitCost||"")}" oninput="calcPO()"></div>
+    <div class="field"><label>Total Cost (auto)</label><input id="f_totalCost" class="calc" readonly value="${PKR(poTotalCost(po))}"></div>
+    <div class="field"><label>Status</label><select id="f_status">${statusOpts.map(o=>`<option ${o===po.status?"selected":""}>${o}</option>`).join("")}</select></div>
+    <div class="field"><label>Expected Delivery</label><input id="f_expectedDelivery" type="date" value="${esc(po.expectedDelivery||"")}"></div>
+    <div class="field full"><label>Notes</label><textarea id="f_notes">${esc(po.notes||"")}</textarea></div>
+  </div>`;
+}
+function calcPO(){ const qty=num(document.getElementById("f_qty").value), cost=num(document.getElementById("f_unitCost").value); document.getElementById("f_totalCost").value=PKR(qty*cost); }
+function readPurchaseOrder(existing){ const g=id=>document.getElementById("f_"+id).value;
+  return Object.assign({},existing||{},{poDate:g("poDate"),vendor:g("vendor"),item:g("item"),qty:num(g("qty")),unitCost:num(g("unitCost")),status:g("status"),expectedDelivery:g("expectedDelivery"),notes:g("notes")}); }
+function addPurchaseOrder(){ openModal("New Purchase Order", purchaseOrderForm({}), async()=>{ const po=readPurchaseOrder(); if(!po.vendor){toast("Enter a vendor");return false;} po.id=nextId("PO",""); state.purchaseOrders.push(po); await upsert("purchaseOrders",po); closeModal(); toast("Purchase order added"); go("purchaseOrders"); }, calcPO); }
+function edit_purchaseOrder(id){ const po=state.purchaseOrders.find(x=>x.id===id); if(!po)return; openModal("Edit Purchase Order", purchaseOrderForm(po), async()=>{ Object.assign(po,readPurchaseOrder(po)); await upsert("purchaseOrders",po); closeModal(); toast("Purchase order updated"); go("purchaseOrders"); }, calcPO); }
+function del_purchaseOrder(id){ confirmDel("Delete this purchase order?", async()=>{ state.purchaseOrders=state.purchaseOrders.filter(x=>x.id!==id); await remove("purchaseOrders",id); toast("Deleted"); go("purchaseOrders"); }); }
+
 
 /* ======================================================================
    QUOTES
@@ -1735,11 +1923,25 @@ function waQuote(id){
   }
   waOpenModal(c.phone||"",ctx,"Quotation ready");
 }
+// Shared by the manual "Convert to Deal" button on Quotes and the automatic Won-stage
+// conversion in autoCreateDealAndOrder(): turns a quote's line items into a single Deal.
+// Where the quote has real glass-item sqft data, Qty/Unit Price reflect the actual blended
+// sqft rate rather than the old qty=1/unitPrice=total placeholder, so "Qty (sqft)" on the
+// Deal and Sales Order means what it says.
+function dealFromQuote(q, opts){
+  opts=opts||{};
+  const total=quoteTotal(q.items);
+  const glassItems=(q.items||[]).filter(it=>(it.type||"Glass")==="Glass");
+  const sumSqft=glassItems.reduce((s,it)=>s+num(it.sqft)*num(it.pieces),0);
+  const product=(q.items||[]).map(it=>it.desc).filter(Boolean).join(", ")||"See quote "+q.id;
+  let qty, unitPrice;
+  if(sumSqft>0){ qty=Math.round(sumSqft*100)/100; unitPrice=Math.round((total/sumSqft)*100)/100; }
+  else { qty=1; unitPrice=total; }
+  return {closeDate:today(),rep:q.rep,clientId:q.clientId,company:q.company,product,qty,unitPrice,quoteNo:q.id,poNumber:"",collectStatus:"Pending",collected:0,commRate:repCommRate(q.rep),remarks:opts.remarks||("Converted from quote "+q.id)};
+}
 function convertQuoteToDeal(id){
   const q=state.quotes.find(x=>x.id===id); if(!q)return;
-  const total=quoteTotal(q.items);
-  const product=(q.items||[]).map(it=>it.desc).filter(Boolean).join(", ")||"See quote "+q.id;
-  const d={closeDate:today(),rep:q.rep,clientId:q.clientId,company:q.company,product,qty:1,unitPrice:total,quoteNo:q.id,poNumber:"",collectStatus:"Pending",commRate:repCommRate(q.rep),remarks:"Converted from quote "+q.id};
+  const d=dealFromQuote(q);
   d.id=nextId("DL",d.rep); state.deals.push(d);
   upsert("deals",d);
   if(q.status!=="Accepted"){ q.status="Accepted"; upsert("quotes",q); }
@@ -1975,7 +2177,7 @@ function repCode(rep){ return (rep||"GEN").replace(/[^A-Za-z]/g,"").slice(0,3).t
 function nextId(kind, rep){
   if(kind==="C"){ return nextClientId(); }
   const prefix=repCode(rep)+"-"+kind+"-";
-  const nums=state[{CL:"calls",MT:"meetings",DL:"deals",TS:"tasks",QT:"quotes"}[kind]].filter(x=>String(x.id).startsWith(prefix)).map(x=>num(String(x.id).split("-").pop()));
+  const nums=state[{CL:"calls",MT:"meetings",DL:"deals",TS:"tasks",QT:"quotes",SO:"salesOrders",IV:"invoices",PO:"purchaseOrders"}[kind]].filter(x=>String(x.id).startsWith(prefix)).map(x=>num(String(x.id).split("-").pop()));
   const next=(nums.length?Math.max(...nums):0)+1;
   return prefix+String(next).padStart(3,"0");
 }
