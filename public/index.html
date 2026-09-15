@@ -1044,18 +1044,25 @@ const PIPE_SHORT={'New Inquiry':'Inquiry','Quotation Sent':'Quotation','Follow-u
 
 function renderClients(v, bucketKey){
   const bucket = bucketKey ? STAGE_BUCKETS[bucketKey] : null;
+  // Stage only earns its own column on the Leads tab, where it's the whole point (rows sit at many
+  // different stages). Accounts/Clients/Prospects hide it -- in those views every row shares (or is
+  // trivially close to) the same stage, so a repeated "ORDER CLOSED"/"NEW INQUIRY" column is just
+  // noise. The stage value itself is untouched in the data either way -- this only hides the column.
+  const showStage = bucketKey === "leads";
   let rows=vClients();
   if(bucket) rows = rows.filter(c=>bucket.stages.includes(c.recordType));
   rows = rows.filter(matchSearch);
   rows = rows.slice().sort(idSort);
+  const typePill = c => `<span class="pill ${c.accountType==='Client'?'green':c.accountType==='Supplier'?'blue':'gray'}">${esc(c.accountType||'Client')}</span>`;
   const body = rows.length? rows.map(c=>{
     const sc = stageColor(c.recordType);
     const ns = nextStage(c.recordType);
     const closed = isClosedStage(c.recordType);
     return `<tr>
-    <td><span class="tag" style="background:${sc.bg};color:${sc.fg}">${esc(stageLabel(c.recordType))}</span></td>
+    ${showStage?`<td><span class="tag" style="background:${sc.bg};color:${sc.fg}">${esc(stageLabel(c.recordType))}</span></td>`:""}
     <td>${esc(c.id)}</td>
-    <td><b>${esc(c.company)}</b> <span class="pill ${c.accountType==='Client'?'green':'gray'}" style="font-size:10px">${esc(c.accountType||'Client')}</span>${c.city?`<br><span class="help">${esc(c.city)}</span>`:""}</td>
+    <td>${typePill(c)}</td>
+    <td><b>${esc(c.company)}</b>${c.city?`<br><span class="help">${esc(c.city)}</span>`:""}</td>
     <td>${esc(c.contact)}${c.designation?`<br><span class="help">${esc(c.designation)}</span>`:""}</td>
     <td>${esc(c.phone)}</td>
     <td>${esc(c.industry)}</td>
@@ -1064,7 +1071,7 @@ function renderClients(v, bucketKey){
     <td class="num">${clientTotalSales(c.id)?PKR(clientTotalSales(c.id)):"—"}</td>
     <td class="no-print"><div class="rowbtns"><button class="btn sm ghost" title="Activity History" onclick="openClientHistory('${esc(c.id)}')">📋</button><button class="btn sm ghost" title="Send WhatsApp" onclick="waClient('${esc(c.id)}')">💬</button>${ns?`<button class="btn sm ghost" title="Advance to ${esc(ns)}" onclick="advanceStage('${esc(c.id)}')">➔ ${esc(ns)}</button>`:""}${closed&&c.recordType!==STAGE_LOST?`<button class="btn sm ghost" title="Start a new order for this client" onclick="startNewOrder('${esc(c.id)}')">🔄 New Order</button>`:""}${!closed?`<button class="btn sm ghost danger" title="Mark Lost" onclick="markLost('${esc(c.id)}')">Lost</button>`:""}<button class="btn sm ghost" onclick="edit_client('${esc(c.id)}')">Edit</button>${isAdmin()?`<button class="btn sm ghost danger" onclick="del_client('${esc(c.id)}')">✕</button>`:""}</div></td></tr>`;
   }).join("")
-    : `<tr><td colspan="10"><div class="empty">No ${bucket?bucket.noun+'s':'records'} found.${bucket?` Click "Add ${bucket.title.slice(0,-1)}" to create one.`:''}</div></td></tr>`;
+    : `<tr><td colspan="${showStage?11:10}"><div class="empty">No ${bucket?bucket.noun+'s':'records'} found.${bucket?` Click "Add ${bucket.title.slice(0,-1)}" to create one.`:''}</div></td></tr>`;
   const importBtns = bucket ? "" : `<input type="file" id="csvImportInput" accept=".csv" style="display:none" onchange="importClientsCsv(this.files[0]);this.value='';">
     <button class="btn ghost sm" onclick="document.getElementById('csvImportInput').click()">⇪ Import CSV</button>
     <button class="btn ghost sm" onclick="downloadClientCsvTemplate()">Template</button>`;
@@ -1074,8 +1081,10 @@ function renderClients(v, bucketKey){
     : ("All companies — every pipeline stage — "+vClients().length+" records"+(isAdmin()?"":" (yours)"));
   const addLabel = bucket ? "Add "+bucket.title.replace(/s$/,"") : "Add Record";
   const addFn = bucket ? `addClient('${bucket.addStage}','${bucket.route}','${bucket.title.replace(/s$/,"")}')` : "addClient('New Inquiry','clients','Record')";
+  const stageCol = showStage ? `<col style="width:78px">` : "";
+  const stageTh = showStage ? `<th>Stage</th>` : "";
   v.innerHTML = pagehead(pageTitle,pageSub,addLabel,addFn,true,importBtns+deleteAllBtn)+
-   `<div class="card tablewrap"><table style="min-width:980px"><colgroup><col style="width:62px"><col style="width:78px"><col style="min-width:160px;white-space:normal"><col style="min-width:130px;white-space:normal"><col style="width:120px"><col style="width:110px"><col style="width:110px"><col style="width:90px"><col style="width:100px"><col style="width:110px"></colgroup><thead><tr><th>Stage</th><th>ID</th><th>Company</th><th>Contact</th><th>Phone</th><th>Industry</th><th>Status</th><th>Rep</th><th class="num">Total Sales</th><th></th></tr></thead><tbody>${body}</tbody></table></div>`;
+   `<div class="card tablewrap"><table style="min-width:980px"><colgroup>${stageCol}<col style="width:62px"><col style="width:90px"><col style="min-width:160px;white-space:normal"><col style="min-width:130px;white-space:normal"><col style="width:120px"><col style="width:110px"><col style="width:110px"><col style="width:90px"><col style="width:100px"><col style="width:110px"></colgroup><thead><tr>${stageTh}<th>ID</th><th>Type</th><th>Company</th><th>Contact</th><th>Phone</th><th>Industry</th><th>Status</th><th>Rep</th><th class="num">Total Sales</th><th></th></tr></thead><tbody>${body}</tbody></table></div>`;
 }
 function renderLeadsOnly(v){ renderClients(v, "leads"); }
 function renderClientsOnly(v){ renderClients(v, "clientsOnly"); }
