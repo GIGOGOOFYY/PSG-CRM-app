@@ -1926,7 +1926,7 @@ function printQuotesLetterhead(){
 function quoteItemRowHtml(i,it){
   it=it||{};
   return `<div class="card" style="margin:6px 0;padding:10px;background:var(--panel2)"><div class="formgrid">
-    <div class="field"><label>Code</label><input id="qi_code_${i}" value="${esc(it.code||"")}" oninput="quoteItemEdit(${i},'code',this.value)"></div>
+    <div class="field"><label>Code (auto)</label><input id="qi_code_${i}" class="calc" readonly value="${esc((window.__quoteGqSerial||1)+"/"+(i+1))}"></div>
     <div class="field full"><label>Description</label><input id="qi_desc_${i}" list="dl_products" value="${esc(it.desc||"")}" oninput="quoteItemEdit(${i},'desc',this.value)"></div>
     <div class="field"><label>Size W (mm)</label><input id="qi_sizeW_${i}" type="number" step="any" value="${esc(it.sizeW||"")}" oninput="quoteItemEdit(${i},'sizeW',this.value)"></div>
     <div class="field"><label>Size H (mm)</label><input id="qi_sizeH_${i}" type="number" step="any" value="${esc(it.sizeH||"")}" oninput="quoteItemEdit(${i},'sizeH',this.value)"></div>
@@ -1965,6 +1965,7 @@ function quoteRemoveFile(){ window.__quotePdfData=""; window.__quotePdfName=""; 
 function fillCompanyQuote(){ const id=document.getElementById("qf_clientId").value; const c=state.clients.find(x=>x.id===id); if(c){ const ct=document.getElementById("qf_contact"); if(ct&&!ct.value)ct.value=c.contact||""; } }
 function quoteForm(q){ q=q||{};
   window.__quoteItems=(q.items&&q.items.length)?q.items.map(it=>Object.assign({},it)):[{code:"",desc:"",sizeW:"",sizeH:"",sqft:"",pieces:"",unitPrice:"",type:"Glass"}];
+  window.__quoteGqSerial=q.serialNo||((state.quotes||[]).length+1);
   window.__quotePdfData=q.pdfData||""; window.__quotePdfName=q.pdfData?"(existing attachment)":"";
   const rep=myRep();
   const sel=(key,val,extra)=>`<select id="qf_${key}"><option value=""></option>${vocab(key,extra).map(o=>`<option ${o===val?"selected":""}>${esc(o)}</option>`).join("")}</select>`;
@@ -1994,7 +1995,8 @@ function quoteForm(q){ q=q||{};
 }
 function readQuote(existing){
   const id=document.getElementById("qf_clientId").value; const cl=state.clients.find(x=>x.id===id); const rep=myRep();
-  const items=(window.__quoteItems||[]).filter(it=>(it.desc&&it.desc.trim())||num(it.pieces)||num(it.unitPrice));
+  const gqSerial=(existing&&existing.serialNo)||window.__quoteGqSerial||((state.quotes||[]).length+1);
+  const items=(window.__quoteItems||[]).filter(it=>(it.desc&&it.desc.trim())||num(it.pieces)||num(it.unitPrice)).map((it,idx)=>Object.assign({},it,{code:gqSerial+"/"+(idx+1)}));
   return Object.assign({},existing||{},{
     quoteDate:document.getElementById("qf_quoteDate").value,
     validUntil:document.getElementById("qf_validUntil").value,
@@ -2069,12 +2071,14 @@ function quoteLetterheadHtml(q){
   const items=q.items||[];
   const rows=items.map((it,idx)=>{
     const wf=mmToInchFrac(it.sizeW), hf=mmToInchFrac(it.sizeH);
-    const sizeTxt=(wf||hf)?(wf+" x "+hf):"";
+    const mmTxt=(num(it.sizeW)&&num(it.sizeH))?(num(it.sizeW)+" x "+num(it.sizeH)):"";
+    const inchTxt=(wf||hf)?(wf+" x "+hf):"";
+    const sizeHtml=mmTxt?`${esc(mmTxt)}${inchTxt?`<br><span style="color:#777;font-size:10px">Inches: ${esc(inchTxt)}</span>`:""}`:esc(inchTxt);
     return `<tr>
     <td class="num">${idx+1}</td>
     <td>${esc(it.code||"")}</td>
     <td>${esc(it.desc)}</td>
-    <td class="num">${esc(sizeTxt)}</td>
+    <td class="num">${sizeHtml}</td>
     <td class="num">${esc(it.sqft||"")}</td>
     <td class="num">${num(it.pieces)} Pcs</td>
     <td class="num">${PKR(it.unitPrice)}</td>
@@ -2082,8 +2086,7 @@ function quoteLetterheadHtml(q){
   </tr>`;}).join("");
   const totalQty=quoteSumQty(items), glassQty=quoteSumByType(items,"Glass"), hwQty=quoteSumByType(items,"Hardware");
   const subTotal=quoteTotal(items);
-  const taxOk=!!(q.ntn&&q.gst), taxPct=taxOk?18:21;
-  const custLabel=`${esc(c.id||"")} - ${esc(q.company||c.company||"")} - ${esc(q.contact||c.contact||"")}`;
+  const custLabel=`<u>${esc(c.id||"")} - ${esc(q.company||c.company||"")}</u> - ${esc(q.contact||c.contact||"")}`;
   const attentionName=[quoteHonorific(q),(q.contact||c.contact||"")].filter(Boolean).join(" ");
   return `<div class="card printquote" style="padding:0;max-width:850px;margin:0 auto">
       <img src="${PSG_LOGO_DATA}" style="width:100%;display:block" alt="Pakistan Safety Glass">
@@ -2092,7 +2095,7 @@ function quoteLetterheadHtml(q){
           <span style="display:inline-block;border:1.5px solid #1a1a1a;border-radius:4px;padding:5px 14px;font-weight:700;font-size:12.5px">Project Quotation Voucher - #${q.serialNo||1}</span>
         </div>
         <div class="no-break" style="display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;font-size:13px;border-bottom:1px solid #ccc;padding-bottom:10px;margin-bottom:10px">
-          <div><b>S.NO:</b> ${esc(quoteSerialDisplay(q,c))}<br><b>Date:</b> ${esc(q.quoteDate)}</div>
+          <div><b>S.NO:</b> <u>${esc(quoteSerialDisplay(q,c))}</u><br><b>Date:</b> ${esc(q.quoteDate)}</div>
           <div><b>Customer:</b> ${custLabel}<br><b>Cell:</b> ${esc(c.phone||"")}</div>
           <div><b>Attention:</b> ${esc(attentionName)}<br><b>Email:</b> ${esc(c.email||"")}</div>
           <div><b>Subject:</b> ${esc(q.category||"")}<br><b>Sales By:</b> ${esc(q.rep||"")}</div>
@@ -2112,12 +2115,13 @@ function quoteLetterheadHtml(q){
           <tr><td style="text-align:right;padding:2px 4px"><b>Sub Total</b></td><td class="num">${PKR(subTotal)}</td></tr>
           <tr><td style="text-align:right;padding:2px 4px"><b>Net Amount</b></td><td class="num"><b>${PKR(subTotal)}</b></td></tr>
         </table>
-        <div class="no-break" style="font-size:12px;margin:10px 0;padding:8px;background:#fafafa;border:1px solid #ddd">Please add ${taxPct}% Tax on above quoted rates.${taxOk?"":" (If NTN / GST not provided, 21% Tax will be applied.)"}</div>
+        <div class="no-break" style="font-size:12px;margin:10px 0;padding:8px;background:#fafafa;border:1px solid #ddd">Please add 18% Tax on above quoted rates. (If NTN / GST not provided, 21% Tax will be applied.)</div>
         ${q.notes?`<div style="font-size:12px;margin:10px 0"><b>Notes</b><div style="white-space:pre-wrap">${esc(q.notes)}</div></div>`:""}
         <div style="font-size:11px;color:#555;margin-top:10px">Note: All measurements are calculated on standard sheet size and not actual size dimension.</div>
         <div style="margin-top:14px;font-size:11px;line-height:1.5"><b>Terms &amp; Conditions</b>
           <ol style="padding-left:18px">${PSG_TERMS.map(t=>`<li>${esc(t)}</li>`).join("")}</ol>
-          <p style="margin-top:6px"><b>DISCLAIMER:</b> ${esc(PSG_DISCLAIMER)}</p>
+          <p style="margin-top:6px"><b>DISCLAIMER:</b></p>
+          <p style="margin-top:4px">${esc(PSG_DISCLAIMER)}</p>
         </div>
         <div style="margin-top:22px;border-top:1.5px dashed #999"></div>
         <div class="no-break" style="margin-top:14px;border:1px solid #999;padding:10px;font-size:12px">
