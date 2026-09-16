@@ -693,7 +693,7 @@ function loadLocalOrSeed(){
 const MAP = {
   clients:{table:"crm_clients", pk:"id",
     to:c=>({id:c.id,company:c.company,contact:c.contact,designation:c.designation,phone:c.phone,email:c.email,city:c.city,industry:c.industry,lead_source:c.leadSource,priority:c.priority,assigned_to:c.assignedTo,first_contact:c.firstContact||null,last_contact:c.lastContact||null,status:c.status,notes:c.notes,revenue_potential:num(c.revenuePotential),record_type:c.recordType,active:!!c.active,account_type:c.accountType||'Client'}),
-    from:r=>({id:r.id,company:r.company,contact:r.contact,designation:r.designation,phone:r.phone,email:r.email,city:r.city,industry:r.industry,leadSource:r.lead_source,priority:r.priority,assignedTo:r.assigned_to,firstContact:r.first_contact||"",lastContact:r.last_contact||"",status:r.status,notes:r.notes,revenuePotential:r.revenue_potential,recordType:r.record_type,active:r.active,accountType:r.account_type||'Client'}) },
+    from:r=>({id:r.id,company:r.company,contact:r.contact,designation:r.designation,phone:r.phone,email:r.email,city:r.city,industry:r.industry,leadSource:r.lead_source,priority:r.priority,assignedTo:r.assigned_to,firstContact:r.first_contact||"",lastContact:r.last_contact||"",status:r.status,notes:r.notes,revenuePotential:r.revenue_potential,recordType:normalizeRecordType(r.record_type),active:r.active,accountType:r.account_type||'Client'}) },
   calls:{table:"crm_calls", pk:"id",
     to:c=>({id:c.id,call_date:c.date||null,rep:c.rep,client_id:c.clientId,company:c.company,contact:c.contact,duration:num(c.duration),result:c.result,interest:num(c.interest),next_action:c.nextAction,follow_up:c.followUp||null,notes:c.notes,converted:c.converted}),
     from:r=>({id:r.id,date:r.call_date||"",rep:r.rep,clientId:r.client_id,company:r.company,contact:r.contact,duration:r.duration,result:r.result,interest:r.interest,nextAction:r.next_action,followUp:r.follow_up||"",notes:r.notes,converted:r.converted}) },
@@ -1015,6 +1015,21 @@ function rowActions(kind,id){ return `<div class="rowbtns"><button class="btn sm
 // the first order was won; a record only becomes Client once it has repeat orders.
 const STAGE_ORDER = ['New Inquiry','Quotation Sent','Follow-up / Negotiation','Quotation Approved','Order Confirmed','Advance Payment Received','Sales Order Created','Production Order Created','Production In Process','Production Completed & QC Passed','Balance Payment Received','Ready for Dispatch','Dispatched / Delivered','Order Closed'];
 const STAGE_LOST = 'Lost';
+/* Any record_type value that isn't in STAGE_ORDER (or STAGE_LOST) -- e.g. a legacy stage name
+   left over from before the pipeline was unified, or written by a system that hasn't picked up
+   the latest stage names yet (the WhatsApp bot, an old CSV template) -- gets normalized here on
+   read, so a record never silently disappears from every bucket (Prospects/Leads/Clients) just
+   because its stage string is stale. It keeps showing in the unfiltered Accounts view either way. */
+const LEGACY_STAGE_MAP = {
+  'New Lead':'New Inquiry','Contacted':'New Inquiry','Qualified':'New Inquiry','Requirement Received':'New Inquiry',
+  'Negotiation':'Follow-up / Negotiation','Technical Approval':'Quotation Approved','PO Pending':'Order Confirmed',
+  'Won – Order Confirmed':'Sales Order Created','Won - Order Confirmed':'Sales Order Created','Client':'Order Closed'
+};
+function normalizeRecordType(rt){
+  if(!rt) return 'New Inquiry';
+  if(STAGE_ORDER.includes(rt) || rt===STAGE_LOST) return rt;
+  return LEGACY_STAGE_MAP[rt] || 'New Inquiry';
+}
 const STAGE_COLORS = {
   'New Inquiry':                    {bg:'rgba(100,116,139,.12)', fg:'#475569'},
   'Quotation Sent':                 {bg:'rgba(255,152,0,.12)',   fg:'#e65100'},
