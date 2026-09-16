@@ -342,12 +342,15 @@ td .help{font-size:11.5px;color:var(--muted);margin-top:1px;display:block}
 /* ── PRINT ── */
 .no-screen{display:none}
 @media print{#sidebarWrap,.topbar,#toast,#modalMount,.no-print{display:none!important}
-  #mainArea{display:block}#view{padding:0;overflow:visible;height:auto}
+  html,body{height:auto!important;overflow:visible!important}
+  #app{display:block!important;height:auto!important;overflow:visible!important}
+  #mainArea{display:block!important;height:auto!important;overflow:visible!important;flex:none}
+  #view{display:block!important;padding:0!important;overflow:visible!important;height:auto!important;flex:none}
   .no-screen{display:block}
   .print-quote-page{page-break-after:always}
   .print-quote-page:last-child{page-break-after:auto}
   .printquote table tr,.printquote ol li,.printquote .no-break{break-inside:avoid;page-break-inside:avoid}
-  .printquote,.printquote.card{overflow:visible!important}
+  .printquote,.printquote.card{overflow:visible!important;box-shadow:none!important;height:auto!important;max-height:none!important}
   @page{margin:10mm}}
 
 /* ── RESPONSIVE ── */
@@ -1886,7 +1889,7 @@ function renderQuotes(v){
   const body=rows.length?rows.map(q=>{
     const total=quoteTotal(q.items);
     return `<tr>
-    <td>${esc(q.id)}</td><td>${esc(q.quoteDate)}</td><td><b>${esc(q.company)}</b></td><td>${esc(q.contact)}</td><td>${esc(q.rep)}</td>
+    <td>${esc(quoteDisplayId(q))}</td><td>${esc(q.quoteDate)}</td><td><b>${esc(q.company)}</b></td><td>${esc(q.contact)}</td><td>${esc(q.rep)}</td>
     <td class="num">${(q.items||[]).length}</td>
     <td class="num"><b>${PKR(total)}</b></td>
     <td>${quoteStatusPill(q.status)}</td>
@@ -2013,7 +2016,7 @@ function del_quote(id){ confirmDel("Delete this quote?", async()=>{ state.quotes
 function waQuote(id){
   const q=state.quotes.find(x=>x.id===id); if(!q)return;
   const c=state.clients.find(x=>x.id===q.clientId)||{};
-  const ctx=Object.assign(clientCtx(c),{contact:q.contact||c.contact,rep:q.rep,quoteNo:q.id});
+  const ctx=Object.assign(clientCtx(c),{contact:q.contact||c.contact,rep:q.rep,quoteNo:quoteDisplayId(q)});
   if(q.pdfData){
     const a=document.createElement("a"); a.href=q.pdfData; a.download=quoteDisplayId(q)+".pdf"; document.body.appendChild(a); a.click(); document.body.removeChild(a);
     toast("PDF downloaded — WhatsApp links can't attach files automatically. Please attach the downloaded file manually in the chat that opens.");
