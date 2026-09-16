@@ -692,8 +692,8 @@ function loadLocalOrSeed(){
 /* ----- Supabase field mapping (snake_case DB <-> camelCase app) ----- */
 const MAP = {
   clients:{table:"crm_clients", pk:"id",
-    to:c=>({id:c.id,company:c.company,contact:c.contact,designation:c.designation,phone:c.phone,email:c.email,city:c.city,industry:c.industry,lead_source:c.leadSource,priority:c.priority,assigned_to:c.assignedTo,first_contact:c.firstContact||null,last_contact:c.lastContact||null,status:c.status,notes:c.notes,revenue_potential:num(c.revenuePotential),record_type:c.recordType,active:!!c.active,account_type:c.accountType||'Client'}),
-    from:r=>({id:r.id,company:r.company,contact:r.contact,designation:r.designation,phone:r.phone,email:r.email,city:r.city,industry:r.industry,leadSource:r.lead_source,priority:r.priority,assignedTo:r.assigned_to,firstContact:r.first_contact||"",lastContact:r.last_contact||"",status:r.status,notes:r.notes,revenuePotential:r.revenue_potential,recordType:normalizeRecordType(r.record_type),active:r.active,accountType:r.account_type||'Client'}) },
+    to:c=>({id:c.id,company:c.company,contact:c.contact,designation:c.designation,phone:c.phone,email:c.email,city:c.city,area:c.area||null,industry:c.industry,lead_source:c.leadSource,priority:c.priority,assigned_to:c.assignedTo,first_contact:c.firstContact||null,last_contact:c.lastContact||null,status:c.status,notes:c.notes,revenue_potential:num(c.revenuePotential),record_type:c.recordType,active:!!c.active,account_type:c.accountType||'Client'}),
+    from:r=>({id:r.id,company:r.company,contact:r.contact,designation:r.designation,phone:r.phone,email:r.email,city:r.city,area:r.area||"",industry:r.industry,leadSource:r.lead_source,priority:r.priority,assignedTo:r.assigned_to,firstContact:r.first_contact||"",lastContact:r.last_contact||"",status:r.status,notes:r.notes,revenuePotential:r.revenue_potential,recordType:normalizeRecordType(r.record_type),active:r.active,accountType:r.account_type||'Client'}) },
   calls:{table:"crm_calls", pk:"id",
     to:c=>({id:c.id,call_date:c.date||null,rep:c.rep,client_id:c.clientId,company:c.company,contact:c.contact,duration:num(c.duration),result:c.result,interest:num(c.interest),next_action:c.nextAction,follow_up:c.followUp||null,notes:c.notes,converted:c.converted}),
     from:r=>({id:r.id,date:r.call_date||"",rep:r.rep,clientId:r.client_id,company:r.company,contact:r.contact,duration:r.duration,result:r.result,interest:r.interest,nextAction:r.next_action,followUp:r.follow_up||"",notes:r.notes,converted:r.converted}) },
@@ -1078,7 +1078,7 @@ function renderClients(v, bucketKey){
     ${showStage?`<td><span class="tag" style="background:${sc.bg};color:${sc.fg}">${esc(stageLabel(c.recordType))}</span></td>`:""}
     <td>${esc(c.id)}</td>
     <td>${typePill(c)}</td>
-    <td><b>${esc(c.company)}</b>${c.city?`<br><span class="help">${esc(c.city)}</span>`:""}</td>
+    <td><b>${esc(c.company)}</b>${c.city||c.area?`<br><span class="help">${esc([c.city,c.area].filter(Boolean).join(", "))}</span>`:""}</td>
     <td>${esc(c.contact)}${c.designation?`<br><span class="help">${esc(c.designation)}</span>`:""}</td>
     <td>${esc(c.phone)}</td>
     <td>${esc(c.industry)}</td>
@@ -1110,7 +1110,7 @@ function renderVendors(v){
   const body = rows.length? rows.map(c=>`<tr>
     <td>${esc(c.id)}</td>
     <td><span class="pill ${c.accountType==='Supplier'?'blue':'gray'}">${esc(c.accountType)}</span></td>
-    <td><b>${esc(c.company)}</b>${c.city?`<br><span class="help">${esc(c.city)}</span>`:""}</td>
+    <td><b>${esc(c.company)}</b>${c.city||c.area?`<br><span class="help">${esc([c.city,c.area].filter(Boolean).join(", "))}</span>`:""}</td>
     <td>${esc(c.contact)}${c.designation?`<br><span class="help">${esc(c.designation)}</span>`:""}</td>
     <td>${esc(c.phone)}</td>
     <td>${esc(c.email)}</td>
@@ -1168,6 +1168,7 @@ function clientForm(c){
     <div class="field"><label>Phone</label><input id="f_phone" value="${esc(c.phone||"")}"></div>
     <div class="field"><label>Email</label><input id="f_email" value="${esc(c.email||"")}"></div>
     <div class="field"><label>City</label><input id="f_city" value="${esc(c.city||"")}"></div>
+    <div class="field"><label>Area</label><input id="f_area" value="${esc(c.area||"")}" placeholder="e.g. DHA Phase 5, Gulshan-e-Iqbal"></div>
     <div class="field"><label>Industry</label>${sel("industry",c.industry,[c.industry])}</div>
     <div class="field"><label>Lead Source</label>${sel("leadSource",c.leadSource,[c.leadSource])}</div>
     <div class="field"><label>Priority</label>${sel("priority",c.priority,[c.priority])}</div>
@@ -1186,7 +1187,7 @@ function readClient(existing){
   const rep=myRep();
   return Object.assign({}, existing||{}, {
     company:g("company"),recordType:g("recordType"),contact:g("contact"),designation:g("designation"),
-    phone:normalizePhone(g("phone")),email:g("email"),city:g("city"),industry:g("industry"),leadSource:g("leadSource"),
+    phone:normalizePhone(g("phone")),email:g("email"),city:g("city"),area:g("area"),industry:g("industry"),leadSource:g("leadSource"),
     priority:g("priority"),assignedTo: rep? rep : g("reps"),status:g("clientStatus"),
     firstContact:g("firstContact"),lastContact:g("lastContact"),revenuePotential:num(g("revenuePotential")),
     active:g("active")==="Yes",notes:g("notes"),accountType:g("accountType")||"Client"
@@ -1251,7 +1252,7 @@ function openClientHistory(id){
       <div class="ch-name">${esc(c.company)}</div>
       <div class="ch-meta">
         ${c.contact?`<b>Contact:</b> ${esc(c.contact)}${c.designation?' ('+esc(c.designation)+')':''}`:''}<br>
-        ${c.phone?`📱 ${esc(c.phone)}`:''} ${c.email?`&nbsp;✉ ${esc(c.email)}`:''}${c.city?`&nbsp;📍 ${esc(c.city)}`:''}
+        ${c.phone?`📱 ${esc(c.phone)}`:''} ${c.email?`&nbsp;✉ ${esc(c.email)}`:''}${c.city||c.area?`&nbsp;📍 ${esc([c.city,c.area].filter(Boolean).join(', '))}`:''}
       </div>
       <div class="ch-stats">
         <div class="ch-stat"><div class="sv">${clientCalls}</div><div class="sl">Calls</div></div>
@@ -1341,6 +1342,7 @@ const CSV_FIELD_MAP = {
   "phone":"phone","phone number":"phone","mobile":"phone","contact number":"phone",
   "email":"email",
   "city":"city",
+  "area":"area","locality":"area","neighborhood":"area","neighbourhood":"area",
   "industry":"industry",
   "lead source":"leadSource","leadsource":"leadSource","source":"leadSource",
   "priority":"priority",
@@ -2448,6 +2450,14 @@ function renderAnalytics(v){
   const ind={};cl.forEach(c=>{const k=c.industry||"Other";ind[k]=(ind[k]||0)+1;});
   const indL=Object.keys(ind).slice(0,8),indD=indL.map(k=>ind[k]);
 
+  const cityAgg={};cl.forEach(c=>{const k=(c.city||"").trim()||"Unspecified";cityAgg[k]=(cityAgg[k]||0)+1;});
+  const cityTop=Object.entries(cityAgg).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  const cityL=cityTop.map(x=>x[0]),cityD=cityTop.map(x=>x[1]);
+
+  const areaAgg={};cl.forEach(c=>{const k=(c.area||"").trim();if(k)areaAgg[k]=(areaAgg[k]||0)+1;});
+  const areaTop=Object.entries(areaAgg).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  const areaL=areaTop.map(x=>x[0]),areaD=areaTop.map(x=>x[1]);
+
   const stages=STAGE_ORDER.map(s=>PIPE_SHORT[s]||s);
   const stageCt=STAGE_ORDER.map(s=>cl.filter(c=>(c.recordType||"")===s).length);
 
@@ -2461,6 +2471,8 @@ function renderAnalytics(v){
     <div class="chart-card span2"><div class="ct">Monthly Call Volume</div><canvas id="c_calls" height="80"></canvas></div>
     <div class="chart-card"><div class="ct">Revenue by Rep (PKR)</div><canvas id="c_rev" height="130"></canvas></div>
     <div class="chart-card"><div class="ct">Clients by Industry</div><canvas id="c_ind" height="130"></canvas></div>
+    <div class="chart-card"><div class="ct">Clients by City</div><canvas id="c_city" height="130"></canvas></div>
+    <div class="chart-card"><div class="ct">Clients by Area</div><canvas id="c_area" height="130"></canvas></div>
     <div class="chart-card span2"><div class="ct">Rep vs Target</div><canvas id="c_tgt" height="80"></canvas></div>
     <div class="chart-card"><div class="ct">Pipeline Stages</div><canvas id="c_pipe" height="130"></canvas></div>
     <div class="chart-card"><div class="ct">Monthly Deal Value</div><canvas id="c_deals" height="130"></canvas></div>
@@ -2470,6 +2482,8 @@ function renderAnalytics(v){
     _acharts.calls=new Chart(document.getElementById("c_calls"),{type:"bar",data:{labels:months,datasets:[{label:"Calls",data:callCounts,backgroundColor:"#4caf89",borderRadius:4}]},options:{...base,plugins:{...base.plugins,legend:{display:false}}}});
     _acharts.rev=new Chart(document.getElementById("c_rev"),{type:"bar",data:{labels:repNames,datasets:[{label:"Revenue",data:repRev,backgroundColor:P,borderRadius:4}]},options:{...base,indexAxis:"y",plugins:{...base.plugins,legend:{display:false}}}});
     _acharts.ind=new Chart(document.getElementById("c_ind"),{type:"doughnut",data:{labels:indL,datasets:[{data:indD,backgroundColor:P,borderWidth:0,hoverOffset:4}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:"right",labels:{color:T,font:{size:10},boxWidth:10}}}}});
+    _acharts.city=new Chart(document.getElementById("c_city"),{type:"bar",data:{labels:cityL,datasets:[{label:"Clients",data:cityD,backgroundColor:"#4caf89",borderRadius:4}]},options:{...base,indexAxis:"y",plugins:{...base.plugins,legend:{display:false}}}});
+    _acharts.area=new Chart(document.getElementById("c_area"),{type:"bar",data:{labels:areaL,datasets:[{label:"Clients",data:areaD,backgroundColor:"#2196f3",borderRadius:4}]},options:{...base,indexAxis:"y",plugins:{...base.plugins,legend:{display:false}}}});
     _acharts.tgt=new Chart(document.getElementById("c_tgt"),{type:"bar",data:{labels:repNames,datasets:[{label:"Target",data:repTgt,backgroundColor:"rgba(255,255,255,.12)",borderRadius:4},{label:"Actual",data:repAct,backgroundColor:"#4caf89",borderRadius:4}]},options:{...base}});
     _acharts.pipe=new Chart(document.getElementById("c_pipe"),{type:"bar",data:{labels:stages,datasets:[{label:"Deals",data:stageCt,backgroundColor:P,borderRadius:4}]},options:{...base,indexAxis:"y",plugins:{...base.plugins,legend:{display:false}}}});
     _acharts.deals=new Chart(document.getElementById("c_deals"),{type:"line",data:{labels:months,datasets:[{label:"Value",data:dealVals,borderColor:"#4caf89",backgroundColor:"rgba(76,175,137,.15)",fill:true,tension:.35,pointRadius:3}]},options:{...base,plugins:{...base.plugins,legend:{display:false}}}});
