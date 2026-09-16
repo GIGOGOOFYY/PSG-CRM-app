@@ -2086,7 +2086,7 @@ function quoteLetterheadHtml(q){
   </tr>`;}).join("");
   const totalQty=quoteSumQty(items), glassQty=quoteSumByType(items,"Glass"), hwQty=quoteSumByType(items,"Hardware");
   const subTotal=quoteTotal(items);
-  const custLabel=`<u>${esc(c.id||"")} - ${esc(q.company||c.company||"")}</u> - ${esc(q.contact||c.contact||"")}`;
+  const custLabel=`${esc(c.id||"")} - ${esc(q.company||c.company||"")} - ${esc(q.contact||c.contact||"")}`;
   const attentionName=[quoteHonorific(q),(q.contact||c.contact||"")].filter(Boolean).join(" ");
   return `<div class="card printquote" style="padding:0;max-width:850px;margin:0 auto">
       <img src="${PSG_LOGO_DATA}" style="width:100%;display:block" alt="Pakistan Safety Glass">
@@ -2095,7 +2095,7 @@ function quoteLetterheadHtml(q){
           <span style="display:inline-block;border:1.5px solid #1a1a1a;border-radius:4px;padding:5px 14px;font-weight:700;font-size:12.5px">Project Quotation Voucher - #${q.serialNo||1}</span>
         </div>
         <div class="no-break" style="display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;font-size:13px;border-bottom:1px solid #ccc;padding-bottom:10px;margin-bottom:10px">
-          <div><b>S.NO:</b> <u>${esc(quoteSerialDisplay(q,c))}</u><br><b>Date:</b> ${esc(q.quoteDate)}</div>
+          <div><b>S.NO:</b> ${esc(quoteSerialDisplay(q,c))}<br><b>Date:</b> ${esc(q.quoteDate)}</div>
           <div><b>Customer:</b> ${custLabel}<br><b>Cell:</b> ${esc(c.phone||"")}</div>
           <div><b>Attention:</b> ${esc(attentionName)}<br><b>Email:</b> ${esc(c.email||"")}</div>
           <div><b>Subject:</b> ${esc(q.category||"")}<br><b>Sales By:</b> ${esc(q.rep||"")}</div>
@@ -2126,7 +2126,7 @@ function quoteLetterheadHtml(q){
         <div style="margin-top:22px;border-top:1.5px dashed #999"></div>
         <div class="no-break" style="margin-top:14px;border:1px solid #999;padding:10px;font-size:12px">
           <div>Please fill up and return as a token of approval</div>
-          <div style="margin-top:6px">Our Ref: ${esc(quoteSerialDisplay(q,c))}&nbsp;&nbsp;&nbsp;Name: ${esc((c.id||"")+" - "+(q.company||c.company||""))}</div>
+          <div style="margin-top:6px">Our Ref: <u>${esc(quoteSerialDisplay(q,c))}</u>&nbsp;&nbsp;&nbsp;Name: <u>${esc((c.id||"")+" - "+(q.company||c.company||""))}</u></div>
           <div style="margin-top:6px">Designation: ___________________________&nbsp;&nbsp;&nbsp;NTN: ______________&nbsp;&nbsp;&nbsp;GST: ______________</div>
         </div>
         <div class="no-break" style="margin-top:14px;font-size:12px">Signature &amp; Company Stamp</div>
