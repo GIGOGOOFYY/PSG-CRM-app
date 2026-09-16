@@ -500,8 +500,8 @@ const SIDEBAR_NAV = [
     { id:"_accounts", icon:"briefcase",      label:"Accounts",        route:"clients" },
     { id:"deals",     icon:"dollar-sign",    label:"Deals" },
     { id:"_forecast", icon:"bar-chart-2",    label:"Forecasts",       route:"performance" },
-    { id:"_docs",     icon:"file-text",      label:"Documents",       route:"_soon" },
-    { id:"_camp",     icon:"megaphone",      label:"Campaigns",       route:"_soon" },
+    { id:"_docs",     icon:"file-text",      label:"Documents",       route:"documents" },
+    { id:"_camp",     icon:"megaphone",      label:"Campaigns",       route:"campaigns" },
   ]},
 
   { section:"Activities", items:[
@@ -512,7 +512,7 @@ const SIDEBAR_NAV = [
 
   { section:"Inventory", items:[
     { id:"_prod",     icon:"package",        label:"Products",        route:"products" },
-    { id:"_price",    icon:"tag",            label:"Price Books",     route:"_soon" },
+    { id:"_price",    icon:"tag",            label:"Price Books",     route:"priceBooks" },
     { id:"_quotes",   icon:"clipboard",      label:"Quotes",          route:"quotes" },
     { id:"_so",       icon:"shopping-cart",  label:"Sales Orders",    route:"salesOrders" },
     { id:"_po",       icon:"truck",          label:"Purchase Orders", route:"purchaseOrders" },
@@ -620,14 +620,18 @@ const DD = {
   taskStatus:["Open","In Progress","Done"],
   quoteStatus:["Draft","Sent","Accepted","Rejected","Expired"],
   productCategory:["Aluminium Windows","Processed Glass","Bullet Resistant Glass","Automotive Glass","Decorative Glass","ACP / Alucobond","Accessories","Other"],
-  productUnit:["Sqft","Piece","Rft","Meter","Set","Kg"]
+  productUnit:["Sqft","Piece","Rft","Meter","Set","Kg"],
+  campaignChannel:["WhatsApp","Instagram","Facebook","Google Ads","Email","Trade Show","Referral Program","Website","Other"],
+  campaignStatus:["Planned","Active","Paused","Completed"],
+  priceBookTier:["Retail","Dealer","Wholesale","Project / Bulk","Custom"],
+  documentType:["Contract","Purchase Order","Approval Letter","Drawing / Design","NTN / GST Certificate","Invoice","Other"]
 };
 /* union a base list with distinct values found in the seeded data (nothing lost) */
 function activeRepNames(){ const emp=(state.users||[]).filter(u=>u.role==="employee").map(u=>u.repName||u.username).filter(Boolean); return emp.length? [...new Set(emp)] : [...DD.reps]; }
 function vocab(key, extra){ const base = key==="reps" ? activeRepNames() : DD[key]; const s=[...base]; (extra||[]).forEach(v=>{ if(v && !s.includes(v)) s.push(v); }); return s; }
 
 /* ---------- state ---------- */
-let state = { users:[], clients:[], calls:[], meetings:[], deals:[], tasks:[], repTargets:[], quotes:[], salesOrders:[], invoices:[], purchaseOrders:[], products:[] };
+let state = { users:[], clients:[], calls:[], meetings:[], deals:[], tasks:[], repTargets:[], quotes:[], salesOrders:[], invoices:[], purchaseOrders:[], products:[], campaigns:[], priceBooks:[], documents:[] };
 let session = null;          // {username, role, repName}
 const DEFAULT_SB_URL="https://qeyeonucnlsmbeomrrwt.supabase.co";
 const DEFAULT_SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFleWVvbnVjbmxzbWJlb21ycnd0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQxODk0OTksImV4cCI6MjA5OTc2NTQ5OX0.SmacOxNWOR4HLCOQf_gkHYHFTqBWMDNWrpFAKHP5nns";
@@ -688,7 +692,7 @@ function repStats(rep){
    PERSISTENCE
    ====================================================================== */
 function localKey(){ return "psgcrm_data"; }
-function saveLocal(){ localStorage.setItem(localKey(), JSON.stringify({users:state.users,clients:state.clients,calls:state.calls,meetings:state.meetings,deals:state.deals,repTargets:state.repTargets,quotes:state.quotes,products:state.products})); }
+function saveLocal(){ localStorage.setItem(localKey(), JSON.stringify({users:state.users,clients:state.clients,calls:state.calls,meetings:state.meetings,deals:state.deals,repTargets:state.repTargets,quotes:state.quotes,products:state.products,campaigns:state.campaigns,priceBooks:state.priceBooks})); }
 function loadLocalOrSeed(){
   let d=null; try{ d=JSON.parse(localStorage.getItem(localKey())); }catch(e){}
   if(d && d.clients){ state=Object.assign(state,d); }
@@ -737,7 +741,16 @@ const MAP = {
     from:r=>({id:r.id,poDate:r.po_date||"",vendor:r.vendor,item:r.item,qty:r.qty,unitCost:r.unit_cost,status:r.status,expectedDelivery:r.expected_delivery||"",notes:r.notes}) },
   products:{table:"crm_products", pk:"id",
     to:p=>({id:p.id,name:p.name,sku:p.sku||null,category:p.category||null,unit:p.unit||null,unit_price:num(p.unitPrice),description:p.description||null,active:p.active!==false}),
-    from:r=>({id:r.id,name:r.name,sku:r.sku||"",category:r.category||"",unit:r.unit||"",unitPrice:r.unit_price,description:r.description||"",active:r.active!==false}) }
+    from:r=>({id:r.id,name:r.name,sku:r.sku||"",category:r.category||"",unit:r.unit||"",unitPrice:r.unit_price,description:r.description||"",active:r.active!==false}) },
+  campaigns:{table:"crm_campaigns", pk:"id",
+    to:c=>({id:c.id,name:c.name,channel:c.channel||null,status:c.status||null,start_date:c.startDate||null,end_date:c.endDate||null,budget:num(c.budget),leads_generated:num(c.leadsGenerated),notes:c.notes||null}),
+    from:r=>({id:r.id,name:r.name,channel:r.channel||"",status:r.status||"",startDate:r.start_date||"",endDate:r.end_date||"",budget:r.budget,leadsGenerated:r.leads_generated,notes:r.notes||""}) },
+  priceBooks:{table:"crm_price_books", pk:"id",
+    to:p=>({id:p.id,name:p.name,tier:p.tier||null,active:p.active!==false,notes:p.notes||null,items:p.items||[]}),
+    from:r=>({id:r.id,name:r.name,tier:r.tier||"",active:r.active!==false,notes:r.notes||"",items:r.items||[]}) },
+  documents:{table:"crm_documents", pk:"id",
+    to:d=>({id:d.id,name:d.name,type:d.type||null,client_id:d.clientId||null,company:d.company||null,file_name:d.fileName||null,file_type:d.fileType||null,file_size:num(d.fileSize),file_data:d.fileData||null,notes:d.notes||null,uploaded_by:d.uploadedBy||null,uploaded_at:d.uploadedAt||null}),
+    from:r=>({id:r.id,name:r.name,type:r.type||"",clientId:r.client_id||"",company:r.company||"",fileName:r.file_name||"",fileType:r.file_type||"",fileSize:r.file_size,fileData:r.file_data||"",notes:r.notes||"",uploadedBy:r.uploaded_by||"",uploadedAt:r.uploaded_at||""}) }
 };
 
 function initSupabase(){
@@ -749,7 +762,7 @@ function initSupabase(){
 async function cloudPull(){
   if(!sb) return false;
   let anyOK=false;
-  for(const k of ["users","clients","calls","meetings","deals","tasks","repTargets","quotes","salesOrders","invoices","purchaseOrders","products"]){
+  for(const k of ["users","clients","calls","meetings","deals","tasks","repTargets","quotes","salesOrders","invoices","purchaseOrders","products","campaigns","priceBooks","documents"]){
     try{
       const PAGE=1000; let all=[]; let offset=0;
       while(true){
@@ -880,7 +893,7 @@ function renderConn(){
 function go(r){ route=r; searchTerm=""; renderSidebar(); renderRoute(); window.scrollTo(0,0); }
 function renderRoute(){
   const v=document.getElementById("view");
-  ({dashboard:renderDashboard,analytics:renderAnalytics,clients:renderClients,leads:renderLeadsOnly,clientsOnly:renderClientsOnly,prospects:renderProspectsOnly,tasks:renderTasks,calls:renderCalls,meetings:renderMeetings,deals:renderDeals,quotes:renderQuotes,quoteView:renderQuoteView,performance:renderPerformance,admin:renderAdmin,salesOrders:renderSalesOrders,invoices:renderInvoices,purchaseOrders:renderPurchaseOrders,vendors:renderVendors,products:renderProducts}[route]||renderDashboard)(v);
+  ({dashboard:renderDashboard,analytics:renderAnalytics,clients:renderClients,leads:renderLeadsOnly,clientsOnly:renderClientsOnly,prospects:renderProspectsOnly,tasks:renderTasks,calls:renderCalls,meetings:renderMeetings,deals:renderDeals,quotes:renderQuotes,quoteView:renderQuoteView,performance:renderPerformance,admin:renderAdmin,salesOrders:renderSalesOrders,invoices:renderInvoices,purchaseOrders:renderPurchaseOrders,vendors:renderVendors,products:renderProducts,campaigns:renderCampaigns,priceBooks:renderPriceBooks,documents:renderDocuments}[route]||renderDashboard)(v);
 }
 
 /* ======================================================================
@@ -1899,6 +1912,205 @@ function addProduct(){ openModal("New Product", productForm({active:true}), asyn
 function edit_product(id){ const p=state.products.find(x=>x.id===id); if(!p)return;
   openModal("Edit Product", productForm(p), async()=>{ Object.assign(p,readProduct(p)); await upsert("products",p); closeModal(); toast("Product updated"); go("products"); }); }
 function del_product(id){ confirmDel("Delete this product?", async()=>{ state.products=state.products.filter(x=>x.id!==id); await remove("products",id); toast("Deleted"); go("products"); }); }
+
+/* ======================================================================
+   PRICE BOOKS -- named pricing tiers (Retail/Dealer/Wholesale/etc) built on
+   top of the Products catalog. Each price book holds its own list of
+   {productId, productName, price} lines, independent of a product's own
+   default unitPrice (which stays the fallback/reference price).
+   ====================================================================== */
+function nextPriceBookId(){
+  const nums=state.priceBooks.map(p=>num(String(p.id||"").replace(/^PB-/,"")));
+  return "PB-"+String((nums.length?Math.max(...nums):0)+1).padStart(4,"0");
+}
+function renderPriceBooks(v){
+  const rows=state.priceBooks.filter(matchSearch).slice().sort((a,b)=>(a.name||"").localeCompare(b.name||""));
+  const body=rows.length?rows.map(p=>`<tr>
+    <td>${esc(p.id)}</td>
+    <td><b>${esc(p.name)}</b></td>
+    <td>${esc(p.tier||"—")}</td>
+    <td class="num">${(p.items||[]).length}</td>
+    <td><span class="pill ${p.active!==false?"green":"gray"}">${p.active!==false?"Active":"Inactive"}</span></td>
+    <td class="no-print"><div class="rowbtns"><button class="btn sm ghost" onclick="edit_priceBook('${esc(p.id)}')">Edit</button><button class="btn sm ghost danger" onclick="del_priceBook('${esc(p.id)}')">✕</button></div></td></tr>`).join("")
+    :`<tr><td colspan="6"><div class="empty">No price books yet. Click "Add Price Book" to build one from your Products catalog.</div></td></tr>`;
+  v.innerHTML=pagehead("Price Books","Pricing tiers — "+rows.length+" price book"+(rows.length===1?"":"s"),"Add Price Book","addPriceBook()",true)+
+   `<div class="card tablewrap"><table><thead><tr><th>ID</th><th>Name</th><th>Tier</th><th class="num">Items</th><th>Status</th><th></th></tr></thead><tbody>${body}</tbody></table></div>`;
+}
+function pbItemRowHtml(i,it){
+  it=it||{};
+  const prodOpts=`<option value="">Select product…</option>`+state.products.map(pr=>`<option value="${esc(pr.id)}" ${pr.id===it.productId?"selected":""}>${esc(pr.name)}</option>`).join("");
+  return `<div class="card" style="margin:6px 0;padding:10px;background:var(--panel2)"><div class="formgrid">
+    <div class="field full"><label>Product</label><select id="pbi_prod_${i}" onchange="pbItemPickProduct(${i},this.value)">${prodOpts}</select></div>
+    <div class="field"><label>Price (PKR)</label><input id="pbi_price_${i}" type="number" step="any" value="${esc(it.price!=null?it.price:"")}" oninput="pbItemEdit(${i},'price',this.value)"></div>
+  </div><button class="btn sm ghost danger" onclick="pbDelItem(${i})">Remove item</button></div>`;
+}
+function pbRenderItems(){
+  const wrap=document.getElementById("pbi_rows"); if(!wrap)return;
+  wrap.innerHTML=(window.__pbItems||[]).map((it,i)=>pbItemRowHtml(i,it)).join("") || '<div class="help">No products yet — click "+ Add product" below.</div>';
+}
+function pbItemEdit(i,field,val){ if(!window.__pbItems[i])return; window.__pbItems[i][field]=field==="price"?num(val):val; }
+function pbItemPickProduct(i,productId){
+  const pr=state.products.find(x=>x.id===productId);
+  window.__pbItems[i].productId=productId; window.__pbItems[i].productName=pr?pr.name:"";
+  if(pr && (window.__pbItems[i].price==null || window.__pbItems[i].price==="")){ window.__pbItems[i].price=pr.unitPrice||0; pbRenderItems(); }
+}
+function pbAddItem(){ window.__pbItems=window.__pbItems||[]; window.__pbItems.push({productId:"",productName:"",price:""}); pbRenderItems(); }
+function pbDelItem(i){ window.__pbItems.splice(i,1); pbRenderItems(); }
+function priceBookForm(p){ p=p||{};
+  window.__pbItems=(p.items&&p.items.length)?p.items.map(it=>Object.assign({},it)):[];
+  const sel=(key,val,extra)=>`<select id="pbf_${key}"><option value=""></option>${vocab(key,extra).map(o=>`<option ${o===val?"selected":""}>${esc(o)}</option>`).join("")}</select>`;
+  return `<div class="formgrid">
+    <div class="field full"><label>Name</label><input id="pbf_name" value="${esc(p.name||"")}" placeholder="e.g. Dealer Price List 2026"></div>
+    <div class="field"><label>Customer Tier</label>${sel("priceBookTier",p.tier,[p.tier])}</div>
+    <div class="field"><label>Status</label><select id="pbf_active"><option value="true" ${p.active!==false?"selected":""}>Active</option><option value="false" ${p.active===false?"selected":""}>Inactive</option></select></div>
+    <div class="field full"><label>Notes</label><textarea id="pbf_notes">${esc(p.notes||"")}</textarea></div>
+  </div>
+  <h4 style="margin:14px 0 4px">Products &amp; prices</h4>
+  <div id="pbi_rows"></div>
+  <div style="margin:8px 0"><button class="btn sm ghost" onclick="pbAddItem()">＋ Add product</button>${!state.products.length?' <span class="help">No products in your catalog yet — add some under Inventory &gt; Products first.</span>':""}</div>`;
+}
+function readPriceBook(existing){
+  const items=(window.__pbItems||[]).filter(it=>it.productId);
+  return Object.assign({},existing||{},{
+    name:document.getElementById("pbf_name").value,
+    tier:document.getElementById("pbf_tier").value,
+    active:document.getElementById("pbf_active").value!=="false",
+    notes:document.getElementById("pbf_notes").value,
+    items
+  });
+}
+function addPriceBook(){ openModal("New Price Book", priceBookForm({active:true}), async()=>{
+  const p=readPriceBook(); if(!p.name){toast("Price book name is required");return false;}
+  p.id=nextPriceBookId(); state.priceBooks.push(p); await upsert("priceBooks",p); closeModal(); toast("Price book added"); go("priceBooks");
+}, pbRenderItems); }
+function edit_priceBook(id){ const p=state.priceBooks.find(x=>x.id===id); if(!p)return;
+  openModal("Edit Price Book", priceBookForm(p), async()=>{ Object.assign(p,readPriceBook(p)); await upsert("priceBooks",p); closeModal(); toast("Price book updated"); go("priceBooks"); }, pbRenderItems); }
+function del_priceBook(id){ confirmDel("Delete this price book?", async()=>{ state.priceBooks=state.priceBooks.filter(x=>x.id!==id); await remove("priceBooks",id); toast("Deleted"); go("priceBooks"); }); }
+
+/* ======================================================================
+   CAMPAIGNS -- marketing/outreach pushes tracked with a manually-updated
+   lead count and budget, for a quick cost-per-lead read. Independent of
+   the separate PSG AI Marketing OS project; not wired into client
+   lead-source attribution in this pass.
+   ====================================================================== */
+function nextCampaignId(){
+  const nums=state.campaigns.map(c=>num(String(c.id||"").replace(/^CP-/,"")));
+  return "CP-"+String((nums.length?Math.max(...nums):0)+1).padStart(4,"0");
+}
+function campStatusPill(s){ const c={Planned:"gray",Active:"green",Paused:"amber",Completed:"blue"}[s]||"gray"; return `<span class="pill ${c}">${esc(s||"")}</span>`; }
+function renderCampaigns(v){
+  const rows=state.campaigns.filter(matchSearch).slice().sort((a,b)=>(b.startDate||"").localeCompare(a.startDate||""));
+  const totalBudget=rows.reduce((s,c)=>s+num(c.budget),0);
+  const body=rows.length?rows.map(c=>{
+    const leads=num(c.leadsGenerated), cpl=leads?Math.round(num(c.budget)/leads):null;
+    return `<tr>
+    <td>${esc(c.id)}</td>
+    <td><b>${esc(c.name)}</b></td>
+    <td>${esc(c.channel||"—")}</td>
+    <td>${campStatusPill(c.status)}</td>
+    <td>${esc(c.startDate||"")}${c.endDate?" → "+esc(c.endDate):""}</td>
+    <td class="num">${PKR(c.budget)}</td>
+    <td class="num">${leads||0}</td>
+    <td class="num">${cpl!=null?PKR(cpl):"—"}</td>
+    <td class="no-print"><div class="rowbtns"><button class="btn sm ghost" onclick="edit_campaign('${esc(c.id)}')">Edit</button><button class="btn sm ghost danger" onclick="del_campaign('${esc(c.id)}')">✕</button></div></td></tr>`;
+  }).join("")
+    :`<tr><td colspan="9"><div class="empty">No campaigns yet. Click "Add Campaign" to track one.</div></td></tr>`;
+  v.innerHTML=pagehead("Campaigns","Marketing pushes — "+rows.length+" · Budget "+PKR(totalBudget),"Add Campaign","addCampaign()",true)+
+   `<div class="card tablewrap"><table><thead><tr><th>ID</th><th>Name</th><th>Channel</th><th>Status</th><th>Dates</th><th class="num">Budget</th><th class="num">Leads</th><th class="num">Cost/Lead</th><th></th></tr></thead><tbody>${body}</tbody></table></div>`;
+}
+function campaignForm(c){ c=c||{};
+  const sel=(key,val,extra)=>`<select id="cf_${key}"><option value=""></option>${vocab(key,extra).map(o=>`<option ${o===val?"selected":""}>${esc(o)}</option>`).join("")}</select>`;
+  return `<div class="formgrid">
+    <div class="field full"><label>Campaign Name</label><input id="cf_name" value="${esc(c.name||"")}" placeholder="e.g. Ramadan Instagram Push"></div>
+    <div class="field"><label>Channel</label>${sel("campaignChannel",c.channel,[c.channel])}</div>
+    <div class="field"><label>Status</label>${sel("campaignStatus",c.status||"Planned",[c.status])}</div>
+    <div class="field"><label>Start Date</label><input id="cf_startDate" type="date" value="${esc(c.startDate||"")}"></div>
+    <div class="field"><label>End Date</label><input id="cf_endDate" type="date" value="${esc(c.endDate||"")}"></div>
+    <div class="field"><label>Budget (PKR)</label><input id="cf_budget" type="number" step="any" value="${esc(c.budget!=null?c.budget:"")}"></div>
+    <div class="field"><label>Leads Generated</label><input id="cf_leadsGenerated" type="number" step="1" value="${esc(c.leadsGenerated!=null?c.leadsGenerated:"")}"><div class="help">Update manually as leads come in</div></div>
+    <div class="field full"><label>Notes</label><textarea id="cf_notes">${esc(c.notes||"")}</textarea></div>
+  </div>`;
+}
+function readCampaign(existing){ const g=id=>document.getElementById("cf_"+id).value;
+  return Object.assign({},existing||{},{name:g("name"),channel:g("channel"),status:g("status")||"Planned",startDate:g("startDate"),endDate:g("endDate"),budget:num(g("budget")),leadsGenerated:num(g("leadsGenerated")),notes:g("notes")}); }
+function addCampaign(){ openModal("New Campaign", campaignForm({status:"Planned"}), async()=>{
+  const c=readCampaign(); if(!c.name){toast("Campaign name is required");return false;}
+  c.id=nextCampaignId(); state.campaigns.push(c); await upsert("campaigns",c); closeModal(); toast("Campaign added"); go("campaigns");
+}); }
+function edit_campaign(id){ const c=state.campaigns.find(x=>x.id===id); if(!c)return;
+  openModal("Edit Campaign", campaignForm(c), async()=>{ Object.assign(c,readCampaign(c)); await upsert("campaigns",c); closeModal(); toast("Campaign updated"); go("campaigns"); }); }
+function del_campaign(id){ confirmDel("Delete this campaign?", async()=>{ state.campaigns=state.campaigns.filter(x=>x.id!==id); await remove("campaigns",id); toast("Deleted"); go("campaigns"); }); }
+
+/* ======================================================================
+   DOCUMENTS -- files attached to a client (optional), stored the same way
+   quote PDF attachments already are: as a base64 data URL in a text
+   column, not a separate storage bucket. Capped client-side at 5MB.
+   ====================================================================== */
+function nextDocumentId(){
+  const nums=state.documents.map(d=>num(String(d.id||"").replace(/^DOC-/,"")));
+  return "DOC-"+String((nums.length?Math.max(...nums):0)+1).padStart(4,"0");
+}
+function docAttachFile(input){
+  const f=input.files&&input.files[0]; if(!f)return;
+  if(f.size>5*1024*1024){ toast("File too large (max ~5MB)"); input.value=""; return; }
+  const reader=new FileReader();
+  reader.onload=()=>{
+    window.__docFileData=reader.result; window.__docFileName=f.name; window.__docFileType=f.type||""; window.__docFileSize=f.size;
+    const s=document.getElementById("df_filename"); if(s)s.textContent="Attached: "+f.name+" ("+Math.round(f.size/1024)+" KB)";
+  };
+  reader.readAsDataURL(f);
+}
+function docRemoveFile(){ window.__docFileData=""; window.__docFileName=""; window.__docFileType=""; window.__docFileSize=0;
+  const s=document.getElementById("df_filename"); if(s)s.textContent="No file attached"; const inp=document.getElementById("df_file"); if(inp)inp.value=""; }
+function docDownload(id){ const d=state.documents.find(x=>x.id===id); if(!d||!d.fileData){toast("No file stored for this document");return;}
+  const a=document.createElement("a"); a.href=d.fileData; a.download=d.fileName||d.name||"document"; document.body.appendChild(a); a.click(); a.remove(); }
+function renderDocuments(v){
+  const rows=state.documents.filter(matchSearch).slice().sort((a,b)=>(b.uploadedAt||"").localeCompare(a.uploadedAt||""));
+  const body=rows.length?rows.map(d=>{
+    const cl=state.clients.find(x=>x.id===d.clientId);
+    return `<tr>
+    <td>${esc(d.id)}</td>
+    <td><b>${esc(d.name)}</b>${d.notes?`<br><span class="help">${esc(d.notes)}</span>`:""}</td>
+    <td>${esc(d.type||"—")}</td>
+    <td>${cl?esc(cl.company):(d.company?esc(d.company):"—")}</td>
+    <td>${d.fileName?esc(d.fileName)+(d.fileSize?` <span class="help">(${Math.round(d.fileSize/1024)} KB)</span>`:""):"—"}</td>
+    <td>${esc(d.uploadedAt||"")}</td>
+    <td class="no-print"><div class="rowbtns">${d.fileData?`<button class="btn sm ghost" onclick="docDownload('${esc(d.id)}')">⬇ Download</button>`:""}<button class="btn sm ghost" onclick="edit_document('${esc(d.id)}')">Edit</button><button class="btn sm ghost danger" onclick="del_document('${esc(d.id)}')">✕</button></div></td></tr>`;
+  }).join("")
+    :`<tr><td colspan="7"><div class="empty">No documents yet. Click "Add Document" to attach a file.</div></td></tr>`;
+  v.innerHTML=pagehead("Documents","Files attached to clients & deals — "+rows.length+" document"+(rows.length===1?"":"s"),"Add Document","addDocument()",true)+
+   `<div class="card tablewrap"><table><thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Linked Client</th><th>File</th><th>Uploaded</th><th></th></tr></thead><tbody>${body}</tbody></table></div>`;
+}
+function documentForm(d){ d=d||{};
+  window.__docFileData=d.fileData||""; window.__docFileName=d.fileName||""; window.__docFileType=d.fileType||""; window.__docFileSize=d.fileSize||0;
+  const sel=(key,val,extra)=>`<select id="df_${key}"><option value=""></option>${vocab(key,extra).map(o=>`<option ${o===val?"selected":""}>${esc(o)}</option>`).join("")}</select>`;
+  return `<div class="formgrid">
+    <div class="field full"><label>Document Name</label><input id="df_name" value="${esc(d.name||"")}" placeholder="e.g. Signed PO - Ever Shines"></div>
+    <div class="field"><label>Type</label>${sel("documentType",d.type,[d.type])}</div>
+    <div class="field full"><label>Linked Client (optional)</label><select id="df_clientId">${clientOptions(d.clientId)}</select></div>
+    <div class="field full"><label>${d.fileData?"Replace File":"File"}</label>
+      <input id="df_file" type="file" onchange="docAttachFile(this)">
+      <div class="help" id="df_filename">${d.fileData?"Attached: "+esc(d.fileName||"file")+(d.fileSize?" ("+Math.round(d.fileSize/1024)+" KB)":""):"No file attached"}</div>
+      ${d.fileData?'<button class="btn sm ghost danger" onclick="docRemoveFile()">Remove attachment</button>':""}
+    </div>
+    <div class="field full"><label>Notes</label><textarea id="df_notes">${esc(d.notes||"")}</textarea></div>
+  </div>`;
+}
+function readDocument(existing){ const g=id=>document.getElementById("df_"+id).value; const id=g("clientId"); const cl=state.clients.find(x=>x.id===id);
+  return Object.assign({},existing||{},{
+    name:g("name"),type:g("type"),clientId:id,company:cl?cl.company:"",notes:g("notes"),
+    fileData:window.__docFileData||"",fileName:window.__docFileName||"",fileType:window.__docFileType||"",fileSize:window.__docFileSize||0
+  }); }
+function addDocument(){ openModal("New Document", documentForm({}), async()=>{
+  const d=readDocument(); if(!d.name){toast("Document name is required");return false;}
+  if(!d.fileData){toast("Please choose a file to attach");return false;}
+  d.id=nextDocumentId(); d.uploadedBy=(session.repName||session.username); d.uploadedAt=today();
+  state.documents.push(d); await upsert("documents",d); closeModal(); toast("Document added"); go("documents");
+}); }
+function edit_document(id){ const d=state.documents.find(x=>x.id===id); if(!d)return;
+  openModal("Edit Document", documentForm(d), async()=>{ Object.assign(d,readDocument(d)); await upsert("documents",d); closeModal(); toast("Document updated"); go("documents"); }); }
+function del_document(id){ confirmDel("Delete this document?", async()=>{ state.documents=state.documents.filter(x=>x.id!==id); await remove("documents",id); toast("Deleted"); go("documents"); }); }
+
 
 
 /* ======================================================================
