@@ -290,10 +290,10 @@ td .help{font-size:11.5px;color:var(--muted);margin-top:1px;display:block}
 /* ── ANALYTICS PAGE ── */
 .ana-page{max-width:1200px}
 .chart-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
-.chart-card{background:#1e2d3d;border-radius:12px;padding:18px;
-  box-shadow:0 4px 16px rgba(0,0,0,.2);border:1px solid rgba(255,255,255,.06)}
+.chart-card{background:var(--panel);border-radius:var(--r);padding:18px;
+  box-shadow:var(--sh);border:1px solid var(--line)}
 .chart-card.span2{grid-column:span 2}
-.chart-card .ct{font-size:11.5px;font-weight:600;color:#8899aa;
+.chart-card .ct{font-size:11.5px;font-weight:600;color:var(--muted);
   text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px}
 
 /* ── DASHBOARD NEW ── */
@@ -2541,7 +2541,7 @@ function renderAnalytics(v){
   const stageCt=STAGE_ORDER.map(s=>cl.filter(c=>(c.recordType||"")===s).length);
 
   const P=["#4caf89","#1f7a4d","#7ab63f","#2196f3","#ff9800","#e91e63","#9c27b0","#00bcd4"];
-  const G="rgba(255,255,255,0.07)";const T="#8899aa";
+  const G="#e8ecf0";const T="#6b7a8d";
   const base={responsive:true,maintainAspectRatio:true,plugins:{legend:{labels:{color:T,font:{size:11}}}},scales:{x:{grid:{color:G},ticks:{color:T,font:{size:10}}},y:{grid:{color:G},ticks:{color:T,font:{size:10}}}}};
 
   v.innerHTML=`<div class="ana-page">
@@ -2563,7 +2563,7 @@ function renderAnalytics(v){
     _acharts.ind=new Chart(document.getElementById("c_ind"),{type:"doughnut",data:{labels:indL,datasets:[{data:indD,backgroundColor:P,borderWidth:0,hoverOffset:4}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:"right",labels:{color:T,font:{size:10},boxWidth:10}}}}});
     _acharts.city=new Chart(document.getElementById("c_city"),{type:"bar",data:{labels:cityL,datasets:[{label:"Clients",data:cityD,backgroundColor:"#4caf89",borderRadius:4}]},options:{...base,indexAxis:"y",plugins:{...base.plugins,legend:{display:false}}}});
     _acharts.area=new Chart(document.getElementById("c_area"),{type:"bar",data:{labels:areaL,datasets:[{label:"Clients",data:areaD,backgroundColor:"#2196f3",borderRadius:4}]},options:{...base,indexAxis:"y",plugins:{...base.plugins,legend:{display:false}}}});
-    _acharts.tgt=new Chart(document.getElementById("c_tgt"),{type:"bar",data:{labels:repNames,datasets:[{label:"Target",data:repTgt,backgroundColor:"rgba(255,255,255,.12)",borderRadius:4},{label:"Actual",data:repAct,backgroundColor:"#4caf89",borderRadius:4}]},options:{...base}});
+    _acharts.tgt=new Chart(document.getElementById("c_tgt"),{type:"bar",data:{labels:repNames,datasets:[{label:"Target",data:repTgt,backgroundColor:"#dbe2e8",borderRadius:4},{label:"Actual",data:repAct,backgroundColor:"#4caf89",borderRadius:4}]},options:{...base}});
     _acharts.pipe=new Chart(document.getElementById("c_pipe"),{type:"bar",data:{labels:stages,datasets:[{label:"Deals",data:stageCt,backgroundColor:P,borderRadius:4}]},options:{...base,indexAxis:"y",plugins:{...base.plugins,legend:{display:false}}}});
     _acharts.deals=new Chart(document.getElementById("c_deals"),{type:"line",data:{labels:months,datasets:[{label:"Value",data:dealVals,borderColor:"#4caf89",backgroundColor:"rgba(76,175,137,.15)",fill:true,tension:.35,pointRadius:3}]},options:{...base,plugins:{...base.plugins,legend:{display:false}}}});
   });
