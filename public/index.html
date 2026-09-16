@@ -312,8 +312,8 @@ td .help{font-size:11.5px;color:var(--muted);margin-top:1px;display:block}
 .pipe-bars{display:flex;gap:4px;align-items:flex-end;height:72px;margin-bottom:6px}
 .pipe-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px}
 .pipe-bar{width:100%;border-radius:4px 4px 0 0;background:linear-gradient(180deg,#7ab63f,#1f7a4d)}
-.pipe-lbl{font-size:10px;color:var(--muted);text-align:center;line-height:1.3}
-.pipe-lbl b{color:var(--text);display:block;font-size:12px}
+.pipe-lbl{font-size:10.5px;color:var(--muted);text-align:center;line-height:1.3}
+.pipe-lbl b{color:var(--text);display:block;font-size:13px}
 .dash-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
 .dash-card{background:var(--panel);border-radius:var(--r);border:1px solid var(--line);box-shadow:var(--sh);overflow:hidden}
 .dc-hdr{display:flex;align-items:center;justify-content:space-between;
@@ -322,9 +322,9 @@ td .help{font-size:11.5px;color:var(--muted);margin-top:1px;display:block}
 .dc-link{font-size:11.5px;color:var(--accent);cursor:pointer}
 .dc-link:hover{text-decoration:underline}
 .mini-tbl{width:100%;border-collapse:collapse}
-.mini-tbl th{font-size:10.5px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;
-  padding:7px 16px;background:var(--panel2);border-bottom:1px solid var(--line);text-align:left}
-.mini-tbl td{padding:8px 16px;font-size:12.5px;border-bottom:1px solid var(--line);vertical-align:middle;color:var(--text)}
+.mini-tbl th{font-size:11.5px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;
+  padding:8px 16px;background:var(--panel2);border-bottom:1px solid var(--line);text-align:left}
+.mini-tbl td{padding:9.5px 16px;font-size:13.5px;border-bottom:1px solid var(--line);vertical-align:middle;color:var(--text)}
 .mini-tbl tr:last-child td{border-bottom:0}
 .mini-tbl tbody tr:hover td{background:var(--panel2)}
 .card-empty{padding:20px 16px;text-align:center;font-size:12.5px;color:var(--muted)}
@@ -352,7 +352,7 @@ td .help{font-size:11.5px;color:var(--muted);margin-top:1px;display:block}
 .hero-kpi .kt-val{color:#fff}
 .hero-kpi .kt-lbl{color:rgba(255,255,255,.68)}
 .hero-body{flex:1;min-width:0;min-height:0;display:grid;grid-template-columns:3fr 2fr;gap:10px}
-.hero-main{min-width:0;min-height:0;display:grid;grid-template-rows:auto 1fr 1fr 1fr 1fr;gap:10px}
+.hero-main{min-width:0;min-height:0;display:grid;grid-template-rows:auto 1fr 1.6fr;gap:10px}
 .hero-side{min-width:0;min-height:0;display:grid;grid-template-rows:1fr 2.3fr;gap:10px}
 .hgrid4{min-width:0;min-height:0;display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
 .hgrid2{min-width:0;min-height:0;display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -361,9 +361,9 @@ td .help{font-size:11.5px;color:var(--muted);margin-top:1px;display:block}
 .hcard:hover{box-shadow:0 2px 10px rgba(0,0,0,.09),0 8px 22px rgba(0,0,0,.07)}
 .hcard-hd{min-width:0;flex-shrink:0;display:flex;align-items:center;justify-content:space-between;gap:8px;
   padding:11px 15px;border-bottom:1px solid var(--line)}
-.hcard-hd h3{min-width:0;font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.hcard-ct{min-width:0;flex-shrink:0;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;
-  letter-spacing:.06em;padding:11px 15px 2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hcard-hd h3{min-width:0;font-size:13.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hcard-ct{min-width:0;flex-shrink:0;font-size:12.5px;font-weight:600;color:var(--muted);text-transform:uppercase;
+  letter-spacing:.06em;padding:11px 15px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hcard-body{flex:1;min-width:0;min-height:0;overflow:auto}
 .hcard-chart{flex:1;min-width:0;min-height:0;position:relative;padding:4px 14px 14px}
 .hcard-map{flex:1;min-width:0;min-height:0;padding:8px 14px 12px;display:flex}
@@ -402,7 +402,7 @@ td .help{font-size:11.5px;color:var(--muted);margin-top:1px;display:block}
   .hero-dash{overflow:auto}
   .hero-kpis{grid-template-columns:1fr 1fr}
   .hero-body{grid-template-columns:1fr}
-  .hero-main{grid-template-rows:auto repeat(4,minmax(180px,auto))}
+  .hero-main{grid-template-rows:auto minmax(160px,auto) minmax(260px,auto)}
   .hero-side{grid-template-rows:repeat(2,minmax(220px,auto))}
   .hgrid4{grid-template-columns:1fr 1fr}
   .formgrid{grid-template-columns:1fr}
@@ -2465,7 +2465,10 @@ function printQuoteById(id){
 /* ======================================================================
    PERFORMANCE (admin)
    ====================================================================== */
+let _pfcharts={};
+function destroyPerfCharts(){Object.values(_pfcharts).forEach(c=>{try{c.destroy();}catch(e){}});_pfcharts={};}
 function renderPerformance(v){
+  destroyPerfCharts();
   const admin=isAdmin();
   const reps=admin
     ? [...new Set([...state.repTargets.map(t=>t.rep),...state.deals.map(d=>d.rep),...activeRepNames()])].filter(Boolean)
@@ -2479,8 +2482,31 @@ function renderPerformance(v){
     <td>${s.tier}</td><td class="num">${PKR(s.bonus)}</td></tr>`).join("");
   const title=admin?"Sales Performance":"My Numbers";
   const sub=admin?"Per-rep rollup · tiers at 100% 🏆 / 75% ⭐ · bonus = commission × 50% / 25%":"Your performance vs target (read-only) · tiers at 100% 🏆 / 75% ⭐ · bonus = commission × 50% / 25%";
+
+  // --- trend charts (moved here from Home so Home stays a compact, readable overview) ---
+  const prCalls=state.calls||[], prDeals=state.deals||[];
+  const prMonths=[],prCallCounts=[],prDealVals=[];
+  for(let i=5;i>=0;i--){
+    const d2=new Date();d2.setMonth(d2.getMonth()-i);
+    prMonths.push(d2.toLocaleString("default",{month:"short",year:"2-digit"}));
+    const ym=d2.getFullYear()*100+d2.getMonth()+1;
+    prCallCounts.push(prCalls.filter(c=>{const cd=new Date(c.date||"");return cd.getFullYear()*100+cd.getMonth()+1===ym;}).length);
+    prDealVals.push(prDeals.filter(dd=>{const dd2=new Date(dd.closeDate||dd.date||"");return dd2.getFullYear()*100+dd2.getMonth()+1===ym;}).reduce((s,dd)=>s+(parseFloat(dd.qty||0)*parseFloat(dd.unitPrice||0)),0));
+  }
+  const prG="#e8ecf0",prT="#6b7a8d";
+  const prBase={responsive:true,maintainAspectRatio:true,plugins:{legend:{labels:{color:prT,font:{size:11}}}},scales:{x:{grid:{color:prG},ticks:{color:prT,font:{size:10.5}}},y:{grid:{color:prG},ticks:{color:prT,font:{size:10.5}}}}};
+
   v.innerHTML=pagehead(title,sub,admin?"Edit Targets":null,admin?"editTargets()":null,false)+
-   `<div class="card tablewrap"><table><thead><tr><th>Sales Rep</th><th class="num">Deals</th><th class="num">Total Sales</th><th class="num">Collected</th><th class="num">Commission</th><th class="num">Target</th><th>Achievement</th><th>Tier</th><th class="num">Bonus</th></tr></thead><tbody>${body}</tbody></table></div>`;
+   `<div class="dash-grid">
+      <div class="chart-card"><div class="ct">Monthly Call Volume</div><canvas id="pr_calls" height="110"></canvas></div>
+      <div class="chart-card"><div class="ct">Monthly Deal Value</div><canvas id="pr_deals" height="110"></canvas></div>
+    </div>
+    <div class="card tablewrap"><table><thead><tr><th>Sales Rep</th><th class="num">Deals</th><th class="num">Total Sales</th><th class="num">Collected</th><th class="num">Commission</th><th class="num">Target</th><th>Achievement</th><th>Tier</th><th class="num">Bonus</th></tr></thead><tbody>${body}</tbody></table></div>`;
+
+  requestAnimationFrame(()=>{
+    _pfcharts.calls=new Chart(document.getElementById("pr_calls"),{type:"bar",data:{labels:prMonths,datasets:[{label:"Calls",data:prCallCounts,backgroundColor:"#1f7a4d",borderRadius:4}]},options:{...prBase,plugins:{...prBase.plugins,legend:{display:false}}}});
+    _pfcharts.deals=new Chart(document.getElementById("pr_deals"),{type:"line",data:{labels:prMonths,datasets:[{label:"Value",data:prDealVals,borderColor:"#1f7a4d",backgroundColor:"rgba(31,122,77,.15)",fill:true,tension:.35,pointRadius:3}]},options:{...prBase,plugins:{...prBase.plugins,legend:{display:false}}}});
+  });
 }
 function editTargets(){
   const reps=[...new Set([...state.repTargets.map(t=>t.rep),...activeRepNames()])];
@@ -2934,14 +2960,6 @@ window.renderDashboard=function(v){
 
   // --- Home page analytics (merged from the former Analytics page) ---
   const acCalls=state.calls||[], acDeals=state.deals||[], acClients=state.clients||[], acRepTargets=state.repTargets||[];
-  const hdMonths=[],hdCallCounts=[],hdDealVals=[];
-  for(let i=5;i>=0;i--){
-    const d2m=new Date();d2m.setMonth(d2m.getMonth()-i);
-    hdMonths.push(d2m.toLocaleString("default",{month:"short",year:"2-digit"}));
-    const ym=d2m.getFullYear()*100+d2m.getMonth()+1;
-    hdCallCounts.push(acCalls.filter(c=>{const cd=new Date(c.date||"");return cd.getFullYear()*100+cd.getMonth()+1===ym;}).length);
-    hdDealVals.push(acDeals.filter(dd2=>{const dd=new Date(dd2.closeDate||dd2.date||"");return dd.getFullYear()*100+dd.getMonth()+1===ym;}).reduce((s,dd2)=>s+(parseFloat(dd2.qty||0)*parseFloat(dd2.unitPrice||0)),0));
-  }
   const hdRepNames=acRepTargets.map(r=>r.rep||r.name||"?");
   const hdRepRev=hdRepNames.map(n=>acDeals.filter(d=>(d.rep||"")===n&&(d.collectStatus||"")==="Received").reduce((s,d)=>s+(parseFloat(d.qty||0)*parseFloat(d.unitPrice||0)),0));
   const hdInd={};acClients.forEach(c=>{const k=c.industry||"Other";hdInd[k]=(hdInd[k]||0)+1;});
@@ -2952,7 +2970,7 @@ window.renderDashboard=function(v){
   const hdAreaL=hdAreaTop.map(x=>x[0]),hdAreaD=hdAreaTop.map(x=>x[1]);
   const hdP=["#1f7a4d","#4fae7c","#84c9a0","#2f6690","#5b9bd5","#e8a33d","#d9704b","#8e6bb8"];
   const hdG="#e8ecf0",hdT="#6b7a8d";
-  const hdBase={responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:hdT,font:{size:11}}}},scales:{x:{grid:{color:hdG},ticks:{color:hdT,font:{size:10}}},y:{grid:{color:hdG},ticks:{color:hdT,font:{size:10}}}}};
+  const hdBase={responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:hdT,font:{size:12}}}},scales:{x:{grid:{color:hdG},ticks:{color:hdT,font:{size:11.5}}},y:{grid:{color:hdG},ticks:{color:hdT,font:{size:12}}}}};
 
   v.innerHTML=`<div class="hero-dash">
   <div class="hero-band">
@@ -2987,27 +3005,19 @@ window.renderDashboard=function(v){
         </div>
       </div>
       <div class="hcard">
-        <div class="hcard-ct">Monthly Call Volume</div>
-        <div class="hcard-chart"><canvas id="hd_calls"></canvas></div>
-      </div>
-      <div class="hcard">
         <div class="hcard-ct">Revenue by Rep (PKR)</div>
-        <div class="hcard-chart"><canvas id="hd_rev"></canvas></div>
-      </div>
-      <div class="hcard">
-        <div class="hcard-ct">Monthly Deal Value</div>
-        <div class="hcard-chart"><canvas id="hd_deals"></canvas></div>
+        <div class="hcard-chart">${hdRepNames.length?'<canvas id="hd_rev"></canvas>':'<div class="card-empty">No rep target data yet</div>'}</div>
       </div>
     </div>
     <div class="hero-side">
       <div class="hgrid2">
         <div class="hcard">
           <div class="hcard-ct">Clients by Industry</div>
-          <div class="hcard-chart"><canvas id="hd_ind"></canvas></div>
+          <div class="hcard-chart">${hdIndL.length?'<canvas id="hd_ind"></canvas>':'<div class="card-empty">No industry data yet</div>'}</div>
         </div>
         <div class="hcard">
           <div class="hcard-ct">Clients by Area</div>
-          <div class="hcard-chart"><canvas id="hd_area"></canvas></div>
+          <div class="hcard-chart">${hdAreaL.length?'<canvas id="hd_area"></canvas>':'<div class="card-empty">No area data yet</div>'}</div>
         </div>
       </div>
       <div class="hcard">
@@ -3019,11 +3029,9 @@ window.renderDashboard=function(v){
   </div>`;
 
   requestAnimationFrame(()=>{
-    _dcharts.calls=new Chart(document.getElementById("hd_calls"),{type:"bar",data:{labels:hdMonths,datasets:[{label:"Calls",data:hdCallCounts,backgroundColor:"#1f7a4d",borderRadius:4}]},options:{...hdBase,plugins:{...hdBase.plugins,legend:{display:false}}}});
-    _dcharts.area=new Chart(document.getElementById("hd_area"),{type:"pie",data:{labels:hdAreaL,datasets:[{data:hdAreaD,backgroundColor:hdP,borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:"right",labels:{color:hdT,font:{size:10},boxWidth:10}}}}});
-    _dcharts.rev=new Chart(document.getElementById("hd_rev"),{type:"bar",data:{labels:hdRepNames,datasets:[{label:"Revenue",data:hdRepRev,backgroundColor:hdP,borderRadius:4}]},options:{...hdBase,indexAxis:"y",plugins:{...hdBase.plugins,legend:{display:false}}}});
-    _dcharts.deals=new Chart(document.getElementById("hd_deals"),{type:"line",data:{labels:hdMonths,datasets:[{label:"Value",data:hdDealVals,borderColor:"#1f7a4d",backgroundColor:"rgba(31,122,77,.15)",fill:true,tension:.35,pointRadius:3}]},options:{...hdBase,plugins:{...hdBase.plugins,legend:{display:false}}}});
-    _dcharts.ind=new Chart(document.getElementById("hd_ind"),{type:"doughnut",data:{labels:hdIndL,datasets:[{data:hdIndD,backgroundColor:hdP,borderWidth:0,hoverOffset:4}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:"right",labels:{color:hdT,font:{size:10},boxWidth:10}}}}});
+    if(hdAreaL.length) _dcharts.area=new Chart(document.getElementById("hd_area"),{type:"pie",data:{labels:hdAreaL,datasets:[{data:hdAreaD,backgroundColor:hdP,borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:"right",labels:{color:hdT,font:{size:11},boxWidth:11}}}}});
+    if(hdRepNames.length) _dcharts.rev=new Chart(document.getElementById("hd_rev"),{type:"bar",data:{labels:hdRepNames,datasets:[{label:"Revenue",data:hdRepRev,backgroundColor:hdP,borderRadius:4}]},options:{...hdBase,indexAxis:"y",plugins:{...hdBase.plugins,legend:{display:false}}}});
+    if(hdIndL.length) _dcharts.ind=new Chart(document.getElementById("hd_ind"),{type:"doughnut",data:{labels:hdIndL,datasets:[{data:hdIndD,backgroundColor:hdP,borderWidth:0,hoverOffset:4}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:"right",labels:{color:hdT,font:{size:11},boxWidth:11}}}}});
   });
 };
 
