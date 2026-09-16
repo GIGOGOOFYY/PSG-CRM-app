@@ -2119,9 +2119,10 @@ function quoteLetterheadHtml(q){
           <ol style="padding-left:18px">${PSG_TERMS.map(t=>`<li>${esc(t)}</li>`).join("")}</ol>
           <p style="margin-top:6px"><b>DISCLAIMER:</b> ${esc(PSG_DISCLAIMER)}</p>
         </div>
-        <div class="no-break" style="margin-top:16px;border:1px solid #999;padding:10px;font-size:12px">
+        <div style="margin-top:22px;border-top:1.5px dashed #999"></div>
+        <div class="no-break" style="margin-top:14px;border:1px solid #999;padding:10px;font-size:12px">
           <div>Please fill up and return as a token of approval</div>
-          <div style="margin-top:6px">Our Ref: ___________________________&nbsp;&nbsp;&nbsp;Name: ___________________________</div>
+          <div style="margin-top:6px">Our Ref: ${esc(quoteSerialDisplay(q,c))}&nbsp;&nbsp;&nbsp;Name: ${esc((c.id||"")+" - "+(q.company||c.company||""))}</div>
           <div style="margin-top:6px">Designation: ___________________________&nbsp;&nbsp;&nbsp;NTN: ______________&nbsp;&nbsp;&nbsp;GST: ______________</div>
         </div>
         <div class="no-break" style="margin-top:14px;font-size:12px">Signature &amp; Company Stamp</div>
