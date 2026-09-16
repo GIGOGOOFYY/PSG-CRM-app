@@ -488,7 +488,6 @@ function svgIcon(name,size){
 
 const SIDEBAR_NAV = [
   { id:"dashboard",   icon:"home",           label:"Home" },
-  { id:"_wq",         icon:"inbox",          label:"Workqueue",       route:"clients" },
   { id:"performance", icon:"trending-up",    label:"Reports" },
   { id:"analytics",   icon:"pie-chart",      label:"Analytics" },
   { id:"_req",        icon:"message-circle", label:"My Requests",     route:"dashboard" },
@@ -512,7 +511,7 @@ const SIDEBAR_NAV = [
   ]},
 
   { section:"Inventory", items:[
-    { id:"_prod",     icon:"package",        label:"Products",        route:"_soon" },
+    { id:"_prod",     icon:"package",        label:"Products",        route:"products" },
     { id:"_price",    icon:"tag",            label:"Price Books",     route:"_soon" },
     { id:"_quotes",   icon:"clipboard",      label:"Quotes",          route:"quotes" },
     { id:"_so",       icon:"shopping-cart",  label:"Sales Orders",    route:"salesOrders" },
@@ -535,7 +534,7 @@ function renderSidebar(){
   const cur   = typeof route!=="undefined" ? route : "dashboard";
 
   // Build set of real route IDs that are "active" — includes aliased ones
-  const routeAliases = { clients:["_wq","_accounts"], vendors:["_vend"],
+  const routeAliases = { clients:["_accounts"], vendors:["_vend"],
     leads:["_leads"], clientsOnly:["_contacts"], tasks:["_tasks"],
     deals:[], quotes:[], performance:["_forecast"], admin:["_agents"],
     salesOrders:["_so"], purchaseOrders:["_po"], invoices:["_inv"],
@@ -619,14 +618,16 @@ const DD = {
   yesno:["Yes","No"],
   interest:["1","2","3","4","5"],
   taskStatus:["Open","In Progress","Done"],
-  quoteStatus:["Draft","Sent","Accepted","Rejected","Expired"]
+  quoteStatus:["Draft","Sent","Accepted","Rejected","Expired"],
+  productCategory:["Aluminium Windows","Processed Glass","Bullet Resistant Glass","Automotive Glass","Decorative Glass","ACP / Alucobond","Accessories","Other"],
+  productUnit:["Sqft","Piece","Rft","Meter","Set","Kg"]
 };
 /* union a base list with distinct values found in the seeded data (nothing lost) */
 function activeRepNames(){ const emp=(state.users||[]).filter(u=>u.role==="employee").map(u=>u.repName||u.username).filter(Boolean); return emp.length? [...new Set(emp)] : [...DD.reps]; }
 function vocab(key, extra){ const base = key==="reps" ? activeRepNames() : DD[key]; const s=[...base]; (extra||[]).forEach(v=>{ if(v && !s.includes(v)) s.push(v); }); return s; }
 
 /* ---------- state ---------- */
-let state = { users:[], clients:[], calls:[], meetings:[], deals:[], tasks:[], repTargets:[], quotes:[], salesOrders:[], invoices:[], purchaseOrders:[] };
+let state = { users:[], clients:[], calls:[], meetings:[], deals:[], tasks:[], repTargets:[], quotes:[], salesOrders:[], invoices:[], purchaseOrders:[], products:[] };
 let session = null;          // {username, role, repName}
 const DEFAULT_SB_URL="https://qeyeonucnlsmbeomrrwt.supabase.co";
 const DEFAULT_SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFleWVvbnVjbmxzbWJlb21ycnd0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQxODk0OTksImV4cCI6MjA5OTc2NTQ5OX0.SmacOxNWOR4HLCOQf_gkHYHFTqBWMDNWrpFAKHP5nns";
@@ -687,7 +688,7 @@ function repStats(rep){
    PERSISTENCE
    ====================================================================== */
 function localKey(){ return "psgcrm_data"; }
-function saveLocal(){ localStorage.setItem(localKey(), JSON.stringify({users:state.users,clients:state.clients,calls:state.calls,meetings:state.meetings,deals:state.deals,repTargets:state.repTargets,quotes:state.quotes})); }
+function saveLocal(){ localStorage.setItem(localKey(), JSON.stringify({users:state.users,clients:state.clients,calls:state.calls,meetings:state.meetings,deals:state.deals,repTargets:state.repTargets,quotes:state.quotes,products:state.products})); }
 function loadLocalOrSeed(){
   let d=null; try{ d=JSON.parse(localStorage.getItem(localKey())); }catch(e){}
   if(d && d.clients){ state=Object.assign(state,d); }
@@ -733,7 +734,10 @@ const MAP = {
     from:r=>({id:r.id,invoiceDate:r.invoice_date||"",dueDate:r.due_date||"",salesOrderId:r.sales_order_id||"",dealId:r.deal_id||"",clientId:r.client_id||"",company:r.company,rep:r.rep,amount:r.amount,amountPaid:r.amount_paid,status:r.status,notes:r.notes}) },
   purchaseOrders:{table:"crm_purchase_orders", pk:"id",
     to:po=>({id:po.id,po_date:po.poDate||null,vendor:po.vendor,item:po.item,qty:num(po.qty),unit_cost:num(po.unitCost),total_cost:poTotalCost(po),status:po.status,expected_delivery:po.expectedDelivery||null,notes:po.notes}),
-    from:r=>({id:r.id,poDate:r.po_date||"",vendor:r.vendor,item:r.item,qty:r.qty,unitCost:r.unit_cost,status:r.status,expectedDelivery:r.expected_delivery||"",notes:r.notes}) }
+    from:r=>({id:r.id,poDate:r.po_date||"",vendor:r.vendor,item:r.item,qty:r.qty,unitCost:r.unit_cost,status:r.status,expectedDelivery:r.expected_delivery||"",notes:r.notes}) },
+  products:{table:"crm_products", pk:"id",
+    to:p=>({id:p.id,name:p.name,sku:p.sku||null,category:p.category||null,unit:p.unit||null,unit_price:num(p.unitPrice),description:p.description||null,active:p.active!==false}),
+    from:r=>({id:r.id,name:r.name,sku:r.sku||"",category:r.category||"",unit:r.unit||"",unitPrice:r.unit_price,description:r.description||"",active:r.active!==false}) }
 };
 
 function initSupabase(){
@@ -745,7 +749,7 @@ function initSupabase(){
 async function cloudPull(){
   if(!sb) return false;
   let anyOK=false;
-  for(const k of ["users","clients","calls","meetings","deals","tasks","repTargets","quotes","salesOrders","invoices","purchaseOrders"]){
+  for(const k of ["users","clients","calls","meetings","deals","tasks","repTargets","quotes","salesOrders","invoices","purchaseOrders","products"]){
     try{
       const PAGE=1000; let all=[]; let offset=0;
       while(true){
@@ -876,7 +880,7 @@ function renderConn(){
 function go(r){ route=r; searchTerm=""; renderSidebar(); renderRoute(); window.scrollTo(0,0); }
 function renderRoute(){
   const v=document.getElementById("view");
-  ({dashboard:renderDashboard,analytics:renderAnalytics,clients:renderClients,leads:renderLeadsOnly,clientsOnly:renderClientsOnly,prospects:renderProspectsOnly,tasks:renderTasks,calls:renderCalls,meetings:renderMeetings,deals:renderDeals,quotes:renderQuotes,quoteView:renderQuoteView,performance:renderPerformance,admin:renderAdmin,salesOrders:renderSalesOrders,invoices:renderInvoices,purchaseOrders:renderPurchaseOrders,vendors:renderVendors}[route]||renderDashboard)(v);
+  ({dashboard:renderDashboard,analytics:renderAnalytics,clients:renderClients,leads:renderLeadsOnly,clientsOnly:renderClientsOnly,prospects:renderProspectsOnly,tasks:renderTasks,calls:renderCalls,meetings:renderMeetings,deals:renderDeals,quotes:renderQuotes,quoteView:renderQuoteView,performance:renderPerformance,admin:renderAdmin,salesOrders:renderSalesOrders,invoices:renderInvoices,purchaseOrders:renderPurchaseOrders,vendors:renderVendors,products:renderProducts}[route]||renderDashboard)(v);
 }
 
 /* ======================================================================
@@ -1847,6 +1851,54 @@ function readPurchaseOrder(existing){ const g=id=>document.getElementById("f_"+i
 function addPurchaseOrder(){ openModal("New Purchase Order", purchaseOrderForm({}), async()=>{ const po=readPurchaseOrder(); if(!po.vendor){toast("Enter a vendor");return false;} po.id=nextId("PO",""); state.purchaseOrders.push(po); await upsert("purchaseOrders",po); closeModal(); toast("Purchase order added"); go("purchaseOrders"); }, calcPO); }
 function edit_purchaseOrder(id){ const po=state.purchaseOrders.find(x=>x.id===id); if(!po)return; openModal("Edit Purchase Order", purchaseOrderForm(po), async()=>{ Object.assign(po,readPurchaseOrder(po)); await upsert("purchaseOrders",po); closeModal(); toast("Purchase order updated"); go("purchaseOrders"); }, calcPO); }
 function del_purchaseOrder(id){ confirmDel("Delete this purchase order?", async()=>{ state.purchaseOrders=state.purchaseOrders.filter(x=>x.id!==id); await remove("purchaseOrders",id); toast("Deleted"); go("purchaseOrders"); }); }
+
+/* ======================================================================
+   PRODUCTS (catalog) -- the item/price master used to populate Deal and
+   Quote line-item product pickers. Independent of the "product" free-text
+   vocab list (DD.product) still used as a fallback where no catalog entry
+   exists yet.
+   ====================================================================== */
+function nextProductId(){
+  const nums=state.products.map(p=>num(String(p.id||"").replace(/^PD-/,"")));
+  const next=(nums.length?Math.max(...nums):0)+1;
+  return "PD-"+String(next).padStart(4,"0");
+}
+function renderProducts(v){
+  const rows=state.products.filter(matchSearch).slice().sort((a,b)=>(a.name||"").localeCompare(b.name||""));
+  const body=rows.length?rows.map(p=>`<tr>
+    <td>${esc(p.id)}</td>
+    <td><b>${esc(p.name)}</b>${p.description?`<br><span class="help">${esc(p.description)}</span>`:""}</td>
+    <td>${esc(p.sku||"—")}</td>
+    <td>${esc(p.category||"—")}</td>
+    <td>${esc(p.unit||"—")}</td>
+    <td class="num">${PKR(p.unitPrice)}</td>
+    <td><span class="pill ${p.active!==false?"green":"gray"}">${p.active!==false?"Active":"Inactive"}</span></td>
+    <td class="no-print"><div class="rowbtns"><button class="btn sm ghost" onclick="edit_product('${esc(p.id)}')">Edit</button><button class="btn sm ghost danger" onclick="del_product('${esc(p.id)}')">✕</button></div></td></tr>`).join("")
+    :`<tr><td colspan="8"><div class="empty">No products yet. Click "Add Product" to create your catalog.</div></td></tr>`;
+  v.innerHTML=pagehead("Products","Product catalog — "+rows.length+" item"+(rows.length===1?"":"s"),"Add Product","addProduct()",true)+
+   `<div class="card tablewrap"><table><thead><tr><th>ID</th><th>Product</th><th>SKU</th><th>Category</th><th>Unit</th><th class="num">Unit Price</th><th>Status</th><th></th></tr></thead><tbody>${body}</tbody></table></div>`;
+}
+function productForm(p){ p=p||{};
+  const sel=(key,val,extra)=>`<select id="f_${key}"><option value=""></option>${vocab(key,extra).map(o=>`<option ${o===val?"selected":""}>${esc(o)}</option>`).join("")}</select>`;
+  return `<div class="formgrid">
+    <div class="field full"><label>Product Name</label><input id="f_name" value="${esc(p.name||"")}" placeholder="e.g. Tempered Glass 10mm"></div>
+    <div class="field"><label>SKU / Code</label><input id="f_sku" value="${esc(p.sku||"")}"></div>
+    <div class="field"><label>Category</label>${sel("productCategory",p.category,[p.category])}</div>
+    <div class="field"><label>Unit</label>${sel("productUnit",p.unit,[p.unit])}</div>
+    <div class="field"><label>Unit Price (PKR)</label><input id="f_unitPrice" type="number" step="any" value="${esc(p.unitPrice!=null?p.unitPrice:"")}"></div>
+    <div class="field"><label>Status</label><select id="f_active"><option value="true" ${p.active!==false?"selected":""}>Active</option><option value="false" ${p.active===false?"selected":""}>Inactive</option></select></div>
+    <div class="field full"><label>Description</label><textarea id="f_description">${esc(p.description||"")}</textarea></div>
+  </div>`;
+}
+function readProduct(existing){ const g=id=>document.getElementById("f_"+id).value;
+  return Object.assign({},existing||{},{name:g("name"),sku:g("sku"),category:g("category"),unit:g("unit"),unitPrice:num(g("unitPrice")),active:g("active")!=="false",description:g("description")}); }
+function addProduct(){ openModal("New Product", productForm({active:true}), async()=>{
+  const p=readProduct(); if(!p.name){toast("Product name is required");return false;}
+  p.id=nextProductId(); state.products.push(p); await upsert("products",p); closeModal(); toast("Product added"); go("products");
+}); }
+function edit_product(id){ const p=state.products.find(x=>x.id===id); if(!p)return;
+  openModal("Edit Product", productForm(p), async()=>{ Object.assign(p,readProduct(p)); await upsert("products",p); closeModal(); toast("Product updated"); go("products"); }); }
+function del_product(id){ confirmDel("Delete this product?", async()=>{ state.products=state.products.filter(x=>x.id!==id); await remove("products",id); toast("Deleted"); go("products"); }); }
 
 
 /* ======================================================================
