@@ -347,6 +347,7 @@ td .help{font-size:11.5px;color:var(--muted);margin-top:1px;display:block}
   .print-quote-page{page-break-after:always}
   .print-quote-page:last-child{page-break-after:auto}
   .printquote table tr,.printquote ol li,.printquote .no-break{break-inside:avoid;page-break-inside:avoid}
+  .printquote,.printquote.card{overflow:visible!important}
   @page{margin:10mm}}
 
 /* ── RESPONSIVE ── */
@@ -1914,8 +1915,10 @@ function printQuotesLetterhead(){
   if(!rows.length){ toast("No quotes to print"); return; }
   const area=document.getElementById("quotesPrintArea");
   area.innerHTML=rows.map(q=>`<div class="print-quote-page">${quoteLetterheadHtml(q)}</div>`).join("");
+  const prevTitle=document.title;
+  document.title=rows.length===1?quoteDisplayId(rows[0]):("PSG-Quotes-"+today());
   window.print();
-  setTimeout(()=>{ area.innerHTML=""; },300);
+  setTimeout(()=>{ area.innerHTML=""; document.title=prevTitle; },300);
 }
 function quoteItemRowHtml(i,it){
   it=it||{};
@@ -2012,7 +2015,7 @@ function waQuote(id){
   const c=state.clients.find(x=>x.id===q.clientId)||{};
   const ctx=Object.assign(clientCtx(c),{contact:q.contact||c.contact,rep:q.rep,quoteNo:q.id});
   if(q.pdfData){
-    const a=document.createElement("a"); a.href=q.pdfData; a.download=q.id+".pdf"; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    const a=document.createElement("a"); a.href=q.pdfData; a.download=quoteDisplayId(q)+".pdf"; document.body.appendChild(a); a.click(); document.body.removeChild(a);
     toast("PDF downloaded — WhatsApp links can't attach files automatically. Please attach the downloaded file manually in the chat that opens.");
   }
   waOpenModal(c.phone||"",ctx,"Quotation ready");
@@ -2042,6 +2045,7 @@ function convertQuoteToDeal(id){
   toast("Deal created from quote"); go("deals");
 }
 function viewQuote(id){ window.__quoteViewId=id; go("quoteView"); }
+function quoteDisplayId(q){ return "GQ-"+(q.serialNo||1); }
 function quoteSerialDisplay(q, c){
   const year=(q.quoteDate?new Date(q.quoteDate):new Date()).getFullYear();
   const serial=q.serialNo||1;
@@ -2078,9 +2082,12 @@ function quoteLetterheadHtml(q){
   const taxOk=!!(q.ntn&&q.gst), taxPct=taxOk?18:21;
   const custLabel=`${esc(c.id||"")} - ${esc(q.company||c.company||"")} - ${esc(q.contact||c.contact||"")}`;
   const attentionName=[quoteHonorific(q),(q.contact||c.contact||"")].filter(Boolean).join(" ");
-  return `<div class="card printquote" style="padding:0;max-width:850px;margin:0 auto;overflow:hidden">
+  return `<div class="card printquote" style="padding:0;max-width:850px;margin:0 auto">
       <img src="${PSG_LOGO_DATA}" style="width:100%;display:block" alt="Pakistan Safety Glass">
       <div style="padding:20px 28px">
+        <div style="text-align:right;margin:-6px 0 10px">
+          <span style="display:inline-block;border:1.5px solid #1a1a1a;border-radius:4px;padding:5px 14px;font-weight:700;font-size:12.5px">Project Quotation Voucher - #${q.serialNo||1}</span>
+        </div>
         <div class="no-break" style="display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;font-size:13px;border-bottom:1px solid #ccc;padding-bottom:10px;margin-bottom:10px">
           <div><b>S.NO:</b> ${esc(quoteSerialDisplay(q,c))}<br><b>Date:</b> ${esc(q.quoteDate)}</div>
           <div><b>Customer:</b> ${custLabel}<br><b>Cell:</b> ${esc(c.phone||"")}</div>
@@ -2115,7 +2122,7 @@ function quoteLetterheadHtml(q){
           <div style="margin-top:6px">Designation: ___________________________&nbsp;&nbsp;&nbsp;NTN: ______________&nbsp;&nbsp;&nbsp;GST: ______________</div>
         </div>
         <div class="no-break" style="margin-top:14px;font-size:12px">Signature &amp; Company Stamp</div>
-        ${q.pdfData?`<div style="margin-top:14px" class="no-print"><a href="${q.pdfData}" download="${esc(q.id)}.pdf" class="btn sm ghost">⬇ Download attached PDF</a></div>`:""}
+        ${q.pdfData?`<div style="margin-top:14px" class="no-print"><a href="${q.pdfData}" download="${esc(quoteDisplayId(q))}.pdf" class="btn sm ghost">⬇ Download attached PDF</a></div>`:""}
       </div>
       <div class="no-break" style="background:#1a7a3c;color:#fff;padding:10px 20px;font-size:11px;text-align:center">
         Tel: +92-21-35042275, +92-21-35123091 &nbsp;|&nbsp; Cell: +92-308-2909634, +92-322-2941017<br>
@@ -2127,9 +2134,22 @@ function quoteLetterheadHtml(q){
 function renderQuoteView(v){
   const q=state.quotes.find(x=>x.id===window.__quoteViewId);
   if(!q){ v.innerHTML='<div class="card" style="padding:20px">Quote not found. <button class="btn sm ghost" onclick="go(\'quotes\')">Back</button></div>'; return; }
-  v.innerHTML=`<div class="pagehead no-print"><div><h2>Quote ${esc(q.id)}</h2><div class="sub">${quoteStatusPill(q.status)}</div></div>
-    <div class="toolbar"><button class="btn ghost sm" onclick="go('quotes')">← Back</button><button class="btn ghost sm" onclick="waQuote('${esc(q.id)}')">💬 WhatsApp</button><button class="btn primary sm" onclick="window.print()">🖨 Print / Save PDF</button></div></div>
+  v.innerHTML=`<div class="pagehead no-print"><div><h2>Quote # ${esc(quoteDisplayId(q))}</h2><div class="sub">${quoteStatusPill(q.status)}</div></div>
+    <div class="toolbar"><button class="btn ghost sm" onclick="go('quotes')">← Back</button><button class="btn ghost sm" onclick="waQuote('${esc(q.id)}')">💬 WhatsApp</button><button class="btn primary sm" onclick="printQuoteById('${esc(q.id)}')">🖨 Print / Save PDF</button></div></div>
     ${quoteLetterheadHtml(q)}`;
+}
+// Chrome's "Save as PDF" uses document.title as the default filename -- without this override
+// it always saves as the app's page title (e.g. "PSG CRM — Pakistan Safety Glass"). Swap the
+// title to the quote's customer-facing number just for the moment the print dialog opens, then
+// restore it (the dialog reads the title synchronously when print() is called, so restoring
+// shortly after doesn't affect the filename it already captured).
+function printQuoteById(id){
+  const q=state.quotes.find(x=>x.id===id);
+  if(!q) return;
+  const prevTitle=document.title;
+  document.title=quoteDisplayId(q);
+  window.print();
+  setTimeout(()=>{ document.title=prevTitle; },300);
 }
 /* ======================================================================
    PERFORMANCE (admin)
@@ -2405,7 +2425,7 @@ function waOpenModal(phone, ctx, presetName){
       const q=state.quotes.find(x=>x.id===ctx.quoteNo);
       if(q){
         if(q.pdfData){
-          const a=document.createElement("a"); a.href=q.pdfData; a.download=q.id+".pdf"; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+          const a=document.createElement("a"); a.href=q.pdfData; a.download=quoteDisplayId(q)+".pdf"; document.body.appendChild(a); a.click(); document.body.removeChild(a);
           pdfNote=" PDF downloaded — attach it manually in WhatsApp.";
         }
         if(q.status==="Draft"){ q.status="Sent"; upsert("quotes",q); }
