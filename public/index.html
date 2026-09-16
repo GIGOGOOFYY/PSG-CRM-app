@@ -340,8 +340,14 @@ td .help{font-size:11.5px;color:var(--muted);margin-top:1px;display:block}
 .pill.tl-tag{background:var(--panel2);color:var(--muted)}
 
 /* ── PRINT ── */
+.no-screen{display:none}
 @media print{#sidebarWrap,.topbar,#toast,#modalMount,.no-print{display:none!important}
-  #mainArea{display:block}#view{padding:0;overflow:visible;height:auto}}
+  #mainArea{display:block}#view{padding:0;overflow:visible;height:auto}
+  .no-screen{display:block}
+  .print-quote-page{page-break-after:always}
+  .print-quote-page:last-child{page-break-after:auto}
+  .printquote table tr,.printquote ol li,.printquote .no-break{break-inside:avoid;page-break-inside:avoid}
+  @page{margin:10mm}}
 
 /* ── RESPONSIVE ── */
 @media(max-width:860px){
@@ -704,8 +710,8 @@ const MAP = {
     to:d=>({id:d.id,close_date:d.closeDate||null,rep:d.rep,client_id:d.clientId,company:d.company,product:d.product,qty:num(d.qty),unit_price:num(d.unitPrice),deal_value:dealValue(d),collect_status:d.collectStatus,collected:dealCollected(d),comm_rate:num(d.commRate),comm_earned:dealCommission(d),remarks:d.remarks,quote_no:d.quoteNo||null,po_number:d.poNumber||null}),
     from:r=>({id:r.id,closeDate:r.close_date||"",rep:r.rep,clientId:r.client_id,company:r.company,product:r.product,qty:r.qty,unitPrice:r.unit_price,collectStatus:r.collect_status,collected:r.collected||0,commRate:r.comm_rate,remarks:r.remarks,quoteNo:r.quote_no||"",poNumber:r.po_number||""}) },
   quotes:{table:"crm_quotes", pk:"id",
-    to:q=>({id:q.id,quote_date:q.quoteDate||null,valid_until:q.validUntil||null,rep:q.rep,client_id:q.clientId,company:q.company,contact:q.contact,status:q.status,category:q.category||null,customer_code:q.customerCode||null,ntn:q.ntn||null,gst:q.gst||null,items:q.items||[],notes:q.notes,pdf_data:q.pdfData||null}),
-    from:r=>({id:r.id,quoteDate:r.quote_date||"",validUntil:r.valid_until||"",rep:r.rep,clientId:r.client_id,company:r.company,contact:r.contact,status:r.status,category:r.category||"",customerCode:r.customer_code||"",ntn:r.ntn||"",gst:r.gst||"",items:r.items||[],notes:r.notes,pdfData:r.pdf_data||""}) },
+    to:q=>({id:q.id,quote_date:q.quoteDate||null,valid_until:q.validUntil||null,rep:q.rep,client_id:q.clientId,company:q.company,contact:q.contact,status:q.status,category:q.category||null,customer_code:q.customerCode||null,ntn:q.ntn||null,gst:q.gst||null,items:q.items||[],notes:q.notes,pdf_data:q.pdfData||null,serial_no:q.serialNo||null,contact_gender:q.contactGender||null}),
+    from:r=>({id:r.id,quoteDate:r.quote_date||"",validUntil:r.valid_until||"",rep:r.rep,clientId:r.client_id,company:r.company,contact:r.contact,status:r.status,category:r.category||"",customerCode:r.customer_code||"",ntn:r.ntn||"",gst:r.gst||"",items:r.items||[],notes:r.notes,pdfData:r.pdf_data||"",serialNo:r.serial_no||null,contactGender:r.contact_gender||""}) },
   tasks:{table:"crm_tasks", pk:"id",
     to:t=>({id:t.id,title:t.title,due_date:t.dueDate||null,assigned_to:t.assignedTo,assigned_by:t.assignedBy,priority:t.priority,status:t.status,client_id:t.clientId||null,company:t.company||"",notes:t.notes,approved:!!t.approved,created_by_admin:!!t.createdByAdmin}),
     from:r=>({id:r.id,title:r.title,dueDate:r.due_date||"",assignedTo:r.assigned_to,assignedBy:r.assigned_by,priority:r.priority,status:r.status,clientId:r.client_id||"",company:r.company||"",notes:r.notes,approved:!!r.approved,createdByAdmin:!!r.created_by_admin}) },
@@ -750,7 +756,18 @@ async function cloudPull(){
     }catch(e){ console.warn("Cloud pull failed for "+k+":", e.message); }
   }
   if(!state.users||!state.users.length) state.users=seedUsers();
+  await backfillQuoteSerials();
   cloudOK=anyOK; return anyOK;
+}
+async function backfillQuoteSerials(){
+  const missing=(state.quotes||[]).filter(q=>!q.serialNo);
+  if(!missing.length) return;
+  const ordered=(state.quotes||[]).slice().sort((a,b)=>String(a.quoteDate||"").localeCompare(String(b.quoteDate||""))||String(a.id).localeCompare(String(b.id)));
+  let n=0;
+  for(const q of ordered){
+    n++;
+    if(!q.serialNo){ q.serialNo=n; try{ await upsert("quotes",q); }catch(e){ console.warn("serial backfill failed for",q.id,e.message); } }
+  }
 }
 let __pollTimer=null;
 function startAutoRefresh(){
@@ -983,13 +1000,13 @@ function statusPill(s){
    generic list rendering helpers
    ====================================================================== */
 function matchSearch(obj){ if(!searchTerm)return true; const t=searchTerm.toLowerCase(); return Object.values(obj).some(v=>String(v??"").toLowerCase().includes(t)); }
-function pagehead(title,sub,addLabel,addFn,withSearch,extraHtml){
+function pagehead(title,sub,addLabel,addFn,withSearch,extraHtml,printFn,printLabel){
   return `<div class="pagehead">
     <div><h2>${title}</h2><div class="sub">${sub}</div></div>
     <div class="toolbar">
       ${withSearch?`<div class="search"><input placeholder="Search…" value="${esc(searchTerm)}" oninput="searchTerm=this.value;rerender()"></div>`:""}
       ${extraHtml||""}
-      <button class="btn ghost sm" onclick="window.print()">🖨 Print</button>
+      <button class="btn ghost sm" onclick="${printFn||"window.print()"}">🖨 ${printLabel||"Print"}</button>
       ${addLabel?`<button class="btn primary" onclick="${addFn}">＋ ${addLabel}</button>`:""}
     </div></div>`;
 }
@@ -1883,8 +1900,22 @@ function renderQuotes(v){
   }).join("")
     :`<tr><td colspan="10"><div class="empty">No quotes yet.</div></td></tr>`;
   const grandTotal=rows.reduce((s,q)=>s+quoteTotal(q.items),0);
-  v.innerHTML=pagehead("Quotes","Quotes — "+vQuotes().length+" · Value "+PKR(grandTotal)+(isAdmin()?"":" (yours)"),"Add Quote","addQuote()",true)+
-   `<div class="card tablewrap"><table><thead><tr><th>Quote #</th><th>Date</th><th>Client</th><th>Contact</th><th>Rep</th><th class="num">Items</th><th class="num">Total</th><th>Status</th><th>File</th><th></th></tr></thead><tbody>${body}</tbody></table></div>`;
+  v.innerHTML=pagehead("Quotes","Quotes — "+vQuotes().length+" · Value "+PKR(grandTotal)+(isAdmin()?"":" (yours)"),"Add Quote","addQuote()",true,null,"printQuotesLetterhead()","Print")+
+   `<div class="card tablewrap no-print"><table><thead><tr><th>Quote #</th><th>Date</th><th>Client</th><th>Contact</th><th>Rep</th><th class="num">Items</th><th class="num">Total</th><th>Status</th><th>File</th><th></th></tr></thead><tbody>${body}</tbody></table></div>
+   <div id="quotesPrintArea" class="no-screen"></div>`;
+}
+// The list page's Print button used to print the raw table -- different from the branded
+// letterhead a client actually sees when a rep opens one quote and hits "Print / Save PDF".
+// That mismatch is exactly what confused a rep into sending an unbranded printout. This makes
+// the two match: print every quote currently visible in the list (respecting search/rep-scope),
+// each rendered with the same quoteLetterheadHtml() template, one per page.
+function printQuotesLetterhead(){
+  const rows=vQuotes().filter(matchSearch).slice().sort((a,b)=>String(a.quoteDate||"").localeCompare(String(b.quoteDate||""))||String(a.id).localeCompare(String(b.id)));
+  if(!rows.length){ toast("No quotes to print"); return; }
+  const area=document.getElementById("quotesPrintArea");
+  area.innerHTML=rows.map(q=>`<div class="print-quote-page">${quoteLetterheadHtml(q)}</div>`).join("");
+  window.print();
+  setTimeout(()=>{ area.innerHTML=""; },300);
 }
 function quoteItemRowHtml(i,it){
   it=it||{};
@@ -1938,6 +1969,7 @@ function quoteForm(q){ q=q||{};
       <div class="field ${rep?'locked':''}"><label>Sales Rep</label>${sel("reps",q.rep||rep,[q.rep])}</div>
       <div class="field full"><label>Client</label><select id="qf_clientId" onchange="fillCompanyQuote()">${clientOptions(q.clientId)}</select></div>
       <div class="field"><label>Contact Person</label><input id="qf_contact" value="${esc(q.contact||"")}"></div>
+      <div class="field"><label>Contact Gender</label><select id="qf_contactGender"><option value=""${!q.contactGender?" selected":""}>Not specified</option><option value="Male"${q.contactGender==="Male"?" selected":""}>Male</option><option value="Female"${q.contactGender==="Female"?" selected":""}>Female</option></select><div class="help">Used for the honorific (Mr./Ms.) and salutation on the printed quote.</div></div>
       <div class="field"><label>Status</label>${sel("quoteStatus",q.status||"Draft",[q.status])}</div>
       <div class="field full"><label>Category / Subject</label><input id="qf_category" value="${esc(q.category||"")}" placeholder="e.g. 6mm Clear Tempered Safety Glass"></div>
       <div class="field"><label>Customer Code (optional)</label><input id="qf_customerCode" value="${esc(q.customerCode||"")}"></div>
@@ -1962,6 +1994,7 @@ function readQuote(existing){
     validUntil:document.getElementById("qf_validUntil").value,
     rep:rep?rep:document.getElementById("qf_reps").value,
     clientId:id, company:cl?cl.company:"", contact:document.getElementById("qf_contact").value,
+    contactGender:document.getElementById("qf_contactGender").value||"",
     status:document.getElementById("qf_quoteStatus").value||"Draft",
     category:document.getElementById("qf_category").value,
     customerCode:document.getElementById("qf_customerCode").value,
@@ -1971,7 +2004,7 @@ function readQuote(existing){
     pdfData:window.__quotePdfData||""
   });
 }
-function addQuote(){ openModal("New Quote", quoteForm({rep:myRep()||"",status:"Draft"}), async()=>{ const q=readQuote(); if(!q.clientId){toast("Pick a client");return false;} if(!q.items.length){toast("Add at least one item");return false;} q.id=nextId("QT",q.rep); state.quotes.push(q); await upsert("quotes",q); if(q.status==="Sent"){ const c=state.clients.find(x=>x.id===q.clientId); if(c&&c.recordType==="New Inquiry"){ c.recordType="Quotation Sent"; upsert("clients",c); } } closeModal(); toast("Quote added"); go("quotes"); }, quoteRenderItems); }
+function addQuote(){ openModal("New Quote", quoteForm({rep:myRep()||"",status:"Draft"}), async()=>{ const q=readQuote(); if(!q.clientId){toast("Pick a client");return false;} if(!q.items.length){toast("Add at least one item");return false;} q.id=nextId("QT",q.rep); q.serialNo=(state.quotes||[]).length+1; state.quotes.push(q); await upsert("quotes",q); if(q.status==="Sent"){ const c=state.clients.find(x=>x.id===q.clientId); if(c&&c.recordType==="New Inquiry"){ c.recordType="Quotation Sent"; upsert("clients",c); } } closeModal(); toast("Quote added"); go("quotes"); }, quoteRenderItems); }
 function edit_quote(id){ const q=state.quotes.find(x=>x.id===id); if(!q)return; openModal("Edit Quote", quoteForm(q), async()=>{ const upd=readQuote(q); if(!upd.items.length){toast("Add at least one item");return false;} Object.assign(q,upd); await upsert("quotes",q); if(q.status==="Sent"){ const c=state.clients.find(x=>x.id===q.clientId); if(c&&c.recordType==="New Inquiry"){ c.recordType="Quotation Sent"; upsert("clients",c); } } closeModal(); toast("Quote updated"); go("quotes"); }, quoteRenderItems); }
 function del_quote(id){ confirmDel("Delete this quote?", async()=>{ state.quotes=state.quotes.filter(x=>x.id!==id); await remove("quotes",id); toast("Deleted"); go("quotes"); }); }
 function waQuote(id){
@@ -2009,9 +2042,22 @@ function convertQuoteToDeal(id){
   toast("Deal created from quote"); go("deals");
 }
 function viewQuote(id){ window.__quoteViewId=id; go("quoteView"); }
-function renderQuoteView(v){
-  const q=state.quotes.find(x=>x.id===window.__quoteViewId);
-  if(!q){ v.innerHTML='<div class="card" style="padding:20px">Quote not found. <button class="btn sm ghost" onclick="go(\'quotes\')">Back</button></div>'; return; }
+function quoteSerialDisplay(q, c){
+  const year=(q.quoteDate?new Date(q.quoteDate):new Date()).getFullYear();
+  const serial=q.serialNo||1;
+  const idPadded=String((c&&c.id)||"").padStart(7,"0");
+  return `PSG-${serial}-${year}/${idPadded}`;
+}
+function quoteHonorific(q){
+  return q.contactGender==="Male"?"Mr.":q.contactGender==="Female"?"Ms.":"";
+}
+function quoteSalutation(q){
+  return q.contactGender==="Male"?"Dear Sir,":q.contactGender==="Female"?"Dear Madam,":"Dear Sir/Madam,";
+}
+// Shared by the single-quote view (renderQuoteView) and the "print all visible quotes"
+// action on the Quotes list -- one letterhead template, used everywhere a quote gets
+// printed/PDF'd, so the two can never drift out of sync again.
+function quoteLetterheadHtml(q){
   const c=state.clients.find(x=>x.id===q.clientId)||{};
   const items=q.items||[];
   const rows=items.map((it,idx)=>{
@@ -2030,19 +2076,18 @@ function renderQuoteView(v){
   const totalQty=quoteSumQty(items), glassQty=quoteSumByType(items,"Glass"), hwQty=quoteSumByType(items,"Hardware");
   const subTotal=quoteTotal(items);
   const taxOk=!!(q.ntn&&q.gst), taxPct=taxOk?18:21;
-  const custLabel=(q.customerCode?esc(q.customerCode)+" - ":"")+esc(q.company);
-  v.innerHTML=`<div class="pagehead no-print"><div><h2>Quote ${esc(q.id)}</h2><div class="sub">${quoteStatusPill(q.status)}</div></div>
-    <div class="toolbar"><button class="btn ghost sm" onclick="go('quotes')">← Back</button><button class="btn ghost sm" onclick="waQuote('${esc(q.id)}')">💬 WhatsApp</button><button class="btn primary sm" onclick="window.print()">🖨 Print / Save PDF</button></div></div>
-    <div class="card printquote" style="padding:0;max-width:850px;margin:0 auto;overflow:hidden">
+  const custLabel=`${esc(c.id||"")} - ${esc(q.company||c.company||"")} - ${esc(q.contact||c.contact||"")}`;
+  const attentionName=[quoteHonorific(q),(q.contact||c.contact||"")].filter(Boolean).join(" ");
+  return `<div class="card printquote" style="padding:0;max-width:850px;margin:0 auto;overflow:hidden">
       <img src="${PSG_LOGO_DATA}" style="width:100%;display:block" alt="Pakistan Safety Glass">
       <div style="padding:20px 28px">
-        <div style="display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;font-size:13px;border-bottom:1px solid #ccc;padding-bottom:10px;margin-bottom:10px">
-          <div><b>S.NO:</b> ${esc(q.id)}<br><b>Date:</b> ${esc(q.quoteDate)}</div>
+        <div class="no-break" style="display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;font-size:13px;border-bottom:1px solid #ccc;padding-bottom:10px;margin-bottom:10px">
+          <div><b>S.NO:</b> ${esc(quoteSerialDisplay(q,c))}<br><b>Date:</b> ${esc(q.quoteDate)}</div>
           <div><b>Customer:</b> ${custLabel}<br><b>Cell:</b> ${esc(c.phone||"")}</div>
-          <div><b>Attention:</b> ${esc(q.contact||c.contact||"")}<br><b>Email:</b> ${esc(c.email||"")}</div>
+          <div><b>Attention:</b> ${esc(attentionName)}<br><b>Email:</b> ${esc(c.email||"")}</div>
           <div><b>Subject:</b> ${esc(q.category||"")}<br><b>Sales By:</b> ${esc(q.rep||"")}</div>
         </div>
-        <p style="font-size:13px">Dear Sir/Madam,<br>Thank you for your inquiry. We are pleased to submit our most competitive quotation as under for your kind consideration.</p>
+        <p style="font-size:13px">${esc(quoteSalutation(q))}<br>Thank you for your inquiry. We are pleased to submit our most competitive quotation as under for your kind consideration.</p>
         <div style="font-size:13px;margin:10px 0"><b>Supplying Ex-Works Of:</b><br><b>${esc(q.category||"")}</b></div>
         <table style="width:100%;border-collapse:collapse;font-size:12px">
           <thead><tr style="border-bottom:1px solid #999;background:#f2f2f2">
@@ -2057,29 +2102,35 @@ function renderQuoteView(v){
           <tr><td style="text-align:right;padding:2px 4px"><b>Sub Total</b></td><td class="num">${PKR(subTotal)}</td></tr>
           <tr><td style="text-align:right;padding:2px 4px"><b>Net Amount</b></td><td class="num"><b>${PKR(subTotal)}</b></td></tr>
         </table>
-        <div style="font-size:12px;margin:10px 0;padding:8px;background:#fafafa;border:1px solid #ddd">Please add ${taxPct}% Tax on above quoted rates.${taxOk?"":" (If NTN / GST not provided, 21% Tax will be applied.)"}</div>
+        <div class="no-break" style="font-size:12px;margin:10px 0;padding:8px;background:#fafafa;border:1px solid #ddd">Please add ${taxPct}% Tax on above quoted rates.${taxOk?"":" (If NTN / GST not provided, 21% Tax will be applied.)"}</div>
         ${q.notes?`<div style="font-size:12px;margin:10px 0"><b>Notes</b><div style="white-space:pre-wrap">${esc(q.notes)}</div></div>`:""}
         <div style="font-size:11px;color:#555;margin-top:10px">Note: All measurements are calculated on standard sheet size and not actual size dimension.</div>
         <div style="margin-top:14px;font-size:11px;line-height:1.5"><b>Terms &amp; Conditions</b>
           <ol style="padding-left:18px">${PSG_TERMS.map(t=>`<li>${esc(t)}</li>`).join("")}</ol>
           <p style="margin-top:6px"><b>DISCLAIMER:</b> ${esc(PSG_DISCLAIMER)}</p>
         </div>
-        <div style="margin-top:16px;border:1px solid #999;padding:10px;font-size:12px">
+        <div class="no-break" style="margin-top:16px;border:1px solid #999;padding:10px;font-size:12px">
           <div>Please fill up and return as a token of approval</div>
           <div style="margin-top:6px">Our Ref: ___________________________&nbsp;&nbsp;&nbsp;Name: ___________________________</div>
           <div style="margin-top:6px">Designation: ___________________________&nbsp;&nbsp;&nbsp;NTN: ______________&nbsp;&nbsp;&nbsp;GST: ______________</div>
         </div>
-        <div style="margin-top:14px;font-size:12px">Signature &amp; Company Stamp</div>
+        <div class="no-break" style="margin-top:14px;font-size:12px">Signature &amp; Company Stamp</div>
         ${q.pdfData?`<div style="margin-top:14px" class="no-print"><a href="${q.pdfData}" download="${esc(q.id)}.pdf" class="btn sm ghost">⬇ Download attached PDF</a></div>`:""}
       </div>
-      <div style="background:#1a7a3c;color:#fff;padding:10px 20px;font-size:11px;text-align:center">
+      <div class="no-break" style="background:#1a7a3c;color:#fff;padding:10px 20px;font-size:11px;text-align:center">
         Tel: +92-21-35042275, +92-21-35123091 &nbsp;|&nbsp; Cell: +92-308-2909634, +92-322-2941017<br>
         sales@pakistansafetyglass.com.pk &nbsp;|&nbsp; pakistansafetyglass.com.pk<br>
         Plot 58, Sector 28, Korangi Industrial Area, Karachi 75180, Sindh, Pakistan
       </div>
     </div>`;
 }
-
+function renderQuoteView(v){
+  const q=state.quotes.find(x=>x.id===window.__quoteViewId);
+  if(!q){ v.innerHTML='<div class="card" style="padding:20px">Quote not found. <button class="btn sm ghost" onclick="go(\'quotes\')">Back</button></div>'; return; }
+  v.innerHTML=`<div class="pagehead no-print"><div><h2>Quote ${esc(q.id)}</h2><div class="sub">${quoteStatusPill(q.status)}</div></div>
+    <div class="toolbar"><button class="btn ghost sm" onclick="go('quotes')">← Back</button><button class="btn ghost sm" onclick="waQuote('${esc(q.id)}')">💬 WhatsApp</button><button class="btn primary sm" onclick="window.print()">🖨 Print / Save PDF</button></div></div>
+    ${quoteLetterheadHtml(q)}`;
+}
 /* ======================================================================
    PERFORMANCE (admin)
    ====================================================================== */
