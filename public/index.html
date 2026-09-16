@@ -336,6 +336,41 @@ td .help{font-size:11.5px;color:var(--muted);margin-top:1px;display:block}
 .ov-name:hover{text-decoration:underline}
 .ov-date{color:var(--danger);font-size:11.5px}
 
+/* ── HOME HERO (bird's-eye dashboard) ── */
+.hero-dash{height:100%;min-width:0;min-height:0;display:flex;flex-direction:column;gap:10px;overflow:hidden}
+.hero-band{position:relative;overflow:hidden;flex-shrink:0;border-radius:14px;padding:16px 20px 18px;
+  background:linear-gradient(120deg,#132a1f 0%,#1f7a4d 48%,#4fae7c 100%);box-shadow:0 4px 20px rgba(19,42,31,.28)}
+.hero-band::before{content:"";position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(circle at 90% -30%,rgba(255,255,255,.16),transparent 55%)}
+.hero-top{position:relative;margin-bottom:14px}
+.hero-top h2{font-size:20px;font-weight:700;color:#fff;letter-spacing:-.01em}
+.hero-top .pg-sub{color:rgba(255,255,255,.72)}
+.hero-kpis{position:relative;display:grid;grid-template-columns:repeat(4,1fr);gap:10px;min-width:0}
+.hero-kpi{min-width:0;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.18);
+  border-radius:11px;padding:12px 14px;display:flex;align-items:center;gap:12px;backdrop-filter:blur(8px)}
+.hero-kpi.kpi-urgent{border-color:rgba(255,255,255,.55)}
+.hero-kpi .kt-val{color:#fff}
+.hero-kpi .kt-lbl{color:rgba(255,255,255,.68)}
+.hero-body{flex:1;min-width:0;min-height:0;display:grid;grid-template-columns:3fr 2fr;gap:10px}
+.hero-main{min-width:0;min-height:0;display:grid;grid-template-rows:auto 1fr 1fr 1fr 1fr;gap:10px}
+.hero-side{min-width:0;min-height:0;display:grid;grid-template-rows:1fr 2.3fr;gap:10px}
+.hgrid4{min-width:0;min-height:0;display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.hgrid2{min-width:0;min-height:0;display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.hcard{min-width:0;min-height:0;background:var(--panel);border-radius:var(--r);border:1px solid var(--line);
+  box-shadow:var(--sh);overflow:hidden;display:flex;flex-direction:column;transition:box-shadow .15s}
+.hcard:hover{box-shadow:0 2px 10px rgba(0,0,0,.09),0 8px 22px rgba(0,0,0,.07)}
+.hcard-hd{min-width:0;flex-shrink:0;display:flex;align-items:center;justify-content:space-between;gap:8px;
+  padding:11px 15px;border-bottom:1px solid var(--line)}
+.hcard-hd h3{min-width:0;font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hcard-ct{min-width:0;flex-shrink:0;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;
+  letter-spacing:.06em;padding:11px 15px 2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hcard-body{flex:1;min-width:0;min-height:0;overflow:auto}
+.hcard-chart{flex:1;min-width:0;min-height:0;position:relative;padding:4px 14px 14px}
+.hcard-map{flex:1;min-width:0;min-height:0;padding:8px 14px 12px;display:flex}
+.pk-map-inner{flex:1;min-width:0;min-height:0;display:grid;grid-template-rows:1fr auto;gap:2px}
+.pk-map-svg{width:100%;height:100%;min-width:0;min-height:0;display:block;object-fit:contain}
+.pk-map-other{flex-shrink:0;max-height:40px;overflow-y:auto;font-size:10.5px;color:var(--muted);line-height:1.4}
+
 /* ── ADMIN / MISC ── */
 .pill.tl-tag{background:var(--panel2);color:var(--muted)}
 
@@ -364,6 +399,12 @@ td .help{font-size:11.5px;color:var(--muted);margin-top:1px;display:block}
   .dash-grid{grid-template-columns:1fr}
   .chart-grid{grid-template-columns:1fr}
   .chart-card.span2{grid-column:span 1}
+  .hero-dash{overflow:auto}
+  .hero-kpis{grid-template-columns:1fr 1fr}
+  .hero-body{grid-template-columns:1fr}
+  .hero-main{grid-template-rows:auto repeat(4,minmax(180px,auto))}
+  .hero-side{grid-template-rows:repeat(2,minmax(220px,auto))}
+  .hgrid4{grid-template-columns:1fr 1fr}
   .formgrid{grid-template-columns:1fr}
   .field.full{grid-column:span 1}
 }
@@ -2783,8 +2824,8 @@ function renderPKMap(cityAgg){
   matched.sort((a,b)=>b.count-a.count);
   const dots=matched.map(m=>{const p=pkProj(m.coord[1],m.coord[0]);const x=p[0],y=p[1];const r=4+Math.sqrt(m.count/maxC)*12;return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r.toFixed(1)}" fill="#4caf89" fill-opacity="0.75" stroke="#1f7a4d" stroke-width="1"><title>${m.name}: ${m.count}</title></circle>`;}).join("");
   const labels=matched.slice(0,6).map(m=>{const p=pkProj(m.coord[1],m.coord[0]);const x=p[0],y=p[1]-9;return `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-size="8" fill="#3a4a5a" text-anchor="middle">${m.name}</text>`;}).join("");
-  const unmatchedHtml=unmatched.length?`<div style="font-size:11px;color:#6b7a8d;margin-top:6px;line-height:1.5">Other: ${unmatched.sort((a,b)=>b.count-a.count).map(u=>`${u.name} (${u.count})`).join(", ")}</div>`:"";
-  return `<svg viewBox="0 0 ${PK_W} ${PK_H}" style="width:100%;height:auto;display:block;margin:0 auto"><path d="${PK_PATH}" fill="#eef3f0" stroke="#4caf89" stroke-width="1.3"/>${dots}${labels}</svg>${unmatchedHtml}`;
+  const unmatchedHtml=unmatched.length?`<div class="pk-map-other">Other: ${unmatched.sort((a,b)=>b.count-a.count).map(u=>`${u.name} (${u.count})`).join(", ")}</div>`:"";
+  return `<div class="pk-map-inner"><svg class="pk-map-svg" viewBox="0 0 ${PK_W} ${PK_H}" preserveAspectRatio="xMidYMid meet"><path d="${PK_PATH}" fill="#eef3f0" stroke="#4caf89" stroke-width="1.3"/>${dots}${labels}</svg>${unmatchedHtml}</div>`;
 }
 
 function renderAnalytics(v){
@@ -2884,9 +2925,9 @@ window.renderDashboard=function(v){
 
   const sc=STAGE_ORDER.map(s=>myC.filter(c=>(c.recordType||"")===s).length);
   const mx=Math.max(...sc,1);
-  const pipeHtml=`<div class="dash-card">
-    <div class="dc-hdr"><h3>Pipeline</h3></div>
-    <div style="padding:12px 18px 16px">
+  const pipeHtml=`<div class="hcard">
+    <div class="hcard-hd"><h3>Pipeline</h3></div>
+    <div style="padding:10px 18px 14px;flex:1;min-height:0">
       <div class="pipe-bars">${STAGE_ORDER.map((s,i)=>`<div class="pipe-col"><div class="pipe-bar" style="height:${Math.max(6,(sc[i]/mx)*60)}px" title="${s}: ${sc[i]}"></div><div class="pipe-lbl">${PIPE_SHORT[s]||s}<br><b>${sc[i]}</b></div></div>`).join("")}</div>
     </div></div>`;
 
@@ -2909,77 +2950,79 @@ window.renderDashboard=function(v){
   const hdAreaAgg={};acClients.forEach(c=>{const k=(c.area||"").trim();if(k)hdAreaAgg[k]=(hdAreaAgg[k]||0)+1;});
   const hdAreaTop=Object.entries(hdAreaAgg).sort((a,b)=>b[1]-a[1]).slice(0,10);
   const hdAreaL=hdAreaTop.map(x=>x[0]),hdAreaD=hdAreaTop.map(x=>x[1]);
-  const hdP=["#4caf89","#1f7a4d","#7ab63f","#2196f3","#ff9800","#e91e63","#9c27b0","#00bcd4"];
+  const hdP=["#1f7a4d","#4fae7c","#84c9a0","#2f6690","#5b9bd5","#e8a33d","#d9704b","#8e6bb8"];
   const hdG="#e8ecf0",hdT="#6b7a8d";
   const hdBase={responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:hdT,font:{size:11}}}},scales:{x:{grid:{color:hdG},ticks:{color:hdT,font:{size:10}}},y:{grid:{color:hdG},ticks:{color:hdT,font:{size:10}}}}};
 
-  v.innerHTML=`<div style="height:100%;display:flex;flex-direction:column;gap:8px;overflow:hidden">
-  <div class="pg-hdr" style="margin-bottom:0;flex-shrink:0"><h2>Good ${gr}, ${admin?"Admin":rep||"User"}</h2><span class="pg-sub">${today.toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</span></div>
-  ${alertHtml}
-  <div class="kpi-row" style="margin-bottom:0;flex-shrink:0">
-    <div class="kpi-tile"><div class="kt-i"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 7H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg></div><div class="kt-body"><div class="kt-val">${openDeals.length}</div><div class="kt-lbl">Open Deals</div></div></div>
-    <div class="kpi-tile"><div class="kt-i" style="background:rgba(122,182,63,.15);color:#7ab63f"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><div class="kt-body"><div class="kt-val" style="font-size:17px">${fmt(revenue)}</div><div class="kt-lbl">Collected Revenue</div></div></div>
-    <div class="kpi-tile"><div class="kt-i" style="background:rgba(33,150,243,.12);color:#2196f3"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg></div><div class="kt-body"><div class="kt-val">${todayCalls.length}</div><div class="kt-lbl">Calls Today</div></div></div>
-    <div class="kpi-tile${overdue.length?" kpi-urgent":""}"><div class="kt-i" style="background:rgba(229,72,77,.1);color:#e5484d"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div><div class="kt-body"><div class="kt-val">${myC.length}</div><div class="kt-lbl">Total Clients</div></div></div>
+  v.innerHTML=`<div class="hero-dash">
+  <div class="hero-band">
+    <div class="hero-top"><h2>Good ${gr}, ${admin?"Admin":rep||"User"}</h2><span class="pg-sub">${today.toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</span></div>
+    <div class="hero-kpis">
+      <div class="hero-kpi"><div class="kt-i" style="background:rgba(255,255,255,.18);color:#fff"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 7H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg></div><div class="kt-body"><div class="kt-val">${openDeals.length}</div><div class="kt-lbl">Open Deals</div></div></div>
+      <div class="hero-kpi"><div class="kt-i" style="background:rgba(132,201,160,.3);color:#c9f2a0"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><div class="kt-body"><div class="kt-val" style="font-size:17px">${fmt(revenue)}</div><div class="kt-lbl">Collected Revenue</div></div></div>
+      <div class="hero-kpi"><div class="kt-i" style="background:rgba(91,155,213,.3);color:#bfe0ff"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg></div><div class="kt-body"><div class="kt-val">${todayCalls.length}</div><div class="kt-lbl">Calls Today</div></div></div>
+      <div class="hero-kpi${overdue.length?" kpi-urgent":""}"><div class="kt-i" style="background:rgba(217,112,75,.3);color:#ffc7c9"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div><div class="kt-body"><div class="kt-val">${myC.length}</div><div class="kt-lbl">Total Clients</div></div></div>
+    </div>
   </div>
-  <div style="flex:1;min-height:0;display:grid;grid-template-columns:3fr 2fr;gap:8px">
-    <div style="min-width:0;min-height:0;display:grid;grid-template-rows:auto 1fr 1fr 1fr 1fr;gap:8px">
+  ${alertHtml}
+  <div class="hero-body">
+    <div class="hero-main">
       ${pipeHtml}
-      <div style="min-height:0;display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
-        <div class="dash-card" style="min-height:0;display:flex;flex-direction:column">
-          <div class="dc-hdr" style="flex-shrink:0"><h3>Open Deals</h3><span class="dc-link" onclick="go('deals')">View all</span></div>
-          <div style="flex:1;min-height:0;overflow-y:auto">${tbl(openTasks,["Deal","Stage","Value"],"No open deals",d=>`<tr><td>${d.clientName||d.company||"—"}</td><td><span class="pill ${d.stage==="Negotiation"?"amber":"gray"}">${d.stage||d.dealStage||"—"}</span></td><td>PKR ${Number((d.qty||0)*(d.unitPrice||0)).toLocaleString()}</td></tr>`)}</div>
+      <div class="hgrid4">
+        <div class="hcard">
+          <div class="hcard-hd"><h3>Open Deals</h3><span class="dc-link" onclick="go('deals')">View all</span></div>
+          <div class="hcard-body">${tbl(openTasks,["Deal","Stage","Value"],"No open deals",d=>`<tr><td>${d.clientName||d.company||"—"}</td><td><span class="pill ${d.stage==="Negotiation"?"amber":"gray"}">${d.stage||d.dealStage||"—"}</span></td><td>PKR ${Number((d.qty||0)*(d.unitPrice||0)).toLocaleString()}</td></tr>`)}</div>
         </div>
-        <div class="dash-card" style="min-height:0;display:flex;flex-direction:column">
-          <div class="dc-hdr" style="flex-shrink:0"><h3>Upcoming Meetings</h3><span class="dc-link" onclick="go('meetings')">View all</span></div>
-          <div style="flex:1;min-height:0;overflow-y:auto">${tbl(upcoming,["Client","Date","Type"],"No upcoming meetings",m=>`<tr><td>${m.company||m.clientName||"—"}</td><td>${fd(m.date)}</td><td><span class="pill blue">${m.type||"Meeting"}</span></td></tr>`)}</div>
+        <div class="hcard">
+          <div class="hcard-hd"><h3>Upcoming Meetings</h3><span class="dc-link" onclick="go('meetings')">View all</span></div>
+          <div class="hcard-body">${tbl(upcoming,["Client","Date","Type"],"No upcoming meetings",m=>`<tr><td>${m.company||m.clientName||"—"}</td><td>${fd(m.date)}</td><td><span class="pill blue">${m.type||"Meeting"}</span></td></tr>`)}</div>
         </div>
-        <div class="dash-card" style="min-height:0;display:flex;flex-direction:column">
-          <div class="dc-hdr" style="flex-shrink:0"><h3>Closing This Month</h3><span class="dc-link" onclick="go('deals')">View all</span></div>
-          <div style="flex:1;min-height:0;overflow-y:auto">${tbl(closing,["Client","Value","Stage"],"No deals closing this month",d=>`<tr><td>${d.company||d.clientName||"—"}</td><td>PKR ${Number((d.qty||0)*(d.unitPrice||0)).toLocaleString()}</td><td><span class="pill amber">${d.stage||"—"}</span></td></tr>`)}</div>
+        <div class="hcard">
+          <div class="hcard-hd"><h3>Closing This Month</h3><span class="dc-link" onclick="go('deals')">View all</span></div>
+          <div class="hcard-body">${tbl(closing,["Client","Value","Stage"],"No deals closing this month",d=>`<tr><td>${d.company||d.clientName||"—"}</td><td>PKR ${Number((d.qty||0)*(d.unitPrice||0)).toLocaleString()}</td><td><span class="pill amber">${d.stage||"—"}</span></td></tr>`)}</div>
         </div>
-        <div class="dash-card" style="min-height:0;display:flex;flex-direction:column">
-          <div class="dc-hdr" style="flex-shrink:0"><h3>Overdue Follow-Ups</h3><span class="dc-link" onclick="go('clients')">View all</span></div>
-          <div style="flex:1;min-height:0;overflow-y:auto">${tbl(overdue,["Client","Due Date","Status"],"No overdue follow-ups",c=>`<tr><td>${c.company||c.clientName||"—"}</td><td style="color:var(--danger)">${fd(c.followDate||c.followUpDate)}</td><td><span class="pill ${c.status==="Active"?"green":"gray"}">${c.status||"—"}</span></td></tr>`)}</div>
+        <div class="hcard">
+          <div class="hcard-hd"><h3>Overdue Follow-Ups</h3><span class="dc-link" onclick="go('clients')">View all</span></div>
+          <div class="hcard-body">${tbl(overdue,["Client","Due Date","Status"],"No overdue follow-ups",c=>`<tr><td>${c.company||c.clientName||"—"}</td><td style="color:var(--danger)">${fd(c.followDate||c.followUpDate)}</td><td><span class="pill ${c.status==="Active"?"green":"gray"}">${c.status||"—"}</span></td></tr>`)}</div>
         </div>
       </div>
-      <div class="chart-card" style="min-height:0;display:flex;flex-direction:column">
-        <div class="ct" style="flex-shrink:0">Monthly Call Volume</div>
-        <div style="flex:1;min-height:0;position:relative"><canvas id="hd_calls"></canvas></div>
+      <div class="hcard">
+        <div class="hcard-ct">Monthly Call Volume</div>
+        <div class="hcard-chart"><canvas id="hd_calls"></canvas></div>
       </div>
-      <div class="chart-card" style="min-height:0;display:flex;flex-direction:column">
-        <div class="ct" style="flex-shrink:0">Revenue by Rep (PKR)</div>
-        <div style="flex:1;min-height:0;position:relative"><canvas id="hd_rev"></canvas></div>
+      <div class="hcard">
+        <div class="hcard-ct">Revenue by Rep (PKR)</div>
+        <div class="hcard-chart"><canvas id="hd_rev"></canvas></div>
       </div>
-      <div class="chart-card" style="min-height:0;display:flex;flex-direction:column">
-        <div class="ct" style="flex-shrink:0">Monthly Deal Value</div>
-        <div style="flex:1;min-height:0;position:relative"><canvas id="hd_deals"></canvas></div>
+      <div class="hcard">
+        <div class="hcard-ct">Monthly Deal Value</div>
+        <div class="hcard-chart"><canvas id="hd_deals"></canvas></div>
       </div>
     </div>
-    <div style="min-width:0;min-height:0;display:grid;grid-template-rows:1fr 2.3fr;gap:8px">
-      <div style="min-height:0;display:grid;grid-template-columns:1fr 1fr;gap:8px">
-        <div class="chart-card" style="min-height:0;display:flex;flex-direction:column">
-          <div class="ct" style="flex-shrink:0">Clients by Industry</div>
-          <div style="flex:1;min-height:0;position:relative"><canvas id="hd_ind"></canvas></div>
+    <div class="hero-side">
+      <div class="hgrid2">
+        <div class="hcard">
+          <div class="hcard-ct">Clients by Industry</div>
+          <div class="hcard-chart"><canvas id="hd_ind"></canvas></div>
         </div>
-        <div class="chart-card" style="min-height:0;display:flex;flex-direction:column">
-          <div class="ct" style="flex-shrink:0">Clients by Area</div>
-          <div style="flex:1;min-height:0;position:relative"><canvas id="hd_area"></canvas></div>
+        <div class="hcard">
+          <div class="hcard-ct">Clients by Area</div>
+          <div class="hcard-chart"><canvas id="hd_area"></canvas></div>
         </div>
       </div>
-      <div class="chart-card" style="min-height:0;display:flex;flex-direction:column">
-        <div class="ct" style="flex-shrink:0">Clients by City</div>
-        <div style="flex:1;min-height:0;overflow-y:auto;display:flex;align-items:center;justify-content:center">${renderPKMap(hdCityAgg)}</div>
+      <div class="hcard">
+        <div class="hcard-ct">Clients by City</div>
+        <div class="hcard-map">${renderPKMap(hdCityAgg)}</div>
       </div>
     </div>
   </div>
   </div>`;
 
   requestAnimationFrame(()=>{
-    _dcharts.calls=new Chart(document.getElementById("hd_calls"),{type:"bar",data:{labels:hdMonths,datasets:[{label:"Calls",data:hdCallCounts,backgroundColor:"#4caf89",borderRadius:4}]},options:{...hdBase,plugins:{...hdBase.plugins,legend:{display:false}}}});
+    _dcharts.calls=new Chart(document.getElementById("hd_calls"),{type:"bar",data:{labels:hdMonths,datasets:[{label:"Calls",data:hdCallCounts,backgroundColor:"#1f7a4d",borderRadius:4}]},options:{...hdBase,plugins:{...hdBase.plugins,legend:{display:false}}}});
     _dcharts.area=new Chart(document.getElementById("hd_area"),{type:"pie",data:{labels:hdAreaL,datasets:[{data:hdAreaD,backgroundColor:hdP,borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:"right",labels:{color:hdT,font:{size:10},boxWidth:10}}}}});
     _dcharts.rev=new Chart(document.getElementById("hd_rev"),{type:"bar",data:{labels:hdRepNames,datasets:[{label:"Revenue",data:hdRepRev,backgroundColor:hdP,borderRadius:4}]},options:{...hdBase,indexAxis:"y",plugins:{...hdBase.plugins,legend:{display:false}}}});
-    _dcharts.deals=new Chart(document.getElementById("hd_deals"),{type:"line",data:{labels:hdMonths,datasets:[{label:"Value",data:hdDealVals,borderColor:"#4caf89",backgroundColor:"rgba(76,175,137,.15)",fill:true,tension:.35,pointRadius:3}]},options:{...hdBase,plugins:{...hdBase.plugins,legend:{display:false}}}});
+    _dcharts.deals=new Chart(document.getElementById("hd_deals"),{type:"line",data:{labels:hdMonths,datasets:[{label:"Value",data:hdDealVals,borderColor:"#1f7a4d",backgroundColor:"rgba(31,122,77,.15)",fill:true,tension:.35,pointRadius:3}]},options:{...hdBase,plugins:{...hdBase.plugins,legend:{display:false}}}});
     _dcharts.ind=new Chart(document.getElementById("hd_ind"),{type:"doughnut",data:{labels:hdIndL,datasets:[{data:hdIndD,backgroundColor:hdP,borderWidth:0,hoverOffset:4}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:"right",labels:{color:hdT,font:{size:10},boxWidth:10}}}}});
   });
 };
