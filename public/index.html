@@ -489,7 +489,6 @@ function svgIcon(name,size){
 const SIDEBAR_NAV = [
   { id:"dashboard",   icon:"home",           label:"Home" },
   { id:"performance", icon:"trending-up",    label:"Reports" },
-  { id:"analytics",   icon:"pie-chart",      label:"Analytics" },
   { id:"_req",        icon:"message-circle", label:"My Requests",     route:"dashboard" },
 
   { section:"Sales", items:[
@@ -2849,8 +2848,11 @@ function renderAnalytics(v){
 }
 
 
+let _dcharts={};
+function destroyDashCharts(){Object.values(_dcharts).forEach(c=>{try{c.destroy();}catch(e){}});_dcharts={};}
 window.renderDashboard=function(v){
   if(!v)v=document.getElementById("view");
+  destroyDashCharts();
   const today=new Date();const todayStr=today.toISOString().slice(0,10);
   const ca=state.clients||[];
   const cl=state.calls||[];
@@ -2888,7 +2890,31 @@ window.renderDashboard=function(v){
       <div class="pipe-bars">${STAGE_ORDER.map((s,i)=>`<div class="pipe-col"><div class="pipe-bar" style="height:${Math.max(6,(sc[i]/mx)*60)}px" title="${s}: ${sc[i]}"></div><div class="pipe-lbl">${PIPE_SHORT[s]||s}<br><b>${sc[i]}</b></div></div>`).join("")}</div>
     </div></div>`;
 
-  v.innerHTML=`<div class="dash-pg">
+
+  // --- Home page analytics (merged from the former Analytics page) ---
+  const acCalls=state.calls||[], acDeals=state.deals||[], acClients=state.clients||[], acRepTargets=state.repTargets||[];
+  const hdMonths=[],hdCallCounts=[],hdDealVals=[];
+  for(let i=5;i>=0;i--){
+    const d2m=new Date();d2m.setMonth(d2m.getMonth()-i);
+    hdMonths.push(d2m.toLocaleString("default",{month:"short",year:"2-digit"}));
+    const ym=d2m.getFullYear()*100+d2m.getMonth()+1;
+    hdCallCounts.push(acCalls.filter(c=>{const cd=new Date(c.date||"");return cd.getFullYear()*100+cd.getMonth()+1===ym;}).length);
+    hdDealVals.push(acDeals.filter(dd2=>{const dd=new Date(dd2.closeDate||dd2.date||"");return dd.getFullYear()*100+dd.getMonth()+1===ym;}).reduce((s,dd2)=>s+(parseFloat(dd2.qty||0)*parseFloat(dd2.unitPrice||0)),0));
+  }
+  const hdRepNames=acRepTargets.map(r=>r.rep||r.name||"?");
+  const hdRepRev=hdRepNames.map(n=>acDeals.filter(d=>(d.rep||"")===n&&(d.collectStatus||"")==="Received").reduce((s,d)=>s+(parseFloat(d.qty||0)*parseFloat(d.unitPrice||0)),0));
+  const hdInd={};acClients.forEach(c=>{const k=c.industry||"Other";hdInd[k]=(hdInd[k]||0)+1;});
+  const hdIndL=Object.keys(hdInd).slice(0,8),hdIndD=hdIndL.map(k=>hdInd[k]);
+  const hdCityAgg={};acClients.forEach(c=>{const k=(c.city||"").trim()||"Unspecified";hdCityAgg[k]=(hdCityAgg[k]||0)+1;});
+  const hdAreaAgg={};acClients.forEach(c=>{const k=(c.area||"").trim();if(k)hdAreaAgg[k]=(hdAreaAgg[k]||0)+1;});
+  const hdAreaTop=Object.entries(hdAreaAgg).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  const hdAreaL=hdAreaTop.map(x=>x[0]),hdAreaD=hdAreaTop.map(x=>x[1]);
+  const hdP=["#4caf89","#1f7a4d","#7ab63f","#2196f3","#ff9800","#e91e63","#9c27b0","#00bcd4"];
+  const hdG="#e8ecf0",hdT="#6b7a8d";
+  const hdBase={responsive:true,maintainAspectRatio:true,plugins:{legend:{labels:{color:hdT,font:{size:11}}}},scales:{x:{grid:{color:hdG},ticks:{color:hdT,font:{size:10}}},y:{grid:{color:hdG},ticks:{color:hdT,font:{size:10}}}}};
+
+  v.innerHTML=`<div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
+  <div class="dash-pg" style="flex:1;min-width:520px">
   <div class="pg-hdr"><h2>Good ${gr}, ${admin?"Admin":rep||"User"}</h2><span class="pg-sub">${today.toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</span></div>
   ${alertHtml}
   <div class="kpi-row">
@@ -2907,7 +2933,27 @@ window.renderDashboard=function(v){
       ${tbl(closing,["Client","Value","Stage"],"No deals closing this month",d=>`<tr><td>${d.company||d.clientName||"—"}</td><td>PKR ${Number((d.qty||0)*(d.unitPrice||0)).toLocaleString()}</td><td><span class="pill amber">${d.stage||"—"}</span></td></tr>`)}</div>
     <div class="dash-card"><div class="dc-hdr"><h3>Overdue Follow-Ups</h3><span class="dc-link" onclick="go('clients')">View all</span></div>
       ${tbl(overdue,["Client","Due Date","Status"],"No overdue follow-ups",c=>`<tr><td>${c.company||c.clientName||"—"}</td><td style="color:var(--danger)">${fd(c.followDate||c.followUpDate)}</td><td><span class="pill ${c.status==="Active"?"green":"gray"}">${c.status||"—"}</span></td></tr>`)}</div>
-  </div></div>`;
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px">
+    <div class="chart-card"><div class="ct">Monthly Call Volume</div><canvas id="hd_calls" height="90"></canvas></div>
+    <div class="chart-card"><div class="ct">Clients by Area</div><canvas id="hd_area" height="90"></canvas></div>
+  </div>
+  <div class="chart-card" style="margin-top:14px"><div class="ct">Revenue by Rep (PKR)</div><canvas id="hd_rev" height="90"></canvas></div>
+  <div class="chart-card" style="margin-top:14px"><div class="ct">Monthly Deal Value</div><canvas id="hd_deals" height="90"></canvas></div>
+  </div>
+  <div style="width:300px;flex-shrink:0;display:flex;flex-direction:column;gap:16px">
+    <div class="chart-card"><div class="ct">Clients by City</div>${renderPKMap(hdCityAgg)}</div>
+    <div class="chart-card"><div class="ct">Clients by Industry</div><canvas id="hd_ind" height="200"></canvas></div>
+  </div>
+  </div>`;
+
+  requestAnimationFrame(()=>{
+    _dcharts.calls=new Chart(document.getElementById("hd_calls"),{type:"bar",data:{labels:hdMonths,datasets:[{label:"Calls",data:hdCallCounts,backgroundColor:"#4caf89",borderRadius:4}]},options:{...hdBase,plugins:{...hdBase.plugins,legend:{display:false}}}});
+    _dcharts.area=new Chart(document.getElementById("hd_area"),{type:"pie",data:{labels:hdAreaL,datasets:[{data:hdAreaD,backgroundColor:hdP,borderWidth:0}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:"right",labels:{color:hdT,font:{size:10},boxWidth:10}}}}});
+    _dcharts.rev=new Chart(document.getElementById("hd_rev"),{type:"bar",data:{labels:hdRepNames,datasets:[{label:"Revenue",data:hdRepRev,backgroundColor:hdP,borderRadius:4}]},options:{...hdBase,indexAxis:"y",plugins:{...hdBase.plugins,legend:{display:false}}}});
+    _dcharts.deals=new Chart(document.getElementById("hd_deals"),{type:"line",data:{labels:hdMonths,datasets:[{label:"Value",data:hdDealVals,borderColor:"#4caf89",backgroundColor:"rgba(76,175,137,.15)",fill:true,tension:.35,pointRadius:3}]},options:{...hdBase,plugins:{...hdBase.plugins,legend:{display:false}}}});
+    _dcharts.ind=new Chart(document.getElementById("hd_ind"),{type:"doughnut",data:{labels:hdIndL,datasets:[{data:hdIndD,backgroundColor:hdP,borderWidth:0,hoverOffset:4}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:"right",labels:{color:hdT,font:{size:10},boxWidth:10}}}}});
+  });
 };
 
 
