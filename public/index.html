@@ -1904,7 +1904,7 @@ function productForm(p){ p=p||{};
   </div>`;
 }
 function readProduct(existing){ const g=id=>document.getElementById("f_"+id).value;
-  return Object.assign({},existing||{},{name:g("name"),sku:g("sku"),category:g("category"),unit:g("unit"),unitPrice:num(g("unitPrice")),active:g("active")!=="false",description:g("description")}); }
+  return Object.assign({},existing||{},{name:g("name"),sku:g("sku"),category:document.getElementById("f_productCategory").value,unit:document.getElementById("f_productUnit").value,unitPrice:num(g("unitPrice")),active:g("active")!=="false",description:g("description")}); }
 function addProduct(){ openModal("New Product", productForm({active:true}), async()=>{
   const p=readProduct(); if(!p.name){toast("Product name is required");return false;}
   p.id=nextProductId(); state.products.push(p); await upsert("products",p); closeModal(); toast("Product added"); go("products");
@@ -1973,7 +1973,7 @@ function readPriceBook(existing){
   const items=(window.__pbItems||[]).filter(it=>it.productId);
   return Object.assign({},existing||{},{
     name:document.getElementById("pbf_name").value,
-    tier:document.getElementById("pbf_tier").value,
+    tier:document.getElementById("pbf_priceBookTier").value,
     active:document.getElementById("pbf_active").value!=="false",
     notes:document.getElementById("pbf_notes").value,
     items
@@ -2032,7 +2032,7 @@ function campaignForm(c){ c=c||{};
   </div>`;
 }
 function readCampaign(existing){ const g=id=>document.getElementById("cf_"+id).value;
-  return Object.assign({},existing||{},{name:g("name"),channel:g("channel"),status:g("status")||"Planned",startDate:g("startDate"),endDate:g("endDate"),budget:num(g("budget")),leadsGenerated:num(g("leadsGenerated")),notes:g("notes")}); }
+  return Object.assign({},existing||{},{name:g("name"),channel:document.getElementById("cf_campaignChannel").value,status:document.getElementById("cf_campaignStatus").value||"Planned",startDate:g("startDate"),endDate:g("endDate"),budget:num(g("budget")),leadsGenerated:num(g("leadsGenerated")),notes:g("notes")}); }
 function addCampaign(){ openModal("New Campaign", campaignForm({status:"Planned"}), async()=>{
   const c=readCampaign(); if(!c.name){toast("Campaign name is required");return false;}
   c.id=nextCampaignId(); state.campaigns.push(c); await upsert("campaigns",c); closeModal(); toast("Campaign added"); go("campaigns");
@@ -2098,7 +2098,7 @@ function documentForm(d){ d=d||{};
 }
 function readDocument(existing){ const g=id=>document.getElementById("df_"+id).value; const id=g("clientId"); const cl=state.clients.find(x=>x.id===id);
   return Object.assign({},existing||{},{
-    name:g("name"),type:g("type"),clientId:id,company:cl?cl.company:"",notes:g("notes"),
+    name:g("name"),type:document.getElementById("df_documentType").value,clientId:id,company:cl?cl.company:"",notes:g("notes"),
     fileData:window.__docFileData||"",fileName:window.__docFileName||"",fileType:window.__docFileType||"",fileSize:window.__docFileSize||0
   }); }
 function addDocument(){ openModal("New Document", documentForm({}), async()=>{
