@@ -2853,8 +2853,9 @@ function renderPKMap(cityAgg){
   if(!matched.length&&!unmatched.length)return '<div class="card-empty">No client city data yet</div>';
   const maxC=Math.max(1,...matched.map(m=>m.count));
   matched.sort((a,b)=>b.count-a.count);
-  const dots=matched.map(m=>{const p=pkProj(m.coord[1],m.coord[0]);const x=p[0],y=p[1];const r=4+Math.sqrt(m.count/maxC)*12;return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r.toFixed(1)}" fill="#4caf89" fill-opacity="0.75" stroke="#1f7a4d" stroke-width="1"><title>${m.name}: ${m.count}</title></circle>`;}).join("");
-  const labels=matched.slice(0,6).map(m=>{const p=pkProj(m.coord[1],m.coord[0]);const x=p[0],y=p[1]-9;return `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-size="8" fill="#3a4a5a" text-anchor="middle">${m.name}</text>`;}).join("");
+  const dotGeo=matched.map(m=>{const p=pkProj(m.coord[1],m.coord[0]);const r=4+Math.sqrt(m.count/maxC)*12;return {x:p[0],y:p[1],r,name:m.name,count:m.count};});
+  const dots=dotGeo.map(d=>`<circle cx="${d.x.toFixed(1)}" cy="${d.y.toFixed(1)}" r="${d.r.toFixed(1)}" fill="#4caf89" fill-opacity="0.75" stroke="#1f7a4d" stroke-width="1"><title>${d.name}: ${d.count}</title></circle>`).join("");
+  const labels=dotGeo.slice(0,6).map(d=>{const ly=Math.max(8,d.y-d.r-4);return `<text x="${d.x.toFixed(1)}" y="${ly.toFixed(1)}" font-size="8" font-weight="700" fill="#1a2332" stroke="#ffffff" stroke-width="3" paint-order="stroke" text-anchor="middle">${d.name}</text>`;}).join("");
   const unmatchedHtml=unmatched.length?`<div class="pk-map-other">Other: ${unmatched.sort((a,b)=>b.count-a.count).map(u=>`${u.name} (${u.count})`).join(", ")}</div>`:"";
   return `<div class="pk-map-inner"><svg class="pk-map-svg" viewBox="0 0 ${PK_W} ${PK_H}" preserveAspectRatio="xMidYMid meet"><path d="${PK_PATH}" fill="#eef3f0" stroke="#4caf89" stroke-width="1.3"/>${dots}${labels}</svg>${unmatchedHtml}</div>`;
 }
@@ -2888,7 +2889,7 @@ function renderAnalytics(v){
   const cityTop=Object.entries(cityAgg).sort((a,b)=>b[1]-a[1]).slice(0,10);
   const cityL=cityTop.map(x=>x[0]),cityD=cityTop.map(x=>x[1]);
 
-  const areaAgg={};cl.forEach(c=>{const k=(c.area||"").trim();if(k)areaAgg[k]=(areaAgg[k]||0)+1;});
+  const areaAgg={};cl.forEach(c=>{const a=(c.area||"").trim();if(!a)return;const ct=(c.city||"").trim();const k=ct?`${a}, ${ct}`:a;areaAgg[k]=(areaAgg[k]||0)+1;});
   const areaTop=Object.entries(areaAgg).sort((a,b)=>b[1]-a[1]).slice(0,10);
   const areaL=areaTop.map(x=>x[0]),areaD=areaTop.map(x=>x[1]);
 
@@ -2970,7 +2971,7 @@ window.renderDashboard=function(v){
   const hdInd={};acClients.forEach(c=>{const k=c.industry||"Other";hdInd[k]=(hdInd[k]||0)+1;});
   const hdIndL=Object.keys(hdInd).slice(0,8),hdIndD=hdIndL.map(k=>hdInd[k]);
   const hdCityAgg={};acClients.forEach(c=>{const k=(c.city||"").trim()||"Unspecified";hdCityAgg[k]=(hdCityAgg[k]||0)+1;});
-  const hdAreaAgg={};acClients.forEach(c=>{const k=(c.area||"").trim();if(k)hdAreaAgg[k]=(hdAreaAgg[k]||0)+1;});
+  const hdAreaAgg={};acClients.forEach(c=>{const a=(c.area||"").trim();if(!a)return;const ct=(c.city||"").trim();const k=ct?`${a}, ${ct}`:a;hdAreaAgg[k]=(hdAreaAgg[k]||0)+1;});
   const hdAreaTop=Object.entries(hdAreaAgg).sort((a,b)=>b[1]-a[1]).slice(0,10);
   const hdAreaL=hdAreaTop.map(x=>x[0]),hdAreaD=hdAreaTop.map(x=>x[1]);
   const hdP=["#1f7a4d","#4fae7c","#84c9a0","#2f6690","#5b9bd5","#e8a33d","#d9704b","#8e6bb8"];
