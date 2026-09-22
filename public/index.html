@@ -775,11 +775,11 @@ const MAP = {
     to:t=>({rep:t.rep,target:num(t.target),comm_rate:num(t.commRate)}),
     from:r=>({rep:r.rep,target:r.target,commRate:r.comm_rate}) },
   salesOrders:{table:"crm_sales_orders", pk:"id",
-    to:so=>({id:so.id,so_date:so.soDate||null,deal_id:so.dealId||null,client_id:so.clientId||null,company:so.company,rep:so.rep,quote_no:so.quoteNo,po_number:so.poNumber,product:so.product,qty:num(so.qty),unit_price:num(so.unitPrice),order_value:soValue(so),status:so.status,expected_delivery:so.expectedDelivery||null,notes:so.notes}),
-    from:r=>({id:r.id,soDate:r.so_date||"",dealId:r.deal_id||"",clientId:r.client_id||"",company:r.company,rep:r.rep,quoteNo:r.quote_no||"",poNumber:r.po_number||"",product:r.product,qty:r.qty,unitPrice:r.unit_price,status:r.status,expectedDelivery:r.expected_delivery||"",notes:r.notes}) },
+    to:so=>({id:so.id,so_date:so.soDate||null,deal_id:so.dealId||null,client_id:so.clientId||null,company:so.company,rep:so.rep,quote_no:so.quoteNo,po_number:so.poNumber,product:so.product,qty:num(so.qty),unit_price:num(so.unitPrice),order_value:soValue(so),status:so.status,expected_delivery:so.expectedDelivery||null,notes:so.notes,production_order_no:so.productionOrderNo||null,production_status:so.productionStatus||null}),
+    from:r=>({id:r.id,soDate:r.so_date||"",dealId:r.deal_id||"",clientId:r.client_id||"",company:r.company,rep:r.rep,quoteNo:r.quote_no||"",poNumber:r.po_number||"",product:r.product,qty:r.qty,unitPrice:r.unit_price,status:r.status,expectedDelivery:r.expected_delivery||"",notes:r.notes,productionOrderNo:r.production_order_no||"",productionStatus:r.production_status||""}) },
   invoices:{table:"crm_invoices", pk:"id",
-    to:inv=>({id:inv.id,invoice_date:inv.invoiceDate||null,due_date:inv.dueDate||null,sales_order_id:inv.salesOrderId||null,deal_id:inv.dealId||null,client_id:inv.clientId||null,company:inv.company,rep:inv.rep,amount:num(inv.amount),amount_paid:num(inv.amountPaid),status:inv.status,notes:inv.notes}),
-    from:r=>({id:r.id,invoiceDate:r.invoice_date||"",dueDate:r.due_date||"",salesOrderId:r.sales_order_id||"",dealId:r.deal_id||"",clientId:r.client_id||"",company:r.company,rep:r.rep,amount:r.amount,amountPaid:r.amount_paid,status:r.status,notes:r.notes}) },
+    to:inv=>({id:inv.id,invoice_date:inv.invoiceDate||null,due_date:inv.dueDate||null,sales_order_id:inv.salesOrderId||null,deal_id:inv.dealId||null,client_id:inv.clientId||null,company:inv.company,rep:inv.rep,amount:num(inv.amount),amount_paid:num(inv.amountPaid),status:inv.status,notes:inv.notes,payment_type:inv.paymentType||null}),
+    from:r=>({id:r.id,invoiceDate:r.invoice_date||"",dueDate:r.due_date||"",salesOrderId:r.sales_order_id||"",dealId:r.deal_id||"",clientId:r.client_id||"",company:r.company,rep:r.rep,amount:r.amount,amountPaid:r.amount_paid,status:r.status,notes:r.notes,paymentType:r.payment_type||""}) },
   purchaseOrders:{table:"crm_purchase_orders", pk:"id",
     to:po=>({id:po.id,po_date:po.poDate||null,vendor:po.vendor,item:po.item,qty:num(po.qty),unit_cost:num(po.unitCost),total_cost:poTotalCost(po),status:po.status,expected_delivery:po.expectedDelivery||null,notes:po.notes}),
     from:r=>({id:r.id,poDate:r.po_date||"",vendor:r.vendor,item:r.item,qty:r.qty,unitCost:r.unit_cost,status:r.status,expectedDelivery:r.expected_delivery||"",notes:r.notes}) },
@@ -822,6 +822,7 @@ async function cloudPull(){
   }
   if(!state.users||!state.users.length) state.users=seedUsers();
   await backfillQuoteSerials();
+  await reconcileProductionLinks();
   cloudOK=anyOK; return anyOK;
 }
 async function backfillQuoteSerials(){
@@ -1138,6 +1139,20 @@ function stageColor(rt){ return STAGE_COLORS[rt] || {bg:'rgba(100,116,139,.10)',
 function stageLabel(rt){ return rt ? String(rt).toUpperCase() : 'UNKNOWN'; }
 function nextStage(rt){ const i=STAGE_ORDER.indexOf(rt); return (i===-1||i===STAGE_ORDER.length-1) ? null : STAGE_ORDER[i+1]; }
 function isClosedStage(rt){ return rt==='Order Closed' || rt===STAGE_LOST; }
+function stageRank(rt){ if(rt===STAGE_LOST) return -1; const i=STAGE_ORDER.indexOf(rt); return i===-1?0:i; }
+// Forward-only stage promotion: multiple independent signals (quotes, sales orders, invoices,
+// production data) can all try to push a client's stage forward as evidence comes in. This never
+// moves a stage backward and never touches a closed/lost record, so it's always safe to call
+// speculatively from anywhere -- it just no-ops if the client is already at or past the target.
+function promoteStage(client, targetStage){
+  if(!client || isClosedStage(client.recordType)) return false;
+  if(stageRank(targetStage) <= stageRank(client.recordType)) return false;
+  client.recordType = targetStage;
+  if(targetStage==='Sales Order Created' && !client.firstContact){ client.firstContact = today(); }
+  if(targetStage==='Order Closed' && client.accountType!=='Vendor' && client.accountType!=='Supplier'){ client.accountType='Client'; }
+  upsert("clients", client);
+  return true;
+}
 const PIPE_SHORT={'New Inquiry':'Inquiry','Quotation Sent':'Quotation','Follow-up / Negotiation':'Negotiation','Quotation Approved':'Q. Approved','Order Confirmed':'Order Conf.','Advance Payment Received':'Adv. Payment','Sales Order Created':'Sales Order','Production Order Created':'Prod. Order','Production In Process':'In Production','Production Completed & QC Passed':'QC Passed','Balance Payment Received':'Bal. Payment','Ready for Dispatch':'Ready','Dispatched / Delivered':'Delivered','Order Closed':'Closed'};
 
 function renderClients(v, bucketKey){
@@ -1237,6 +1252,81 @@ function autoCreateDealAndOrder(c){
     so = salesOrderFromDeal(deal);
     so.id=nextId("SO",so.rep); state.salesOrders.push(so); upsert("salesOrders",so);
   }
+  syncStageFromSalesOrder(so);
+}
+// ---- Production Planning integration ---------------------------------------------------
+// PSG-Production-Planning is a separate Cloudflare app that shares this same Supabase project
+// (its "orders" table, unprefixed). Pushing a Sales Order there as a real production order --
+// instead of asking reps to re-type it a second time -- lets the CRM read back real QC/dispatch
+// status instead of relying on a manual checkbox. crm_so_id on the production order, and
+// production_order_no/production_status mirrored back onto the Sales Order, are the two ends of
+// that link. See reconcileProductionLinks() below for the read-back side (called from cloudPull()).
+async function pushToProduction(so){
+  if(!sb) return false;
+  if(so.productionOrderNo) return true; // already linked, nothing to do
+  const orderNo="CRM-"+String(so.id).replace(/[^A-Za-z0-9]/g,"")+"-"+Date.now().toString(36).slice(-5).toUpperCase();
+  try{
+    const {error}=await sb.from("orders").insert({
+      order_number:orderNo, client_name:so.company||"", order_type:"Architectural",
+      order_qty:Math.round(num(so.qty))||0, order_date:so.soDate||today(),
+      delivery_date:so.expectedDelivery||null, status:"Active",
+      notes:"Auto-created from PSG CRM Sales Order "+so.id, crm_so_id:so.id
+    });
+    if(error) throw error;
+    so.productionOrderNo=orderNo; so.productionStatus="Active";
+    await upsert("salesOrders",so);
+    return true;
+  }catch(e){ console.warn("Push to Production Planning failed:",e.message); return false; }
+}
+// Central place a Sales Order's own status (and its downstream Production Planning order) feeds
+// back into the client's pipeline stage. Called after every Sales Order create/edit.
+function syncStageFromSalesOrder(so){
+  const c=state.clients.find(x=>x.id===so.clientId); if(!c) return;
+  promoteStage(c,"Sales Order Created");
+  const soStageMap={"In Production":"Production In Process","Ready for Dispatch":"Ready for Dispatch","Delivered":"Dispatched / Delivered"};
+  if(soStageMap[so.status]) promoteStage(c,soStageMap[so.status]);
+  pushToProduction(so).then(ok=>{ if(ok) promoteStage(c,"Production Order Created"); });
+  if(so.status==="Delivered") maybeAutoCloseOrder(c,so);
+}
+// Auto-close: fires only once a Sales Order is Delivered AND every invoice tied to it is fully
+// paid off. Leaves the manual "Order Closed" advance/edit path untouched as a fallback.
+function maybeAutoCloseOrder(c,so){
+  if(!c||!so||so.status!=="Delivered") return;
+  const invs=state.invoices.filter(x=>x.salesOrderId===so.id);
+  if(!invs.length) return;
+  if(invs.every(x=>invoiceBalance(x)<=0)) promoteStage(c,"Order Closed");
+}
+// Maps a saved Invoice's Payment Type + paid status onto the payment-received pipeline stages.
+// A "Full" payment satisfies both Advance and Balance in one step (promoteStage is forward-only
+// and rank-checked, so calling both here always lands on the later of the two, safely).
+function promoteInvoiceStage(inv){
+  if(!inv||!inv.clientId) return;
+  const c=state.clients.find(x=>x.id===inv.clientId); if(!c) return;
+  const hasPayment=inv.status==="Paid"||(inv.status==="Partial"&&num(inv.amountPaid)>0);
+  if(!hasPayment) return;
+  if(inv.paymentType==="Advance"||inv.paymentType==="Full") promoteStage(c,"Advance Payment Received");
+  if(inv.paymentType==="Balance"||inv.paymentType==="Full") promoteStage(c,"Balance Payment Received");
+  if(inv.salesOrderId){ const so=state.salesOrders.find(x=>x.id===inv.salesOrderId); if(so) maybeAutoCloseOrder(c,so); }
+}
+// Reads back Production Planning's live status for every linked Sales Order and promotes the
+// client to "Production Completed & QC Passed" the moment production marks it QC Passed (their
+// "QC Passed / Dispatch" action covers both QC sign-off and dispatch in one step). Called from
+// cloudPull(), so it runs on login and every 20s auto-refresh -- no separate polling needed.
+async function reconcileProductionLinks(){
+  if(!sb) return;
+  const linked=(state.salesOrders||[]).filter(so=>so.productionOrderNo);
+  if(!linked.length) return;
+  try{
+    const nums=linked.map(so=>so.productionOrderNo);
+    const {data,error}=await sb.from("orders").select("order_number,status").in("order_number",nums);
+    if(error) throw error;
+    const byNum={}; (data||[]).forEach(o=>{ byNum[o.order_number]=o.status; });
+    for(const so of linked){
+      const pStatus=byNum[so.productionOrderNo]; if(!pStatus) continue;
+      if(pStatus!==so.productionStatus){ so.productionStatus=pStatus; upsert("salesOrders",so); }
+      if(pStatus==="QC Passed"){ const c=state.clients.find(x=>x.id===so.clientId); if(c) promoteStage(c,"Production Completed & QC Passed"); }
+    }
+  }catch(e){ console.warn("Production reconcile failed:",e.message); }
 }
 function markLost(id){ const c=state.clients.find(x=>x.id===id); if(!c)return; if(isClosedStage(c.recordType)){toast("Already closed");return;} c.recordType=STAGE_LOST; upsert("clients",c); toast(c.company+" marked Lost"); go(route); }
 function clientForm(c){
@@ -1787,7 +1877,7 @@ function renderSalesOrders(v){
     <td>${esc(so.id)}</td><td>${esc(so.soDate)}</td><td><b>${esc(so.company)}</b></td><td>${esc(so.rep)}</td>
     <td>${esc(so.quoteNo)}</td><td>${esc(so.poNumber)}</td><td>${esc(so.product)}</td>
     <td class="num">${esc(so.qty)}</td><td class="num">${PKR(soValue(so))}</td>
-    <td>${soStatusPill(so.status)}</td><td>${esc(so.expectedDelivery||"")}</td>
+    <td>${soStatusPill(so.status)}${so.productionOrderNo?` <span class="pill gray" title="Production Planning status">🏭 ${esc(so.productionStatus||"—")}</span>`:""}</td><td>${esc(so.expectedDelivery||"")}</td>
     <td class="no-print"><div class="rowbtns">${so.status!=="Delivered"&&so.status!=="Cancelled"?`<button class="btn sm ghost" title="Generate Invoice" onclick="generateInvoiceFromSO('${esc(so.id)}')">➔ Invoice</button>`:""}<button class="btn sm ghost" onclick="edit_salesOrder('${esc(so.id)}')">Edit</button><button class="btn sm ghost danger" onclick="del_salesOrder('${esc(so.id)}')">✕</button></div></td></tr>`).join("")
     :`<tr><td colspan="12"><div class="empty">No sales orders yet.</div></td></tr>`;
   const total=rows.reduce((s,so)=>s+soValue(so),0);
@@ -1812,8 +1902,8 @@ function salesOrderForm(so){ so=so||{}; const rep=myRep();
 }
 function readSalesOrder(existing){ const g=id=>document.getElementById("f_"+id).value; const id=g("clientId"); const cl=state.clients.find(x=>x.id===id);
   return Object.assign({},existing||{},{soDate:g("soDate"),rep:g("rep"),clientId:id,company:cl?cl.company:(existing&&existing.company)||"",quoteNo:g("quoteNo"),poNumber:g("poNumber"),product:g("product"),qty:num(g("qty")),unitPrice:num(g("unitPrice")),status:g("status"),expectedDelivery:g("expectedDelivery"),notes:g("notes")}); }
-function addSalesOrder(){ openModal("New Sales Order", salesOrderForm({rep:myRep()||""}), async()=>{ const so=readSalesOrder(); if(!so.clientId){toast("Pick a client");return false;} so.id=nextId("SO",so.rep); state.salesOrders.push(so); await upsert("salesOrders",so); closeModal(); toast("Sales order added"); go("salesOrders"); }); }
-function edit_salesOrder(id){ const so=state.salesOrders.find(x=>x.id===id); if(!so)return; openModal("Edit Sales Order", salesOrderForm(so), async()=>{ Object.assign(so,readSalesOrder(so)); await upsert("salesOrders",so); closeModal(); toast("Sales order updated"); go("salesOrders"); }); }
+function addSalesOrder(){ openModal("New Sales Order", salesOrderForm({rep:myRep()||""}), async()=>{ const so=readSalesOrder(); if(!so.clientId){toast("Pick a client");return false;} so.id=nextId("SO",so.rep); state.salesOrders.push(so); await upsert("salesOrders",so); syncStageFromSalesOrder(so); closeModal(); toast("Sales order added"); go("salesOrders"); }); }
+function edit_salesOrder(id){ const so=state.salesOrders.find(x=>x.id===id); if(!so)return; openModal("Edit Sales Order", salesOrderForm(so), async()=>{ Object.assign(so,readSalesOrder(so)); await upsert("salesOrders",so); syncStageFromSalesOrder(so); closeModal(); toast("Sales order updated"); go("salesOrders"); }); }
 function del_salesOrder(id){ confirmDel("Delete this sales order?", async()=>{ state.salesOrders=state.salesOrders.filter(x=>x.id!==id); await remove("salesOrders",id); toast("Deleted"); go("salesOrders"); }); }
 
 /* ======================================================================
@@ -1824,7 +1914,7 @@ function vInvoices(){ const r=myRep(); return r? state.invoices.filter(x=>x.rep=
 function invoiceBalance(inv){ return num(inv.amount)-num(inv.amountPaid); }
 function invoiceStatusPill(s){ const c={Paid:"green",Partial:"amber",Unpaid:"gray",Overdue:"red"}[s]||"gray"; return `<span class="pill ${c}">${esc(s||"")}</span>`; }
 function invoiceFromSO(so){
-  return {invoiceDate:today(),dueDate:"",salesOrderId:so.id,dealId:so.dealId||"",clientId:so.clientId,company:so.company,rep:so.rep,amount:soValue(so),amountPaid:0,status:"Unpaid",notes:"Generated from sales order "+so.id};
+  return {invoiceDate:today(),dueDate:"",salesOrderId:so.id,dealId:so.dealId||"",clientId:so.clientId,company:so.company,rep:so.rep,amount:soValue(so),amountPaid:0,status:"Unpaid",paymentType:"Full",notes:"Generated from sales order "+so.id};
 }
 function generateInvoiceFromSO(soId){
   const so=state.salesOrders.find(x=>x.id===soId); if(!so)return;
@@ -1849,12 +1939,14 @@ function renderInvoices(v){
 }
 function invoiceForm(inv){ inv=inv||{}; const rep=myRep();
   const statusOpts=["Unpaid","Partial","Paid","Overdue"];
+  const paymentOpts=["Advance","Balance","Full"];
   return `<div class="formgrid">
     <div class="field"><label>Invoice Date</label><input id="f_invoiceDate" type="date" value="${esc(inv.invoiceDate||today())}"></div>
     <div class="field"><label>Due Date</label><input id="f_dueDate" type="date" value="${esc(inv.dueDate||"")}"></div>
     <div class="field ${rep?'locked':''}"><label>Sales Rep</label><input id="f_rep" value="${esc(inv.rep||rep||"")}" ${rep?"readonly":""}></div>
     <div class="field full"><label>Client</label><select id="f_clientId">${clientOptions(inv.clientId)}</select></div>
     <div class="field"><label>Sales Order #</label><input id="f_salesOrderId" value="${esc(inv.salesOrderId||"")}"></div>
+    <div class="field"><label>Payment Type</label><select id="f_paymentType">${paymentOpts.map(o=>`<option ${o===(inv.paymentType||"Full")?"selected":""}>${o}</option>`).join("")}</select></div>
     <div class="field"><label>Amount (PKR)</label><input id="f_amount" type="number" step="any" value="${esc(inv.amount||"")}" oninput="calcInvoice()"></div>
     <div class="field"><label>Amount Paid (PKR)</label><input id="f_amountPaid" type="number" step="any" value="${esc(inv.amountPaid!=null?inv.amountPaid:"")}" oninput="calcInvoice()"></div>
     <div class="field"><label>Balance (auto)</label><input id="f_balance" class="calc" readonly value="${PKR(invoiceBalance(inv))}"></div>
@@ -1864,9 +1956,9 @@ function invoiceForm(inv){ inv=inv||{}; const rep=myRep();
 }
 function calcInvoice(){ const amt=num(document.getElementById("f_amount").value), paid=num(document.getElementById("f_amountPaid").value); document.getElementById("f_balance").value=PKR(amt-paid); }
 function readInvoice(existing){ const g=id=>document.getElementById("f_"+id).value; const id=g("clientId"); const cl=state.clients.find(x=>x.id===id);
-  return Object.assign({},existing||{},{invoiceDate:g("invoiceDate"),dueDate:g("dueDate"),rep:g("rep"),clientId:id,company:cl?cl.company:(existing&&existing.company)||"",salesOrderId:g("salesOrderId"),amount:num(g("amount")),amountPaid:num(g("amountPaid")),status:g("status"),notes:g("notes")}); }
-function addInvoice(){ openModal("New Invoice", invoiceForm({rep:myRep()||""}), async()=>{ const inv=readInvoice(); if(!inv.clientId){toast("Pick a client");return false;} inv.id=nextId("IV",inv.rep); state.invoices.push(inv); await upsert("invoices",inv); closeModal(); toast("Invoice added"); go("invoices"); }, calcInvoice); }
-function edit_invoice(id){ const inv=state.invoices.find(x=>x.id===id); if(!inv)return; openModal("Edit Invoice", invoiceForm(inv), async()=>{ Object.assign(inv,readInvoice(inv)); await upsert("invoices",inv); closeModal(); toast("Invoice updated"); go("invoices"); }, calcInvoice); }
+  return Object.assign({},existing||{},{invoiceDate:g("invoiceDate"),dueDate:g("dueDate"),rep:g("rep"),clientId:id,company:cl?cl.company:(existing&&existing.company)||"",salesOrderId:g("salesOrderId"),paymentType:g("paymentType"),amount:num(g("amount")),amountPaid:num(g("amountPaid")),status:g("status"),notes:g("notes")}); }
+function addInvoice(){ openModal("New Invoice", invoiceForm({rep:myRep()||""}), async()=>{ const inv=readInvoice(); if(!inv.clientId){toast("Pick a client");return false;} inv.id=nextId("IV",inv.rep); state.invoices.push(inv); await upsert("invoices",inv); promoteInvoiceStage(inv); closeModal(); toast("Invoice added"); go("invoices"); }, calcInvoice); }
+function edit_invoice(id){ const inv=state.invoices.find(x=>x.id===id); if(!inv)return; openModal("Edit Invoice", invoiceForm(inv), async()=>{ Object.assign(inv,readInvoice(inv)); await upsert("invoices",inv); promoteInvoiceStage(inv); closeModal(); toast("Invoice updated"); go("invoices"); }, calcInvoice); }
 function del_invoice(id){ confirmDel("Delete this invoice?", async()=>{ state.invoices=state.invoices.filter(x=>x.id!==id); await remove("invoices",id); toast("Deleted"); go("invoices"); }); }
 
 /* ======================================================================
@@ -2320,8 +2412,8 @@ function readQuote(existing){
     pdfData:window.__quotePdfData||""
   });
 }
-function addQuote(){ openModal("New Quote", quoteForm({rep:myRep()||"",status:"Draft"}), async()=>{ const q=readQuote(); if(!q.clientId){toast("Pick a client");return false;} if(!q.items.length){toast("Add at least one item");return false;} q.id=nextId("QT",q.rep); q.serialNo=(state.quotes||[]).length+1; state.quotes.push(q); await upsert("quotes",q); if(q.status==="Sent"){ const c=state.clients.find(x=>x.id===q.clientId); if(c&&c.recordType==="New Inquiry"){ c.recordType="Quotation Sent"; upsert("clients",c); } } closeModal(); toast("Quote added"); go("quotes"); }, quoteRenderItems); }
-function edit_quote(id){ const q=state.quotes.find(x=>x.id===id); if(!q)return; openModal("Edit Quote", quoteForm(q), async()=>{ const upd=readQuote(q); if(!upd.items.length){toast("Add at least one item");return false;} Object.assign(q,upd); await upsert("quotes",q); if(q.status==="Sent"){ const c=state.clients.find(x=>x.id===q.clientId); if(c&&c.recordType==="New Inquiry"){ c.recordType="Quotation Sent"; upsert("clients",c); } } closeModal(); toast("Quote updated"); go("quotes"); }, quoteRenderItems); }
+function addQuote(){ openModal("New Quote", quoteForm({rep:myRep()||"",status:"Draft"}), async()=>{ const q=readQuote(); if(!q.clientId){toast("Pick a client");return false;} if(!q.items.length){toast("Add at least one item");return false;} q.id=nextId("QT",q.rep); q.serialNo=(state.quotes||[]).length+1; state.quotes.push(q); await upsert("quotes",q); if(q.status==="Sent"){ const c=state.clients.find(x=>x.id===q.clientId); if(c) promoteStage(c,"Quotation Sent"); } if(q.status==="Accepted"){ const c=state.clients.find(x=>x.id===q.clientId); if(c) promoteStage(c,"Quotation Approved"); } closeModal(); toast("Quote added"); go("quotes"); }, quoteRenderItems); }
+function edit_quote(id){ const q=state.quotes.find(x=>x.id===id); if(!q)return; openModal("Edit Quote", quoteForm(q), async()=>{ const upd=readQuote(q); if(!upd.items.length){toast("Add at least one item");return false;} Object.assign(q,upd); await upsert("quotes",q); if(q.status==="Sent"){ const c=state.clients.find(x=>x.id===q.clientId); if(c) promoteStage(c,"Quotation Sent"); } if(q.status==="Accepted"){ const c=state.clients.find(x=>x.id===q.clientId); if(c) promoteStage(c,"Quotation Approved"); } closeModal(); toast("Quote updated"); go("quotes"); }, quoteRenderItems); }
 function del_quote(id){ confirmDel("Delete this quote?", async()=>{ state.quotes=state.quotes.filter(x=>x.id!==id); await remove("quotes",id); toast("Deleted"); go("quotes"); }); }
 function waQuote(id){
   const q=state.quotes.find(x=>x.id===id); if(!q)return;
@@ -2355,6 +2447,7 @@ function convertQuoteToDeal(id){
   d.id=nextId("DL",d.rep); state.deals.push(d);
   upsert("deals",d);
   if(q.status!=="Accepted"){ q.status="Accepted"; upsert("quotes",q); }
+  const qc=state.clients.find(x=>x.id===q.clientId); if(qc) promoteStage(qc,"Quotation Approved");
   toast("Deal created from quote"); go("deals");
 }
 function viewQuote(id){ window.__quoteViewId=id; go("quoteView"); }
@@ -2772,7 +2865,8 @@ function waOpenModal(phone, ctx, presetName){
         }
         if(q.status==="Draft"){ q.status="Sent"; upsert("quotes",q); }
         const qc=state.clients.find(x=>x.id===q.clientId);
-        if(qc && qc.recordType==="New Inquiry"){ qc.recordType="Quotation Sent"; upsert("clients",qc); }
+        if(qc) promoteStage(qc,"Quotation Sent");
+        if(qc && q.status==="Accepted") promoteStage(qc,"Quotation Approved");
       }
     }
     // (no auto stage-bump on a plain WhatsApp send \u2014 'New Inquiry' has no finer sub-stage in the unified flow; sending a quote still bumps to 'Quotation Sent' above)
