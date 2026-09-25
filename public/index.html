@@ -449,6 +449,10 @@ td .help{font-size:11.5px;color:var(--muted);margin-top:1px;display:block}
 .kcard-id{font-size:10.5px;color:var(--muted);font-family:monospace}
 .sclr-nl{color:#1565c0}.sclr-ct{color:#6a1b9a}.sclr-ql{color:#e65100}.sclr-rr{color:#01579b}.sclr-qs{color:#4527a0}.sclr-ng{color:#b71c1c}.sclr-wn{color:#1b5e20}
 .kcard-empty{font-size:12px;color:var(--muted);text-align:center;padding:10px 4px;opacity:.7}
+.kcard-dragging{opacity:.2;pointer-events:none}
+.kcolover>.kcard-list{outline:2px dashed var(--primary,#4f8ef7);background:rgba(79,142,247,.07);border-radius:0 0 8px 8px;min-height:60px}
+.kcard-del{padding:1px 5px !important;font-size:11px !important;line-height:1.3 !important;margin-left:auto}
+@media(max-width:640px){.kanban-col{flex:0 0 158px}.kanban-wrap{gap:8px}}
 .formgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px 14px}
 .formgrid .field.full{grid-column:1/-1}
 .formgrid .field label{display:block;font-size:12px;font-weight:600;margin-bottom:4px;color:var(--muted)}
@@ -2147,10 +2151,16 @@ function edit_account(id){
   });
 }
 function del_account(id){
-  const cts=state.contacts.filter(c=>c.accountId===id).length;
-  const dls=state.pipelineDeals.filter(d=>d.accountId===id).length;
-  if(cts+dls>0){toast('Cannot delete: '+cts+' contact(s) and '+dls+' deal(s) still linked');return;}
-  confirmDel('Delete this company? This cannot be undone.',async()=>{
+  if(!isAdmin()){toast('Only admins can delete records');return;}
+  const ctObjs=state.contacts.filter(c=>c.accountId===id);
+  const dlObjs=state.pipelineDeals.filter(d=>d.accountId===id);
+  const cts=ctObjs.length, dls=dlObjs.length;
+  const msg=cts+dls>0
+    ?`Delete company + ${cts} contact(s) + ${dls} deal(s)? This cannot be undone.`
+    :'Delete this company? This cannot be undone.';
+  confirmDel(msg,async()=>{
+    for(const d of dlObjs){state.pipelineDeals=state.pipelineDeals.filter(x=>x.id!==d.id);await remove('pipelineDeals',d.id);}
+    for(const c of ctObjs){state.contacts=state.contacts.filter(x=>x.id!==c.id);await remove('contacts',c.id);}
     state.accounts=state.accounts.filter(x=>x.id!==id);await remove('accounts',id);toast('Deleted');go('accounts');
   });
 }
@@ -2224,9 +2234,11 @@ function edit_contact(id){
   });
 }
 function del_contact(id){
-  const dls=state.pipelineDeals.filter(d=>d.contactId===id).length;
-  if(dls>0){toast('Cannot delete: '+dls+' deal(s) linked to this contact');return;}
-  confirmDel('Delete this contact?',async()=>{
+  const dlObjs=state.pipelineDeals.filter(d=>d.contactId===id);
+  if(dlObjs.length>0&&!isAdmin()){toast('Cannot delete: '+dlObjs.length+' deal(s) linked to this contact');return;}
+  const msg=dlObjs.length>0?`Delete contact + ${dlObjs.length} deal(s)? This cannot be undone.`:'Delete this contact?';
+  confirmDel(msg,async()=>{
+    for(const d of dlObjs){state.pipelineDeals=state.pipelineDeals.filter(x=>x.id!==d.id);await remove('pipelineDeals',d.id);}
     state.contacts=state.contacts.filter(x=>x.id!==id);await remove('contacts',id);toast('Deleted');go('contacts');
   });
 }
@@ -2238,22 +2250,72 @@ function renderPipeline(v){
   const cols=PIPELINE_STAGES.map(stage=>{
     const stageDls=deals.filter(d=>d.stage===stage);
     const clr=STAGE_CLR[stage]||'';
-    const cards=stageDls.map(d=>`<div class="kcard" onclick="editPipelineDeal('${esc(d.id)}')">
+    const cards=stageDls.map(d=>`<div class="kcard" data-id="${esc(d.id)}"
+        onpointerdown="kcardDown(event,'${esc(d.id)}')" style="touch-action:none;user-select:none">
       <div class="kcard-title">${esc(d.title)}</div>
       ${acctMap[d.accountId]?`<div class="kcard-acct">${esc(acctMap[d.accountId])}</div>`:''}
       <div class="kcard-foot">
         <span class="kcard-id">${esc(d.id)}</span>
         ${d.priority?`<span class="pill ${PRI_CLR[d.priority]||''} sm">${esc(d.priority)}</span>`:''}
+        ${isAdmin()?`<button class="btn sm ghost danger kcard-del" onclick="event.stopPropagation();del_pipelineDeal('${esc(d.id)}')">✕</button>`:''}
       </div>
     </div>`).join('');
-    return `<div class="kanban-col">
+    return `<div class="kanban-col" data-stage="${esc(stage)}">
       <div class="kanban-col-head ${clr}">${esc(stage)}<span class="kcnt">${stageDls.length}</span></div>
-      <div style="padding:8px">${cards||`<div class="kcard-empty">No deals</div>`}</div>
+      <div class="kcard-list" style="padding:8px;min-height:50px">${cards||`<div class="kcard-empty">No deals</div>`}</div>
     </div>`;
   }).join('');
   const total=deals.length;
-  v.innerHTML=pagehead('Pipeline',total+' active deal'+(total===1?'':'s'),'New Deal','addPipelineDeal()',true)+
+  v.innerHTML=pagehead('Pipeline',total+' active deal'+(total===1?'':'s')+' · drag to change stage','New Deal','addPipelineDeal()',true)+
     `<div class="kanban-wrap">${cols}</div>`;
+}
+// ── Kanban pointer drag-and-drop (mouse + touch) ──────────────────
+let _kDrag=null;
+function kcardDown(e,id){
+  if(e.button!==undefined&&e.button!==0)return;
+  const card=e.currentTarget;
+  _kDrag={id,startX:e.clientX,startY:e.clientY,card,moved:false,ghost:null,targetStage:null};
+  try{card.setPointerCapture(e.pointerId);}catch(_){}
+  card.addEventListener('pointermove',_kcardMove,{passive:false});
+  card.addEventListener('pointerup',_kcardUp,{once:true});
+  card.addEventListener('pointercancel',_kcardCancel,{once:true});
+}
+function _kcardMove(e){
+  e.preventDefault();
+  if(!_kDrag)return;
+  const dx=e.clientX-_kDrag.startX,dy=e.clientY-_kDrag.startY;
+  if(!_kDrag.moved&&Math.hypot(dx,dy)<8)return;
+  if(!_kDrag.moved){
+    _kDrag.moved=true;
+    _kDrag.card.classList.add('kcard-dragging');
+    const r=_kDrag.card.getBoundingClientRect();
+    const g=_kDrag.card.cloneNode(true);
+    g.id='_kghost';
+    g.style.cssText=`position:fixed;width:${r.width}px;opacity:.78;pointer-events:none;z-index:9999;box-shadow:0 8px 28px rgba(0,0,0,.25);transition:none`;
+    document.body.appendChild(g);
+    _kDrag.ghost=g;_kDrag.offX=_kDrag.startX-r.left;_kDrag.offY=_kDrag.startY-r.top;
+  }
+  if(_kDrag.ghost){_kDrag.ghost.style.left=(e.clientX-_kDrag.offX)+'px';_kDrag.ghost.style.top=(e.clientY-_kDrag.offY)+'px';}
+  document.querySelectorAll('.kanban-col').forEach(c=>c.classList.remove('kcolover'));
+  _kDrag.targetStage=null;
+  for(const el of document.elementsFromPoint(e.clientX,e.clientY)){
+    const col=el.classList?.contains('kanban-col')?el:el.closest?.('.kanban-col');
+    if(col&&col.dataset.stage){col.classList.add('kcolover');_kDrag.targetStage=col.dataset.stage;break;}
+  }
+}
+async function _kcardUp(e){
+  const ds=_kDrag;_kcardClean(ds);_kDrag=null;if(!ds)return;
+  if(!ds.moved){editPipelineDeal(ds.id);return;}
+  if(ds.targetStage){
+    const d=state.pipelineDeals.find(x=>x.id===ds.id);
+    if(d&&d.stage!==ds.targetStage){d.stage=ds.targetStage;d.lastContact=today();await upsert('pipelineDeals',d);toast('Moved → '+ds.targetStage);go('pipeline');}
+  }
+}
+function _kcardCancel(){const ds=_kDrag;_kcardClean(ds);_kDrag=null;}
+function _kcardClean(ds){
+  document.querySelectorAll('.kanban-col').forEach(c=>c.classList.remove('kcolover'));
+  if(ds?.ghost)ds.ghost.remove();
+  if(ds?.card){ds.card.classList.remove('kcard-dragging');ds.card.removeEventListener('pointermove',_kcardMove);}
 }
 function pdForm(d){d=d||{};
   const stageOpts=PIPELINE_STAGES.map(s=>`<option ${s===(d.stage||'New Lead')?'selected':''}>${s}</option>`).join('');
