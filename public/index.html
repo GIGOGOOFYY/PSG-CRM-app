@@ -700,10 +700,10 @@ function saveCfg(){ localStorage.setItem("psgcrm_cfg", JSON.stringify(cfg)); }
 /* ---------- default users (admins from workbook + one login per rep) ---------- */
 function seedUsers(){
   const u = [
-    {username:"Munis", password:"PSG123", role:"admin", repName:""},
-    {username:"Adnan", password:"AP@1234", role:"admin", repName:""},
+    {username:"Munis", role:"admin", repName:"", active:true},
+    {username:"Adnan", role:"admin", repName:"", active:true},
   ];
-  DD.reps.forEach(r=> u.push({username:r, password:"psg123", role:"employee", repName:r}));
+  DD.reps.forEach(r=> u.push({username:r, role:"employee", repName:r, active:true}));
   return u;
 }
 
@@ -772,8 +772,8 @@ const MAP = {
     to:t=>({id:t.id,title:t.title,due_date:t.dueDate||null,assigned_to:t.assignedTo,assigned_by:t.assignedBy,priority:t.priority,status:t.status,client_id:t.clientId||null,company:t.company||"",notes:t.notes,approved:!!t.approved,created_by_admin:!!t.createdByAdmin}),
     from:r=>({id:r.id,title:r.title,dueDate:r.due_date||"",assignedTo:r.assigned_to,assignedBy:r.assigned_by,priority:r.priority,status:r.status,clientId:r.client_id||"",company:r.company||"",notes:r.notes,approved:!!r.approved,createdByAdmin:!!r.created_by_admin}) },
   users:{table:"crm_users", pk:"username",
-    to:u=>({username:u.username,password:u.password,role:u.role,rep_name:u.repName,active:true}),
-    from:r=>({username:r.username,password:r.password,role:r.role,repName:r.rep_name}) },
+    to:u=>({username:u.username,role:u.role,rep_name:u.repName,active:u.active!==false}),
+    from:r=>({username:r.username,role:r.role,repName:r.rep_name,active:r.active!==false}) },
   repTargets:{table:"crm_rep_targets", pk:"rep",
     to:t=>({rep:t.rep,target:num(t.target),comm_rate:num(t.commRate)}),
     from:r=>({rep:r.rep,target:r.target,commRate:r.comm_rate}) },
@@ -873,14 +873,26 @@ async function remove(kind, id){
 /* ======================================================================
    AUTH
    ====================================================================== */
-function doLogin(){
+async function doLogin(){
   const u=document.getElementById("lg_user").value.trim();
   const p=document.getElementById("lg_pass").value;
-  const found=state.users.find(x=>x.username.toLowerCase()===u.toLowerCase() && x.password===p);
-  if(!found){ document.getElementById("lg_err").textContent="Incorrect username or password."; return; }
-  session={username:found.username, role:found.role, repName:found.repName||found.username};
+  const errEl=document.getElementById("lg_err");
+  const btn=document.querySelector('#loginBox button[onclick]')||document.querySelector('#loginBox button');
+  if(btn) btn.disabled=true;
+  errEl.textContent="";
+  try {
+    if(!sb){ errEl.textContent="Cannot connect to server. Please try again."; return; }
+    const {data,error}=await sb.rpc('verify_crm_login',{p_username:u, p_password:p});
+    if(error) throw error;
+    const found=data && data[0];
+    if(!found){ errEl.textContent="Incorrect username or password."; return; }
+    session={username:found.username, role:found.role, repName:found.rep_name||found.username};
+  } catch(e) {
+    errEl.textContent="Login error: "+(e.message||e); return;
+  } finally {
+    if(btn) btn.disabled=false;
+  }
   sessionStorage.setItem("psgcrm_session", JSON.stringify(session));
-  document.getElementById("lg_err").textContent="";
   startApp();
   startAutoRefresh();
 }
@@ -2847,13 +2859,13 @@ async function pushAllToCloud(){ if(!sb){toast("Connect a database first");retur
 function userForm(u){ u=u||{}; const isEdit=!!u.username;
   return `<div class="formgrid">
     <div class="field"><label>Username</label><input id="u_name" value="${esc(u.username||"")}" ${isEdit?"readonly":""}></div>
-    <div class="field"><label>Password</label><input id="u_pass" value="${esc(u.password||"")}"></div>
+    <div class="field"><label>Password${isEdit?" (leave blank to keep current)":""}</label><input id="u_pass" type="password" placeholder="${isEdit?"unchanged":"required"}"></div>
     <div class="field"><label>Role</label><select id="u_role" onchange="document.getElementById('u_rep').parentNode.style.opacity=this.value==='employee'?1:.5"><option value="employee" ${u.role!=="admin"?"selected":""}>Employee (own data)</option><option value="admin" ${u.role==="admin"?"selected":""}>Master (all data)</option></select></div>
     <div class="field"><label>Rep name (for employees)</label><select id="u_rep"><option value=""></option>${vocab("reps",[u.repName]).map(o=>`<option ${o===u.repName?"selected":""}>${esc(o)}</option>`).join("")}</select></div>
   </div>`;
 }
-function addUser(){ openModal("New User", userForm({role:"employee"}), async()=>{ const u={username:document.getElementById("u_name").value.trim(),password:document.getElementById("u_pass").value,role:document.getElementById("u_role").value,repName:document.getElementById("u_rep").value}; if(!u.username){toast("Username required");return false;} if(state.users.some(x=>x.username.toLowerCase()===u.username.toLowerCase())){toast("Username exists");return false;} state.users.push(u); await upsert("users",u); closeModal(); toast("User added"); go("admin"); }); }
-function editUser(name){ const u=state.users.find(x=>x.username===name); if(!u)return; openModal("Edit User", userForm(u), async()=>{ u.password=document.getElementById("u_pass").value; u.role=document.getElementById("u_role").value; u.repName=document.getElementById("u_rep").value; await upsert("users",u); closeModal(); toast("User updated"); go("admin"); }); }
+function addUser(){ openModal("New User", userForm({role:"employee"}), async()=>{ const rawPass=document.getElementById("u_pass").value; const u={username:document.getElementById("u_name").value.trim(),role:document.getElementById("u_role").value,repName:document.getElementById("u_rep").value,active:true}; if(!u.username){toast("Username required");return false;} if(!rawPass){toast("Password required");return false;} if(state.users.some(x=>x.username.toLowerCase()===u.username.toLowerCase())){toast("Username exists");return false;} state.users.push(u); await upsert("users",u); if(sb) await sb.rpc("set_crm_user_password",{p_username:u.username,p_password:rawPass}); closeModal(); toast("User added"); go("admin"); }); }
+function editUser(name){ const u=state.users.find(x=>x.username===name); if(!u)return; openModal("Edit User", userForm(u), async()=>{ const rawPass=document.getElementById("u_pass").value; u.role=document.getElementById("u_role").value; u.repName=document.getElementById("u_rep").value; await upsert("users",u); if(rawPass && sb) await sb.rpc("set_crm_user_password",{p_username:u.username,p_password:rawPass}); closeModal(); toast("User updated"); go("admin"); }); }
 function delUser(name){ confirmDel("Delete user "+name+"?", async()=>{ state.users=state.users.filter(x=>x.username!==name); await remove("users",name); toast("User deleted"); go("admin"); }); }
 
 /* ======================================================================
