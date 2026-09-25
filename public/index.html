@@ -678,7 +678,7 @@ function activeRepNames(){ const emp=(state.users||[]).filter(u=>u.role==="emplo
 function vocab(key, extra){ const base = key==="reps" ? activeRepNames() : DD[key]; const s=[...base]; (extra||[]).forEach(v=>{ if(v && !s.includes(v)) s.push(v); }); return s; }
 
 /* ---------- state ---------- */
-let state = { users:[], clients:[], calls:[], meetings:[], deals:[], tasks:[], repTargets:[], quotes:[], salesOrders:[], invoices:[], purchaseOrders:[], products:[], campaigns:[], priceBooks:[], documents:[], deliveryChallans:[], materialRequisitions:[], receivings:[] };
+let state = { users:[], clients:[], calls:[], meetings:[], deals:[], tasks:[], repTargets:[], quotes:[], salesOrders:[], invoices:[], purchaseOrders:[], products:[], campaigns:[], priceBooks:[], documents:[], deliveryChallans:[], materialRequisitions:[], receivings:[], accounts:[], contacts:[], pipelineDeals:[] };
 let session = null;          // {username, role, repName}
 const DEFAULT_SB_URL="https://qeyeonucnlsmbeomrrwt.supabase.co";
 const DEFAULT_SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFleWVvbnVjbmxzbWJlb21ycnd0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQxODk0OTksImV4cCI6MjA5OTc2NTQ5OX0.SmacOxNWOR4HLCOQf_gkHYHFTqBWMDNWrpFAKHP5nns";
@@ -762,12 +762,12 @@ const MAP = {
   meetings:{table:"crm_meetings", pk:"id",
     to:m=>({id:m.id,meet_date:m.date||null,meet_time:m.time,rep:m.rep,client_id:m.clientId,company:m.company,contact:m.contact,type:m.type,location:m.location,agenda:m.agenda,status:m.status,follow_notes:m.followNotes,source_call:m.sourceCall}),
     from:r=>({id:r.id,date:r.meet_date||"",time:r.meet_time,rep:r.rep,clientId:r.client_id,company:r.company,contact:r.contact,type:r.type,location:r.location,agenda:r.agenda,status:r.status,followNotes:r.follow_notes,sourceCall:r.source_call}) },
-  deals:{table:"crm_deals", pk:"id",
+  deals:{table:"crm_commissions", pk:"id",
     to:d=>({id:d.id,close_date:d.closeDate||null,rep:d.rep,client_id:d.clientId,company:d.company,product:d.product,qty:num(d.qty),unit_price:num(d.unitPrice),deal_value:dealValue(d),collect_status:d.collectStatus,collected:dealCollected(d),comm_rate:num(d.commRate),comm_earned:dealCommission(d),remarks:d.remarks,quote_no:d.quoteNo||null,po_number:d.poNumber||null}),
     from:r=>({id:r.id,closeDate:r.close_date||"",rep:r.rep,clientId:r.client_id,company:r.company,product:r.product,qty:r.qty,unitPrice:r.unit_price,collectStatus:r.collect_status,collected:r.collected||0,commRate:r.comm_rate,remarks:r.remarks,quoteNo:r.quote_no||"",poNumber:r.po_number||""}) },
   quotes:{table:"crm_quotes", pk:"id",
-    to:q=>({id:q.id,quote_date:q.quoteDate||null,valid_until:q.validUntil||null,rep:q.rep,client_id:q.clientId,company:q.company,contact:q.contact,status:q.status,category:q.category||null,customer_code:q.customerCode||null,ntn:q.ntn||null,gst:q.gst||null,items:q.items||[],notes:q.notes,pdf_data:q.pdfData||null,serial_no:q.serialNo||null,contact_gender:q.contactGender||null}),
-    from:r=>({id:r.id,quoteDate:r.quote_date||"",validUntil:r.valid_until||"",rep:r.rep,clientId:r.client_id,company:r.company,contact:r.contact,status:r.status,category:r.category||"",customerCode:r.customer_code||"",ntn:r.ntn||"",gst:r.gst||"",items:r.items||[],notes:r.notes,pdfData:r.pdf_data||"",serialNo:r.serial_no||null,contactGender:r.contact_gender||""}) },
+    to:q=>({id:q.id,quote_date:q.quoteDate||null,valid_until:q.validUntil||null,rep:q.rep,client_id:q.clientId,company:q.company,contact:q.contact,status:q.status,category:q.category||null,customer_code:q.customerCode||null,ntn:q.ntn||null,gst:q.gst||null,items:q.items||[],notes:q.notes,pdf_data:q.pdfData||null,serial_no:q.serialNo||null,contact_gender:q.contactGender||null,account_id:q.accountId||null,contact_id:q.contactId||null,deal_id:q.dealId||null}),
+    from:r=>({id:r.id,quoteDate:r.quote_date||"",validUntil:r.valid_until||"",rep:r.rep,clientId:r.client_id,company:r.company,contact:r.contact,status:r.status,category:r.category||"",customerCode:r.customer_code||"",ntn:r.ntn||"",gst:r.gst||"",items:r.items||[],notes:r.notes,pdfData:r.pdf_data||"",serialNo:r.serial_no||null,contactGender:r.contact_gender||"",accountId:r.account_id||"",contactId:r.contact_id||"",dealId:r.deal_id||""}) },
   tasks:{table:"crm_tasks", pk:"id",
     to:t=>({id:t.id,title:t.title,due_date:t.dueDate||null,assigned_to:t.assignedTo,assigned_by:t.assignedBy,priority:t.priority,status:t.status,client_id:t.clientId||null,company:t.company||"",notes:t.notes,approved:!!t.approved,created_by_admin:!!t.createdByAdmin}),
     from:r=>({id:r.id,title:r.title,dueDate:r.due_date||"",assignedTo:r.assigned_to,assignedBy:r.assigned_by,priority:r.priority,status:r.status,clientId:r.client_id||"",company:r.company||"",notes:r.notes,approved:!!r.approved,createdByAdmin:!!r.created_by_admin}) },
@@ -778,11 +778,11 @@ const MAP = {
     to:t=>({rep:t.rep,target:num(t.target),comm_rate:num(t.commRate)}),
     from:r=>({rep:r.rep,target:r.target,commRate:r.comm_rate}) },
   salesOrders:{table:"crm_sales_orders", pk:"id",
-    to:so=>({id:so.id,so_date:so.soDate||null,deal_id:so.dealId||null,client_id:so.clientId||null,company:so.company,rep:so.rep,quote_no:so.quoteNo,po_number:so.poNumber,product:so.product,qty:num(so.qty),unit_price:num(so.unitPrice),order_value:soValue(so),status:so.status,expected_delivery:so.expectedDelivery||null,notes:so.notes,production_order_no:so.productionOrderNo||null,production_status:so.productionStatus||null,project_name:so.projectName||null,project_number:so.projectNumber||null,site_address:so.siteAddress||null}),
-    from:r=>({id:r.id,soDate:r.so_date||"",dealId:r.deal_id||"",clientId:r.client_id||"",company:r.company,rep:r.rep,quoteNo:r.quote_no||"",poNumber:r.po_number||"",product:r.product,qty:r.qty,unitPrice:r.unit_price,status:r.status,expectedDelivery:r.expected_delivery||"",notes:r.notes,productionOrderNo:r.production_order_no||"",productionStatus:r.production_status||"",projectName:r.project_name||"",projectNumber:r.project_number||"",siteAddress:r.site_address||""}) },
+    to:so=>({id:so.id,so_date:so.soDate||null,deal_id:so.dealId||null,client_id:so.clientId||null,company:so.company,rep:so.rep,quote_no:so.quoteNo,po_number:so.poNumber,product:so.product,qty:num(so.qty),unit_price:num(so.unitPrice),order_value:soValue(so),status:so.status,expected_delivery:so.expectedDelivery||null,notes:so.notes,production_order_no:so.productionOrderNo||null,production_status:so.productionStatus||null,project_name:so.projectName||null,project_number:so.projectNumber||null,site_address:so.siteAddress||null,account_id:so.accountId||null,contact_id:so.contactId||null}),
+    from:r=>({id:r.id,soDate:r.so_date||"",dealId:r.deal_id||"",clientId:r.client_id||"",company:r.company,rep:r.rep,quoteNo:r.quote_no||"",poNumber:r.po_number||"",product:r.product,qty:r.qty,unitPrice:r.unit_price,status:r.status,expectedDelivery:r.expected_delivery||"",notes:r.notes,productionOrderNo:r.production_order_no||"",productionStatus:r.production_status||"",projectName:r.project_name||"",projectNumber:r.project_number||"",siteAddress:r.site_address||"",accountId:r.account_id||"",contactId:r.contact_id||""}) },
   invoices:{table:"crm_invoices", pk:"id",
-    to:inv=>({id:inv.id,invoice_date:inv.invoiceDate||null,due_date:inv.dueDate||null,sales_order_id:inv.salesOrderId||null,deal_id:inv.dealId||null,client_id:inv.clientId||null,company:inv.company,rep:inv.rep,amount:num(inv.amount),amount_paid:num(inv.amountPaid),status:inv.status,notes:inv.notes,payment_type:inv.paymentType||null}),
-    from:r=>({id:r.id,invoiceDate:r.invoice_date||"",dueDate:r.due_date||"",salesOrderId:r.sales_order_id||"",dealId:r.deal_id||"",clientId:r.client_id||"",company:r.company,rep:r.rep,amount:r.amount,amountPaid:r.amount_paid,status:r.status,notes:r.notes,paymentType:r.payment_type||""}) },
+    to:inv=>({id:inv.id,invoice_date:inv.invoiceDate||null,due_date:inv.dueDate||null,sales_order_id:inv.salesOrderId||null,deal_id:inv.dealId||null,client_id:inv.clientId||null,company:inv.company,rep:inv.rep,amount:num(inv.amount),amount_paid:num(inv.amountPaid),status:inv.status,notes:inv.notes,payment_type:inv.paymentType||null,account_id:inv.accountId||null}),
+    from:r=>({id:r.id,invoiceDate:r.invoice_date||"",dueDate:r.due_date||"",salesOrderId:r.sales_order_id||"",dealId:r.deal_id||"",clientId:r.client_id||"",company:r.company,rep:r.rep,amount:r.amount,amountPaid:r.amount_paid,status:r.status,notes:r.notes,paymentType:r.payment_type||"",accountId:r.account_id||""}) },
   purchaseOrders:{table:"crm_purchase_orders", pk:"id",
     to:po=>({id:po.id,po_date:po.poDate||null,vendor:po.vendor,item:po.item,qty:num(po.qty),unit_cost:num(po.unitCost),total_cost:poTotalCost(po),status:po.status,expected_delivery:po.expectedDelivery||null,linked_sales_order_id:po.linkedSalesOrderId||null,mr_id:po.mrId||null,notes:po.notes}),
     from:r=>({id:r.id,poDate:r.po_date||"",vendor:r.vendor,item:r.item,qty:r.qty,unitCost:r.unit_cost,status:r.status,expectedDelivery:r.expected_delivery||"",linkedSalesOrderId:r.linked_sales_order_id||"",mrId:r.mr_id||"",notes:r.notes}) },
@@ -806,7 +806,17 @@ const MAP = {
     from:r=>({id:r.id,name:r.name,tier:r.tier||"",active:r.active!==false,notes:r.notes||"",items:r.items||[]}) },
   documents:{table:"crm_documents", pk:"id",
     to:d=>({id:d.id,name:d.name,type:d.type||null,client_id:d.clientId||null,company:d.company||null,file_name:d.fileName||null,file_type:d.fileType||null,file_size:num(d.fileSize),file_data:d.fileData||null,notes:d.notes||null,uploaded_by:d.uploadedBy||null,uploaded_at:d.uploadedAt||null}),
-    from:r=>({id:r.id,name:r.name,type:r.type||"",clientId:r.client_id||"",company:r.company||"",fileName:r.file_name||"",fileType:r.file_type||"",fileSize:r.file_size,fileData:r.file_data||"",notes:r.notes||"",uploadedBy:r.uploaded_by||"",uploadedAt:r.uploaded_at||""}) }
+    from:r=>({id:r.id,name:r.name,type:r.type||"",clientId:r.client_id||"",company:r.company||"",fileName:r.file_name||"",fileType:r.file_type||"",fileSize:r.file_size,fileData:r.file_data||"",notes:r.notes||"",uploadedBy:r.uploaded_by||"",uploadedAt:r.uploaded_at||""}) },
+  /* ── Phase 1: Account → Contact → Deal ── */
+  accounts:{table:"crm_accounts", pk:"id",
+    to:a=>({id:a.id,name:a.name,industry:a.industry||null,city:a.city||null,area:a.area||null,account_type:a.accountType||"Prospect",assigned_to:a.assignedTo||null,ntn:a.ntn||null,gst:a.gst||null,notes:a.notes||null,active:a.active!==false}),
+    from:r=>({id:r.id,name:r.name,industry:r.industry||"",city:r.city||"",area:r.area||"",accountType:r.account_type||"Prospect",assignedTo:r.assigned_to||"",ntn:r.ntn||"",gst:r.gst||"",notes:r.notes||"",active:r.active!==false}) },
+  contacts:{table:"crm_contacts", pk:"id",
+    to:c=>({id:c.id,account_id:c.accountId||null,name:c.name,phone:c.phone||null,email:c.email||null,designation:c.designation||null,whatsapp_verified:!!c.whatsappVerified,notes:c.notes||null,active:c.active!==false}),
+    from:r=>({id:r.id,accountId:r.account_id||"",name:r.name,phone:r.phone||"",email:r.email||"",designation:r.designation||"",whatsappVerified:!!r.whatsapp_verified,notes:r.notes||"",active:r.active!==false}) },
+  pipelineDeals:{table:"crm_deals", pk:"id",
+    to:d=>({id:d.id,account_id:d.accountId||null,contact_id:d.contactId||null,stage:d.stage||"New Lead",title:d.title||null,assigned_to:d.assignedTo||null,lead_source:d.leadSource||null,priority:d.priority||"Medium",revenue_potential:d.revenuePotential||null,first_contact:d.firstContact||null,last_contact:d.lastContact||null,status:d.status||"active",notes:d.notes||null,updated_at:new Date().toISOString()}),
+    from:r=>({id:r.id,accountId:r.account_id||"",contactId:r.contact_id||"",stage:r.stage||"New Lead",title:r.title||"",assignedTo:r.assigned_to||"",leadSource:r.lead_source||"",priority:r.priority||"Medium",revenuePotential:r.revenue_potential||null,firstContact:r.first_contact||"",lastContact:r.last_contact||"",status:r.status||"active",notes:r.notes||"",createdAt:r.created_at||""}) }
 };
 
 function initSupabase(){
@@ -818,7 +828,7 @@ function initSupabase(){
 async function cloudPull(){
   if(!sb) return false;
   let anyOK=false;
-  for(const k of ["users","clients","calls","meetings","deals","tasks","repTargets","quotes","salesOrders","invoices","purchaseOrders","products","campaigns","priceBooks","documents","deliveryChallans","materialRequisitions","receivings"]){
+  for(const k of ["users","clients","calls","meetings","deals","tasks","repTargets","quotes","salesOrders","invoices","purchaseOrders","products","campaigns","priceBooks","documents","deliveryChallans","materialRequisitions","receivings","accounts","contacts","pipelineDeals"]){
     try{
       const PAGE=1000; let all=[]; let offset=0;
       while(true){
@@ -922,6 +932,21 @@ function nextClientId(){
   const used=new Set(state.clients.map(c=>String(c.id)).filter(id=>/^\d+$/.test(id)).map(id=>parseInt(id,10)));
   let n=1; while(used.has(n)) n++;
   return String(n);
+}
+function nextAccountId(){
+  const used=new Set(state.accounts.map(a=>String(a.id)).filter(id=>/^PSG-A-\d+$/.test(id)).map(id=>parseInt(id.split("-").pop(),10)));
+  let n=1; while(used.has(n)) n++;
+  return "PSG-A-"+String(n).padStart(3,"0");
+}
+function nextContactId(){
+  const used=new Set(state.contacts.map(c=>String(c.id)).filter(id=>/^PSG-CT-\d+$/.test(id)).map(id=>parseInt(id.split("-").pop(),10)));
+  let n=1; while(used.has(n)) n++;
+  return "PSG-CT-"+String(n).padStart(3,"0");
+}
+function nextDealId(){
+  const used=new Set(state.pipelineDeals.map(d=>String(d.id)).filter(id=>/^PSG-D-\d+$/.test(id)).map(id=>parseInt(id.split("-").pop(),10)));
+  let n=1; while(used.has(n)) n++;
+  return "PSG-D-"+String(n).padStart(3,"0");
 }
 
 /* ======================================================================
@@ -2875,6 +2900,9 @@ function today(){ return new Date().toISOString().slice(0,10); }
 function repCode(rep){ return (rep||"GEN").replace(/[^A-Za-z]/g,"").slice(0,3).toUpperCase()||"GEN"; }
 function nextId(kind, rep){
   if(kind==="C"){ return nextClientId(); }
+  if(kind==="A"){ return nextAccountId(); }
+  if(kind==="CT"){ return nextContactId(); }
+  if(kind==="D"){ return nextDealId(); }
   const prefix=repCode(rep)+"-"+kind+"-";
   const nums=state[{CL:"calls",MT:"meetings",DL:"deals",TS:"tasks",QT:"quotes",SO:"salesOrders",IV:"invoices",PO:"purchaseOrders",DC:"deliveryChallans",MR:"materialRequisitions",RV:"receivings"}[kind]].filter(x=>String(x.id).startsWith(prefix)).map(x=>num(String(x.id).split("-").pop()));
   const next=(nums.length?Math.max(...nums):0)+1;
