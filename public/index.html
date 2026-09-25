@@ -448,6 +448,7 @@ td .help{font-size:11.5px;color:var(--muted);margin-top:1px;display:block}
 .kcard-foot{display:flex;justify-content:space-between;align-items:center;gap:4px;flex-wrap:wrap}
 .kcard-id{font-size:10.5px;color:var(--muted);font-family:monospace}
 .sclr-nl{color:#1565c0}.sclr-ct{color:#6a1b9a}.sclr-ql{color:#e65100}.sclr-rr{color:#01579b}.sclr-qs{color:#4527a0}.sclr-ng{color:#b71c1c}.sclr-wn{color:#1b5e20}
+.kcard-empty{font-size:12px;color:var(--muted);text-align:center;padding:10px 4px;opacity:.7}
 .formgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px 14px}
 .formgrid .field.full{grid-column:1/-1}
 .formgrid .field label{display:block;font-size:12px;font-weight:600;margin-bottom:4px;color:var(--muted)}
@@ -561,10 +562,7 @@ const SIDEBAR_NAV = [
   ]},
 
   { section:"Sales", items:[
-    { id:"_prospects",icon:"eye",            label:"Prospects",       route:"prospects" },
-    { id:"_leads",    icon:"target",         label:"Leads",           route:"leads" },
-    { id:"_contacts", icon:"user",           label:"Clients",         route:"clientsOnly" },
-    { id:"_accounts", icon:"briefcase",      label:"Accounts",        route:"clients" },
+
     { id:"deals",     icon:"dollar-sign",    label:"Deals" },
     { id:"_forecast", icon:"bar-chart-2",    label:"Forecasts",       route:"performance" },
     { id:"_docs",     icon:"file-text",      label:"Documents",       route:"documents" },
@@ -604,8 +602,8 @@ function renderSidebar(){
   const cur   = typeof route!=="undefined" ? route : "dashboard";
 
   // Build set of real route IDs that are "active" — includes aliased ones
-  const routeAliases = { clients:["_accounts"], vendors:["_vend"], accounts:["_crmAccts"], contacts:["_crmCts"], pipeline:["_crmPipe"],
-    leads:["_leads"], clientsOnly:["_contacts"], tasks:["_tasks"],
+  const routeAliases = { vendors:["_vend"], accounts:["_crmAccts"], contacts:["_crmCts"], pipeline:["_crmPipe"],
+    tasks:["_tasks"],
     deals:[], quotes:[], performance:["_forecast"],
     salesOrders:["_so"], purchaseOrders:["_po"], invoices:["_inv"], deliveryChallans:["_dc"], materialRequisitions:["_mr"], receivings:["_rv"],
     dashboard:["_req"] };
@@ -3438,7 +3436,7 @@ window.renderDashboard=function(v){
   const myM=admin?me:me.filter(m=>m.rep===rep);
   const fmt=n=>"PKR "+Number(n||0).toLocaleString();
   const fd=d=>d?new Date(d).toLocaleDateString("en-GB",{day:"2-digit",month:"short"}):"—";
-  const openDeals=myD.filter(d=>!["Closed Won","Closed Lost"].includes(d.stage||""));
+  const openDeals=(state.pipelineDeals||[]).filter(d=>d.status!=='inactive'&&d.stage!=='Won – Order Confirmed');
   const todayCalls=myCl.filter(c=>(c.date||"").slice(0,10)===todayStr);
   const revenue=myD.filter(d=>d.collectStatus==="Received").reduce((s,d)=>s+(parseFloat(d.qty||0)*parseFloat(d.unitPrice||0)),0);
   const overdue=myC.filter(c=>{const f=c.followDate||c.followUpDate||"";return f&&f<todayStr&&c.status!=="Closed";}).slice(0,5);
@@ -3454,12 +3452,14 @@ window.renderDashboard=function(v){
 
   const tbl=(items,cols,empty,rowFn)=>items.length?`<table class="mini-tbl"><thead><tr>${cols.map(c=>`<th>${c}</th>`).join("")}</tr></thead><tbody>${items.map(rowFn).join("")}</tbody></table>`:`<div class="card-empty">${empty}</div>`;
 
-  const sc=STAGE_ORDER.map(s=>myC.filter(c=>(c.recordType||"")===s).length);
-  const mx=Math.max(...sc,1);
+  // Phase 3: pipeline from crm_deals (7-stage) instead of crm_clients
+  const PIPE_SHORT_CRM={'New Lead':'New Lead','Contacted':'Contacted','Qualified':'Qualified','Requirement Received':'Req Recv','Quotation Sent':'Quotation','Negotiation':'Negotiation','Won – Order Confirmed':'Won'};
+  const pipeSC=PIPELINE_STAGES.map(s=>(state.pipelineDeals||[]).filter(d=>d.stage===s&&d.status!=='inactive').length);
+  const pipeMX=Math.max(...pipeSC,1);
   const pipeHtml=`<div class="hcard">
-    <div class="hcard-hd"><h3>Pipeline</h3></div>
+    <div class="hcard-hd"><h3>CRM Pipeline</h3></div>
     <div style="padding:10px 18px 14px;flex:1;min-height:0">
-      <div class="pipe-bars">${STAGE_ORDER.map((s,i)=>`<div class="pipe-col"><div class="pipe-bar" style="height:${Math.max(6,(sc[i]/mx)*60)}px" title="${s}: ${sc[i]}"></div><div class="pipe-lbl">${PIPE_SHORT[s]||s}<br><b>${sc[i]}</b></div></div>`).join("")}</div>
+      <div class="pipe-bars">${PIPELINE_STAGES.map((s,i)=>`<div class="pipe-col"><div class="pipe-bar" style="height:${Math.max(6,(pipeSC[i]/pipeMX)*60)}px" title="${s}: ${pipeSC[i]}"></div><div class="pipe-lbl">${PIPE_SHORT_CRM[s]||s}<br><b>${pipeSC[i]}</b></div></div>`).join("")}</div>
     </div></div>`;
 
 
@@ -3484,7 +3484,7 @@ window.renderDashboard=function(v){
       <div class="hero-kpi"><div class="kt-i" style="background:rgba(255,255,255,.18);color:#fff"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 7H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg></div><div class="kt-body"><div class="kt-val">${openDeals.length}</div><div class="kt-lbl">Open Deals</div></div></div>
       <div class="hero-kpi"><div class="kt-i" style="background:rgba(132,201,160,.3);color:#c9f2a0"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><div class="kt-body"><div class="kt-val" style="font-size:17px">${fmt(revenue)}</div><div class="kt-lbl">Collected Revenue</div></div></div>
       <div class="hero-kpi"><div class="kt-i" style="background:rgba(91,155,213,.3);color:#bfe0ff"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg></div><div class="kt-body"><div class="kt-val">${todayCalls.length}</div><div class="kt-lbl">Calls Today</div></div></div>
-      <div class="hero-kpi${overdue.length?" kpi-urgent":""}"><div class="kt-i" style="background:rgba(217,112,75,.3);color:#ffc7c9"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div><div class="kt-body"><div class="kt-val">${myC.length}</div><div class="kt-lbl">Total Clients</div></div></div>
+      <div class="hero-kpi${overdue.length?" kpi-urgent":""}"><div class="kt-i" style="background:rgba(217,112,75,.3);color:#ffc7c9"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div><div class="kt-body"><div class="kt-val">${(state.accounts||[]).length}</div><div class="kt-lbl">Companies</div></div></div>
     </div>
   </div>
   ${alertHtml}
