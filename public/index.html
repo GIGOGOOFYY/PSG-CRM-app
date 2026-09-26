@@ -2376,7 +2376,7 @@ function renderPipeline(v){
       <div class="kcard-foot">
         <span class="kcard-id">${esc(d.id)}</span>
         ${d.priority?`<span class="pill ${PRI_CLR[d.priority]||''} sm">${esc(d.priority)}</span>`:''}
-        <button class="btn sm ghost" title="Send WhatsApp" onclick="event.stopPropagation();waPipelineDeal('${esc(d.id)}')" style="padding:2px 5px;font-size:11px;line-height:1">💬</button>
+        <button class="btn sm ghost" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();waPipelineDeal('${esc(d.id)}')" style="padding:2px 6px;font-size:11px;line-height:1;background:#25d366;color:#fff;border:none;border-radius:4px">💬 WA</button>
         ${isAdmin()?`<button class="btn sm ghost danger kcard-del" onclick="event.stopPropagation();del_pipelineDeal('${esc(d.id)}')">✕</button>`:''}
       </div>
     </div>`).join('');
