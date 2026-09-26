@@ -1760,7 +1760,12 @@ function renderCalls(v){
   v.innerHTML=pagehead("Call Log","Daily calls — "+vCalls().length+" records"+(isAdmin()?"":" (yours)"),"Log Call","addCall()",true)+
    `<div class="card tablewrap"><table><thead><tr><th>Log ID</th><th>Date</th><th>Rep</th><th>Client</th><th>Result</th><th class="num">Min</th><th>Interest</th><th>Next Action</th><th>→ Meeting</th><th></th></tr></thead><tbody>${body}</tbody></table></div>`;
 }
-function clientOptions(val){ return `<option value=""></option>`+vClients().slice().sort((a,b)=>(a.company||a.contact||'').localeCompare(b.company||b.contact||'')).map(c=>`<option value="${esc(c.id)}" ${c.id===val?"selected":""}>${esc(c.company||c.contact||c.id)} (${esc(c.id)})</option>`).join(""); }
+function allClientsForSelect(){
+  const fromClients=state.clients.filter(c=>c.accountType!=="Vendor"&&c.accountType!=="Supplier");
+  const fromAccounts=state.accounts.map(a=>({id:a.id,company:a.name||'',contact:'',city:a.city||'',industry:a.industry||'',assignedTo:a.assignedTo||'',_fromAccount:true}));
+  return [...fromClients,...fromAccounts];
+}
+function clientOptions(val){ return `<option value=""></option>`+allClientsForSelect().slice().sort((a,b)=>(a.company||a.contact||'').localeCompare(b.company||b.contact||'')).map(c=>`<option value="${esc(c.id)}" ${c.id===val?"selected":""}>${esc(c.company||c.contact||c.id)} (${esc(c.id)})</option>`).join(""); }
 function callForm(c){
   c=c||{}; const rep=myRep();
   const sel=(key,val,extra)=>`<select id="f_${key}"><option value=""></option>${vocab(key,extra).map(o=>`<option ${o===val?"selected":""}>${esc(o)}</option>`).join("")}</select>`;
@@ -2371,6 +2376,7 @@ function renderPipeline(v){
       <div class="kcard-foot">
         <span class="kcard-id">${esc(d.id)}</span>
         ${d.priority?`<span class="pill ${PRI_CLR[d.priority]||''} sm">${esc(d.priority)}</span>`:''}
+        <button class="btn sm ghost" title="Send WhatsApp" onclick="event.stopPropagation();waPipelineDeal('${esc(d.id)}')" style="padding:2px 5px;font-size:11px;line-height:1">💬</button>
         ${isAdmin()?`<button class="btn sm ghost danger kcard-del" onclick="event.stopPropagation();del_pipelineDeal('${esc(d.id)}')">✕</button>`:''}
       </div>
     </div>`).join('');
@@ -2459,6 +2465,15 @@ function pdRefreshCt(acctId){
 }
 function readPD(){const g=id=>document.getElementById('pd_'+id)?.value||'';
   return{title:g('title').trim(),accountId:g('accountId'),contactId:g('contactId'),stage:g('stage'),priority:g('priority'),assignedTo:g('assignedTo'),leadSource:g('leadSource'),rev:g('rev'),notes:g('notes')};}
+function waPipelineDeal(id){
+  const d=state.pipelineDeals.find(x=>x.id===id);if(!d)return;
+  const acct=state.accounts.find(x=>x.id===d.accountId)||{};
+  const ct=state.contacts.find(x=>x.id===d.contactId)
+    ||state.contacts.find(x=>x.accountId===d.accountId)||{};
+  const phone=ct.phone||"";
+  const ctx={company:acct.name||d.title,contact:ct.name||"",rep:d.assignedTo||myRep()||"",city:acct.city||""};
+  waOpenModal(phone,ctx,"Introduction");
+}
 function addPipelineDeal(){
   openModal('New Deal',pdForm(),async()=>{
     const d=readPD();if(!d.title){toast('Deal title required');return false;}
@@ -2999,12 +3014,16 @@ function del_quote(id){ confirmDel("Delete this quote?", async()=>{ state.quotes
 function waQuote(id){
   const q=state.quotes.find(x=>x.id===id); if(!q)return;
   const c=findClientOrAccount(q.clientId)||{};
-  const ctx=Object.assign(clientCtx(c),{contact:q.contact||c.contact,rep:q.rep,quoteNo:quoteDisplayId(q)});
+  // Phone lives on Contact records, not Accounts — look it up
+  const contactObj=state.contacts.find(x=>x.accountId===c.id&&x.name===q.contact)
+    ||state.contacts.find(x=>x.name===q.contact)||{};
+  const waPhone=contactObj.phone||c.phone||"";
+  const ctx=Object.assign(clientCtx(c),{contact:q.contact||contactObj.name||c.contact,rep:q.rep,quoteNo:quoteDisplayId(q)});
   if(q.pdfData){
     const a=document.createElement("a"); a.href=q.pdfData; a.download=quoteDisplayId(q)+".pdf"; document.body.appendChild(a); a.click(); document.body.removeChild(a);
     toast("PDF downloaded — WhatsApp links can't attach files automatically. Please attach the downloaded file manually in the chat that opens.");
   }
-  waOpenModal(c.phone||"",ctx,"Quotation ready");
+  waOpenModal(waPhone,ctx,"Quotation ready");
 }
 // Shared by the manual "Convert to Deal" button on Quotes and the automatic Won-stage
 // conversion in autoCreateDealAndOrder(): turns a quote's line items into a single Deal.
