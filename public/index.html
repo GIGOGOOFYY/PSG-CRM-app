@@ -2359,7 +2359,7 @@ function del_contact(id){
 
 // ── PIPELINE KANBAN ──────────────────────────────────────────────────
 function renderPipeline(v){
-  const deals=state.pipelineDeals.filter(d=>d.status!=='inactive'&&matchSearch(d));
+  const deals=vPipelineDeals().filter(d=>d.status!=='inactive'&&matchSearch(d));
   const acctMap=Object.fromEntries(state.accounts.map(a=>[a.id,a.name]));
   const cols=PIPELINE_STAGES.map(stage=>{
     const stageDls=deals.filter(d=>d.stage===stage);
@@ -2380,7 +2380,7 @@ function renderPipeline(v){
     </div>`;
   }).join('');
   const total=deals.length;
-  v.innerHTML=pagehead('Pipeline',total+' active deal'+(total===1?'':'s')+' · drag to change stage','New Deal','addPipelineDeal()',true)+
+  v.innerHTML=pagehead('Pipeline',total+' active deal'+(total===1?'':'s')+' · drag to change stage'+(isAdmin()?'':' (yours)'),'New Deal','addPipelineDeal()',true)+
     `<div class="kanban-wrap">${cols}</div>`;
 }
 // ── Kanban pointer drag-and-drop (mouse + touch) ──────────────────
@@ -2488,6 +2488,8 @@ function del_pipelineDeal(id){
    real typed number, same partial-payment convention as Deals.collected.
    ====================================================================== */
 function vInvoices(){ const r=myRep(); return r? state.invoices.filter(x=>x.rep===r) : state.invoices; }
+function vPipelineDeals(){ const r=myRep(); return r? state.pipelineDeals.filter(d=>d.assignedTo===r) : state.pipelineDeals; }
+function vDocuments(){ const r=myRep(); return r? state.documents.filter(d=>!d.uploadedBy||d.uploadedBy===r) : state.documents; }
 function invoiceBalance(inv){ return num(inv.amount)-num(inv.amountPaid); }
 function invoiceStatusPill(s){ const c={Paid:"green",Partial:"amber",Unpaid:"gray",Overdue:"red"}[s]||"gray"; return `<span class="pill ${c}">${esc(s||"")}</span>`; }
 function invoiceFromSO(so){
@@ -2780,7 +2782,7 @@ function docRemoveFile(){ window.__docFileData=""; window.__docFileName=""; wind
 function docDownload(id){ const d=state.documents.find(x=>x.id===id); if(!d||!d.fileData){toast("No file stored for this document");return;}
   const a=document.createElement("a"); a.href=d.fileData; a.download=d.fileName||d.name||"document"; document.body.appendChild(a); a.click(); a.remove(); }
 function renderDocuments(v){
-  const rows=state.documents.filter(matchSearch).slice().sort((a,b)=>(b.uploadedAt||"").localeCompare(a.uploadedAt||""));
+  const rows=vDocuments().filter(matchSearch).slice().sort((a,b)=>(b.uploadedAt||"").localeCompare(a.uploadedAt||""));
   const body=rows.length?rows.map(d=>{
     const cl=findClientOrAccount(d.clientId);
     return `<tr>
@@ -3615,7 +3617,7 @@ window.renderDashboard=function(v){
   const myM=admin?me:me.filter(m=>m.rep===rep);
   const fmt=n=>"PKR "+Number(n||0).toLocaleString();
   const fd=d=>d?new Date(d).toLocaleDateString("en-GB",{day:"2-digit",month:"short"}):"—";
-  const openDeals=(state.pipelineDeals||[]).filter(d=>d.status!=='inactive'&&d.stage!=='Won – Order Confirmed');
+  const openDeals=vPipelineDeals().filter(d=>d.status!=='inactive'&&d.stage!=='Won – Order Confirmed');
   const todayCalls=myCl.filter(c=>(c.date||"").slice(0,10)===todayStr);
   const revenue=myD.filter(d=>d.collectStatus==="Received").reduce((s,d)=>s+(parseFloat(d.qty||0)*parseFloat(d.unitPrice||0)),0);
   const overdue=myC.filter(c=>{const f=c.followDate||c.followUpDate||"";return f&&f<todayStr&&c.status!=="Closed";}).slice(0,5);
@@ -3633,7 +3635,7 @@ window.renderDashboard=function(v){
 
   // Phase 3: pipeline from crm_deals (7-stage) instead of crm_clients
   const PIPE_SHORT_CRM={'New Lead':'New Lead','Contacted':'Contacted','Qualified':'Qualified','Requirement Received':'Req Recv','Quotation Sent':'Quotation','Negotiation':'Negotiation','Won – Order Confirmed':'Won'};
-  const pipeSC=PIPELINE_STAGES.map(s=>(state.pipelineDeals||[]).filter(d=>d.stage===s&&d.status!=='inactive').length);
+  const pipeSC=PIPELINE_STAGES.map(s=>vPipelineDeals().filter(d=>d.stage===s&&d.status!=='inactive').length);
   const pipeMX=Math.max(...pipeSC,1);
   const pipeHtml=`<div class="hcard">
     <div class="hcard-hd"><h3>CRM Pipeline</h3></div>
