@@ -3024,6 +3024,8 @@ function waQuote(id){
     toast("PDF downloaded — WhatsApp links can't attach files automatically. Please attach the downloaded file manually in the chat that opens.");
   }
   waOpenModal(waPhone,ctx,"Quotation ready");
+  // Mark quote as Sent (if still Draft) so status reflects what was actually done
+  if(q.status==="Draft"){q.status="Sent";upsert("quotes",q);}
   // Advance the linked pipeline deal to "Quotation Sent" if it hasn't reached that stage yet
   const deal=state.pipelineDeals.find(d=>d.accountId===q.clientId&&d.status!=='inactive');
   if(deal){
