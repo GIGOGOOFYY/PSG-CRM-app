@@ -1086,7 +1086,7 @@ function renderDashboard(v){
   // ── Upcoming meetings rows ──
   const meetRows = upcomingMeetings.map(m=>`
     <div class="mini-row">
-      <span><b>${esc(m.company)}</b> <span class="pill blue">${esc(m.type||'')}</span></span>
+      <span><b>${esc(m.company||m.contact||'—')}</b> <span class="pill blue">${esc(m.type||'')}</span></span>
       <span class="pill gray">${esc(m.date)} ${esc(m.time||'')}</span>
     </div>`).join("")||`<div class="empty" style="padding:20px">No meetings in the next 14 days</div>`;
 
@@ -1249,7 +1249,7 @@ function renderClients(v, bucketKey){
     ${showStage?`<td><span class="tag" style="background:${sc.bg};color:${sc.fg}">${esc(stageLabel(c.recordType))}</span></td>`:""}
     <td>${esc(c.id)}</td>
     <td>${typePill(c)}</td>
-    <td><b>${esc(c.company)}</b>${c.city||c.area?`<br><span class="help">${esc([c.city,c.area].filter(Boolean).join(", "))}</span>`:""}</td>
+    <td><b>${esc(c.company||c.contact||'—')}</b>${c.city||c.area?`<br><span class="help">${esc([c.city,c.area].filter(Boolean).join(", "))}</span>`:""}</td>
     <td>${esc(c.contact)}${c.designation?`<br><span class="help">${esc(c.designation)}</span>`:""}</td>
     <td>${esc(c.phone)}</td>
     <td>${esc(c.industry)}</td>
@@ -1281,7 +1281,7 @@ function renderVendors(v){
   const body = rows.length? rows.map(c=>`<tr>
     <td>${esc(c.id)}</td>
     <td><span class="pill ${c.accountType==='Supplier'?'blue':'gray'}">${esc(c.accountType)}</span></td>
-    <td><b>${esc(c.company)}</b>${c.city||c.area?`<br><span class="help">${esc([c.city,c.area].filter(Boolean).join(", "))}</span>`:""}</td>
+    <td><b>${esc(c.company||c.contact||'—')}</b>${c.city||c.area?`<br><span class="help">${esc([c.city,c.area].filter(Boolean).join(", "))}</span>`:""}</td>
     <td>${esc(c.contact)}${c.designation?`<br><span class="help">${esc(c.designation)}</span>`:""}</td>
     <td>${esc(c.phone)}</td>
     <td>${esc(c.email)}</td>
@@ -1297,8 +1297,8 @@ function addVendor(){
     c.accountType="Vendor"; c.id = nextId("C"); state.clients.push(c); await upsert("clients",c); closeModal(); toast("Vendor added"); go("vendors");
   });
 }
-function advanceStage(id){ const c=state.clients.find(x=>x.id===id); if(!c)return; const ns=nextStage(c.recordType); if(!ns){toast("Already at the final stage");return;} c.recordType=ns; if(ns==='Sales Order Created'){ if(!c.firstContact) c.firstContact=today(); autoCreateDealAndOrder(c); } if(ns==='Order Closed' && c.accountType!=='Vendor' && c.accountType!=='Supplier'){ c.accountType='Client'; } upsert("clients",c); toast(c.company+" advanced to "+ns); go(route); }
-function startNewOrder(id){ const c=state.clients.find(x=>x.id===id); if(!c)return; if(c.recordType!=='Order Closed' && c.recordType!==STAGE_LOST){ toast("Only closed/lost records can start a new order"); return; } c.recordType='New Inquiry'; upsert("clients",c); toast(c.company+" \u2014 new order started"); go(route); }
+function advanceStage(id){ const c=state.clients.find(x=>x.id===id); if(!c)return; const ns=nextStage(c.recordType); if(!ns){toast("Already at the final stage");return;} c.recordType=ns; if(ns==='Sales Order Created'){ if(!c.firstContact) c.firstContact=today(); autoCreateDealAndOrder(c); } if(ns==='Order Closed' && c.accountType!=='Vendor' && c.accountType!=='Supplier'){ c.accountType='Client'; } upsert("clients",c); toast((c.company||c.contact||c.id)+" advanced to "+ns); go(route); }
+function startNewOrder(id){ const c=state.clients.find(x=>x.id===id); if(!c)return; if(c.recordType!=='Order Closed' && c.recordType!==STAGE_LOST){ toast("Only closed/lost records can start a new order"); return; } c.recordType='New Inquiry'; upsert("clients",c); toast((c.company||c.contact||c.id)+" \u2014 new order started"); go(route); }
 // Reaching Won implies a real sale: auto-fill the Sales Tracker (and the fulfillment Sales
 // Order behind it) from whatever quote this client actually has, instead of leaving reps to
 // retype client/quote/qty by hand. Guarded so re-advancing (or a duplicate click) never creates
@@ -1402,7 +1402,7 @@ async function reconcileProductionLinks(){
     }
   }catch(e){ console.warn("Production reconcile failed:",e.message); }
 }
-function markLost(id){ const c=state.clients.find(x=>x.id===id); if(!c)return; if(isClosedStage(c.recordType)){toast("Already closed");return;} c.recordType=STAGE_LOST; upsert("clients",c); toast(c.company+" marked Lost"); go(route); }
+function markLost(id){ const c=state.clients.find(x=>x.id===id); if(!c)return; if(isClosedStage(c.recordType)){toast("Already closed");return;} c.recordType=STAGE_LOST; upsert("clients",c); toast((c.company||c.contact||c.id)+" marked Lost"); go(route); }
 function clientForm(c){
   c=c||{}; const rep=myRep();
   const sel=(key,val,extra)=>`<select id="f_${key}"><option value=""></option>${vocab(key,extra).map(o=>`<option ${o===val?"selected":""}>${esc(o)}</option>`).join("")}</select>`;
@@ -1495,7 +1495,7 @@ function openClientHistory(id){
 
   const header=`<div class="client-header">
     <div class="ch-body">
-      <div class="ch-name">${esc(c.company)}</div>
+      <div class="ch-name">${esc(c.company||c.contact||'—')}</div>
       <div class="ch-meta">
         ${c.contact?`<b>Contact:</b> ${esc(c.contact)}${c.designation?' ('+esc(c.designation)+')':''}`:''}<br>
         ${c.phone?`📱 ${esc(c.phone)}`:''} ${c.email?`&nbsp;✉ ${esc(c.email)}`:''}${c.city||c.area?`&nbsp;📍 ${esc([c.city,c.area].filter(Boolean).join(', '))}`:''}
@@ -1523,7 +1523,7 @@ function openClientHistory(id){
       </div>
     </div>`).join('') : `<div class="tl-empty">No activity yet for this client.<br>Log a call, meeting, or deal to start the history.</div>`;
 
-  openInfoModal(`Activity History — ${c.company}`, header+`<div class="timeline">${feed}</div>`);
+  openInfoModal(`Activity History — ${c.company||c.contact||'—'}`, header+`<div class="timeline">${feed}</div>`);
 }
 
 function normalizePhone(p){
@@ -1738,7 +1738,7 @@ function renderCalls(v){
   const rows=vCalls().filter(matchSearch);
   const body=rows.length?rows.map(c=>`<tr>
     <td>${esc(c.id)}</td><td>${esc(c.date)}</td><td>${esc(c.rep)}</td>
-    <td><b>${esc(c.company)}</b><br><span class="help">${esc(c.contact||"")}</span></td>
+    <td><b>${esc(c.company||c.contact||'—')}</b><br><span class="help">${esc(c.contact||"")}</span></td>
     <td>${c.result?statusPill(c.result):""}</td>
     <td class="num">${esc(c.duration||"")}</td>
     <td>${"⭐".repeat(num(c.interest))}</td>
@@ -1749,7 +1749,7 @@ function renderCalls(v){
   v.innerHTML=pagehead("Call Log","Daily calls — "+vCalls().length+" records"+(isAdmin()?"":" (yours)"),"Log Call","addCall()",true)+
    `<div class="card tablewrap"><table><thead><tr><th>Log ID</th><th>Date</th><th>Rep</th><th>Client</th><th>Result</th><th class="num">Min</th><th>Interest</th><th>Next Action</th><th>→ Meeting</th><th></th></tr></thead><tbody>${body}</tbody></table></div>`;
 }
-function clientOptions(val){ return `<option value=""></option>`+vClients().slice().sort((a,b)=>a.company.localeCompare(b.company)).map(c=>`<option value="${esc(c.id)}" ${c.id===val?"selected":""}>${esc(c.company)} (${esc(c.id)})</option>`).join(""); }
+function clientOptions(val){ return `<option value=""></option>`+vClients().slice().sort((a,b)=>(a.company||a.contact||'').localeCompare(b.company||b.contact||'')).map(c=>`<option value="${esc(c.id)}" ${c.id===val?"selected":""}>${esc(c.company||c.contact||c.id)} (${esc(c.id)})</option>`).join(""); }
 function callForm(c){
   c=c||{}; const rep=myRep();
   const sel=(key,val,extra)=>`<select id="f_${key}"><option value=""></option>${vocab(key,extra).map(o=>`<option ${o===val?"selected":""}>${esc(o)}</option>`).join("")}</select>`;
@@ -1781,7 +1781,7 @@ function renderMeetings(v){
   const rows=vMeetings().filter(matchSearch);
   const body=rows.length?rows.map(m=>`<tr>
     <td>${esc(m.id)}</td><td>${esc(m.date)}<br><span class="help">${esc(m.time||"")}</span></td><td>${esc(m.rep)}</td>
-    <td><b>${esc(m.company)}</b><br><span class="help">${esc(m.contact||"")}</span></td>
+    <td><b>${esc(m.company||m.contact||'—')}</b><br><span class="help">${esc(m.contact||"")}</span></td>
     <td><span class="pill blue">${esc(m.type||"")}</span></td><td>${esc(m.location||"")}</td>
     <td>${meetPill(m.status)}</td>
     <td>${esc(m.agenda||"")}</td><td class="no-print"><div class="rowbtns"><button class="btn sm ghost" title="WhatsApp reminder" onclick="waMeeting('${esc(m.id)}')">💬</button><button class="btn sm ghost" onclick="edit_meeting('${esc(m.id)}')">Edit</button><button class="btn sm ghost danger" onclick="del_meeting('${esc(m.id)}')">✕</button></div></td></tr>`).join("")
