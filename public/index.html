@@ -2473,6 +2473,10 @@ function waPipelineDeal(id){
   const phone=ct.phone||"";
   const ctx={company:acct.name||d.title,contact:ct.name||"",rep:d.assignedTo||myRep()||"",city:acct.city||""};
   waOpenModal(phone,ctx,"Introduction");
+  // Sending an intro = first contact made → advance New Lead → Contacted
+  const curIdx=PIPELINE_STAGES.indexOf(d.stage||'New Lead');
+  const tgtIdx=PIPELINE_STAGES.indexOf('Contacted');
+  if(curIdx<tgtIdx){d.stage='Contacted';d.lastContact=today();upsert('pipelineDeals',d);toast('Pipeline → Contacted');}
 }
 function addPipelineDeal(){
   openModal('New Deal',pdForm(),async()=>{
