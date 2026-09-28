@@ -3462,11 +3462,35 @@ function quoteLetterheadHtml(q){
       </div>
     </div>`;
 }
+async function approveQuote(quoteId){
+  const q=state.quotes.find(x=>x.id===quoteId);
+  if(!q){toast("Quote not found");return;}
+  if(!q.clientId){toast("This quote is not linked to a client record");return;}
+  const c=state.clients.find(x=>x.id===q.clientId);
+  if(!c){toast("Client record not found (ID: "+q.clientId+")");return;}
+  const TARGET='Quotation Approved';
+  const curRank=stageRank(c.recordType);
+  const targetRank=stageRank(TARGET);
+  if(curRank>=targetRank){
+    toast("Already at or past Quotation Approved — current stage: "+(c.recordType||"?"));
+    return;
+  }
+  if(!confirm("Mark quote "+quoteDisplayId(q)+" as approved and advance "+(c.company||c.contact||c.id)+" to 'Quotation Approved'?"))return;
+  // Mark quote Accepted
+  q.status='Accepted';
+  await upsert("quotes",q);
+  // Advance client stage
+  c.recordType=TARGET;
+  await upsert("clients",c);
+  toast("✅ Quote approved — "+(c.company||c.contact||c.id)+" advanced to Quotation Approved");
+  // Re-render
+  go(route);
+}
 function renderQuoteView(v){
   const q=state.quotes.find(x=>x.id===window.__quoteViewId);
   if(!q){ v.innerHTML='<div class="card" style="padding:20px">Quote not found. <button class="btn sm ghost" onclick="go(\'quotes\')">Back</button></div>'; return; }
   v.innerHTML=`<div class="pagehead no-print"><div><h2>Quote # ${esc(quoteDisplayId(q))}</h2><div class="sub">${quoteStatusPill(q.status)}</div></div>
-    <div class="toolbar"><button class="btn ghost sm" onclick="go('quotes')">← Back</button><button class="btn ghost sm" onclick="waQuote('${esc(q.id)}')">💬 WhatsApp</button><button class="btn primary sm" onclick="printQuoteById('${esc(q.id)}')">🖨 Print / Save PDF</button></div></div>
+    <div class="toolbar"><button class="btn ghost sm" onclick="go('quotes')">← Back</button><button class="btn ghost sm" onclick="waQuote('${esc(q.id)}')">💬 WhatsApp</button>${q.status!=='Accepted'?`<button class="btn success sm" onclick="approveQuote('${esc(q.id)}')">✅ Approve Quote</button>`:'<span class="pill green sm" style="padding:4px 10px">✅ Approved</span>'}<button class="btn primary sm" onclick="printQuoteById('${esc(q.id)}')">🖨 Print / Save PDF</button></div></div>
     ${quoteLetterheadHtml(q)}`;
 }
 // Chrome's "Save as PDF" uses document.title as the default filename -- without this override
