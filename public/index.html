@@ -3150,10 +3150,11 @@ function waQuote(id){
   const contactObj=state.contacts.find(x=>x.accountId===c.id&&x.name===q.contact)
     ||state.contacts.find(x=>x.name===q.contact)||{};
   const waPhone=contactObj.phone||c.phone||"";
-  const ctx=Object.assign(clientCtx(c),{contact:q.contact||contactObj.name||c.contact,rep:q.rep,quoteNo:quoteDisplayId(q)});
-  if(q.pdfData){
+  const ctx=Object.assign(clientCtx(c),{contact:q.contact||contactObj.name||c.contact,rep:q.rep,quoteNo:quoteDisplayId(q),pdfBase64:q.pdfData||'',pdfFilename:quoteDisplayId(q)+'.pdf',_quoteId:q.id});
+  // Auto-download PDF only when bot is not configured (fallback to manual attach)
+  if(q.pdfData&&(!cfg.waWorkerUrl||!cfg.waApiKey)){
     const a=document.createElement("a"); a.href=q.pdfData; a.download=quoteDisplayId(q)+".pdf"; document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    toast("PDF downloaded — WhatsApp links can't attach files automatically. Please attach the downloaded file manually in the chat that opens.");
+    toast("PDF downloaded — attach it manually in WhatsApp.");
   }
   waOpenModal(waPhone,ctx,"Quotation ready");
   // Mark quote as Sent (if still Draft) so status reflects what was actually done
@@ -3580,6 +3581,34 @@ function waFire(mode,num,text){
 }
 function waAlt(mode){ const num=document.getElementById("wa_num").value.replace(/[^0-9]/g,""); const msg=document.getElementById("wa_msg").value; if(!num){toast("Enter a valid number");return;} waFire(mode,num,msg); toast(mode==="web"?"Opening WhatsApp Web…":"Opening WhatsApp app…"); }
 function waCopy(){ const msg=document.getElementById("wa_msg").value; try{ navigator.clipboard.writeText(msg); }catch(e){} toast("Message copied"); }
+async function waSendViaBot(num,msg){
+  if(!cfg.waWorkerUrl||!cfg.waApiKey){toast("Bot not configured — set Worker URL/Key in Admin");return;}
+  const ctx=window.__waCtx||{};
+  if(!ctx.pdfBase64){toast("No PDF on this quote");return;}
+  const phone=num.replace(/\D/g,"");
+  if(!phone){toast("Enter a phone number first");return;}
+  closeModal();
+  toast("Sending quotation via WhatsApp bot…");
+  try{
+    const r=await fetch(cfg.waWorkerUrl+"/wa-send-quote",{
+      method:"POST",
+      headers:{"Content-Type":"application/json","X-API-Key":cfg.waApiKey},
+      body:JSON.stringify({phone,pdfBase64:ctx.pdfBase64,filename:ctx.pdfFilename||"quotation.pdf",caption:msg,repName:session&&session.repName||""})
+    });
+    const d=await r.json();
+    if(d.ok){
+      toast("✅ Quotation sent via WhatsApp!");
+      if(ctx._quoteId){
+        const q=state.quotes.find(x=>x.id===ctx._quoteId);
+        if(q&&q.status==="Draft"){q.status="Sent";upsert("quotes",q);}
+      }
+    }else{
+      toast("❌ "+(d.error||"Send failed — check Worker logs"));
+    }
+  }catch(e){
+    toast("❌ "+e.message);
+  }
+}
 function waOpenModal(phone, ctx, presetName){
   const tpls=waTemplates(); const norm=waNormalize(phone);
   const startName=presetName||tpls[0].name; const start=tpls.find(t=>t.name===startName)||tpls[0];
@@ -3592,8 +3621,9 @@ function waOpenModal(phone, ctx, presetName){
       <button class="btn sm ghost" onclick="waAlt('app')">📱 Desktop app</button>
       <button class="btn sm ghost" onclick="waAlt('web')">🌐 WhatsApp Web</button>
       <button class="btn sm ghost" onclick="waCopy()">⧉ Copy message</button>
+      ${ctx.pdfBase64&&cfg.waWorkerUrl&&cfg.waApiKey?`<button class="btn sm primary" onclick="waSendViaBot(document.getElementById('wa_num').value,document.getElementById('wa_msg').value)">🤖 Send via Bot (with PDF)</button>`:''}
     </div>
-    <div class="help">Opens the WhatsApp chat with this message pre-filled — press <b>Enter/Send</b> in WhatsApp to send (a web app can't press send for you). Default target set in Admin.</div>`;
+    <div class="help">${ctx.pdfBase64&&cfg.waWorkerUrl&&cfg.waApiKey?'🤖 <b>Send via Bot</b> uploads the PDF and sends it automatically. The "Open WhatsApp" buttons below are the manual fallback.':'Opens the WhatsApp chat with this message pre-filled — press <b>Enter/Send</b> in WhatsApp to send (a web app can\'t press send for you). Default target set in Admin.'}</div>`;
   openModal("Send WhatsApp"+(ctx.company?" · "+ctx.company:""), html, ()=>{
     const num=document.getElementById("wa_num").value.replace(/[^0-9]/g,""); const msg=document.getElementById("wa_msg").value;
     if(!num){toast("Enter a valid WhatsApp number");return false;}
