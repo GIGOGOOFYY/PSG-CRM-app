@@ -1916,7 +1916,7 @@ async function unapproveTask(id){ const t=state.tasks.find(x=>x.id===id); if(!t|
 function renderDeals(v){
   const rows=vDeals().filter(matchSearch);
   const body=rows.length?rows.map(d=>`<tr>
-    <td>${esc(d.id)}</td><td>${esc(d.closeDate)}</td><td>${esc(d.rep)}</td>
+    <td>${esc(d.quoteNo||d.id)}</td><td>${esc(d.closeDate)}</td><td>${esc(d.rep)}</td>
     <td><b>${esc(d.company)}</b></td><td>${esc(d.product)}</td>
     <td class="num">${esc(d.qty)}</td><td class="num">${PKR(d.unitPrice)}</td>
     <td class="num"><b>${PKR(dealValue(d))}</b></td>
@@ -1928,7 +1928,7 @@ function renderDeals(v){
     :`<tr><td colspan="13"><div class="empty">No deals yet.</div></td></tr>`;
   const total=rows.reduce((s,d)=>s+dealValue(d),0), coll=rows.reduce((s,d)=>s+dealCollected(d),0);
   v.innerHTML=pagehead("Sales Tracker","Deals — "+vDeals().length+" · Value "+PKR(total)+" · Collected "+PKR(coll)+(isAdmin()?"":" (yours)"),"Add Deal","addDeal()",true)+
-   `<div class="card tablewrap"><table><thead><tr><th>Deal ID</th><th>Close</th><th>Rep</th><th>Client</th><th>Product</th><th class="num">Qty (sqft)</th><th class="num">Unit ₨</th><th class="num">Deal Value</th><th>Collection</th><th class="num">Collected</th><th class="num">Rate</th><th class="num">Commission</th><th></th></tr></thead><tbody>${body}</tbody></table></div>`;
+   `<div class="card tablewrap"><table><thead><tr><th>Quote ID</th><th>Close</th><th>Rep</th><th>Client</th><th>Product</th><th class="num">Qty (sqft)</th><th class="num">Unit ₨</th><th class="num">Deal Value</th><th>Collection</th><th class="num">Collected</th><th class="num">Rate</th><th class="num">Commission</th><th></th></tr></thead><tbody>${body}</tbody></table></div>`;
 }
 function collPill(s){ const c={Received:"green",Partial:"amber",Pending:"gray"}[s]||"gray"; return `<span class="pill ${c}">${esc(s||"")}</span>`; }
 function dealForm(d){ d=d||{}; const rep=myRep();
