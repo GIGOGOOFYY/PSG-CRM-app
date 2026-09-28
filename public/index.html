@@ -2233,7 +2233,6 @@ function renderAccounts(v){
       <td><b>${esc(a.name)}</b>${a.city?`<br><small class="help">${esc(a.city)}</small>`:''}</td>
       <td>${esc(a.industry||'')}</td>
       <td><span class="pill ${tc}">${esc(a.accountType||'Prospect')}</span></td>
-      <td>${esc(a.assignedTo||'')}</td>
       <td style="text-align:center">${cts}</td>
       <td style="text-align:center">${dls}</td>
       <td class="no-print"><div class="rowbtns">
@@ -2244,26 +2243,24 @@ function renderAccounts(v){
   }).join(''):`<tr><td colspan="8"><div class="empty">No companies yet — click "Add Company" to create the first one.</div></td></tr>`;
   v.innerHTML=pagehead('Companies',rows.length+' compan'+(rows.length===1?'y':'ies'),'Add Company','addAccount()',true)+
     `<div class="no-print" style="display:flex;gap:8px;padding-bottom:10px"><button class="btn ghost sm" onclick="exportAccountsCsv()">&#8595; Export CSV</button><button class="btn ghost sm" onclick="exportAccountsXlsx()">&#8595; Export XLSX</button><label class="btn ghost sm" style="cursor:pointer;margin:0">&#8593; Import CSV/XLSX<input type="file" accept=".csv,.xlsx,.xls" style="display:none" onchange="importAccountsFile(this)"></label></div>`+
-    `<div class="card tablewrap"><table style="min-width:840px"><thead><tr><th>ID</th><th>Company</th><th>Industry</th><th>Type</th><th>Rep</th><th style="text-align:center">Contacts</th><th style="text-align:center">Deals</th><th></th></tr></thead><tbody>${body}</tbody></table></div>`;
+    `<div class="card tablewrap"><table style="min-width:840px"><thead><tr><th>ID</th><th>Company</th><th>Industry</th><th>Type</th><th style="text-align:center">Contacts</th><th style="text-align:center">Deals</th><th></th></tr></thead><tbody>${body}</tbody></table></div>`;
 }
 function acctForm(a){a=a||{};
   const typeOpts=['Prospect','Lead','Client','Partner'].map(x=>`<option ${x===(a.accountType||'Prospect')?'selected':''}>${x}</option>`).join('');
   const indOpts=['','Construction','Architecture','Interior Design','Real Estate','Automotive','Hospitality','Government','Healthcare','Education','Retail','Glass Shop','Glass Trader','Supplier','Other'].map(x=>`<option ${x===(a.industry||'')?'selected':''}>${esc(x)}</option>`).join('');
-  const repOpts='<option value="">—</option>'+DD.reps.map(r=>`<option ${r===(a.assignedTo||'')?'selected':''}>${esc(r)}</option>`).join('');
   return `<div class="formgrid">
     <div class="field full"><label>Company Name *</label><input id="fa_name" value="${esc(a.name||'')}"></div>
     <div class="field"><label>Industry</label><select id="fa_industry">${indOpts}</select></div>
     <div class="field"><label>Account Type</label><select id="fa_accountType">${typeOpts}</select></div>
     <div class="field"><label>City</label><input id="fa_city" value="${esc(a.city||'')}"></div>
     <div class="field"><label>Area</label><input id="fa_area" value="${esc(a.area||'')}"></div>
-    <div class="field"><label>Assigned To</label><select id="fa_assignedTo">${repOpts}</select></div>
     <div class="field"><label>NTN</label><input id="fa_ntn" value="${esc(a.ntn||'')}"></div>
     <div class="field"><label>GST No.</label><input id="fa_gst" value="${esc(a.gst||'')}"></div>
     <div class="field full"><label>Notes</label><textarea id="fa_notes">${esc(a.notes||'')}</textarea></div>
   </div>`;
 }
 function readAcct(){const g=id=>document.getElementById('fa_'+id)?.value||'';
-  return{name:g('name').trim(),industry:g('industry'),accountType:g('accountType'),city:g('city'),area:g('area'),assignedTo:g('assignedTo'),ntn:g('ntn'),gst:g('gst'),notes:g('notes')};}
+  return{name:g('name').trim(),industry:g('industry'),accountType:g('accountType'),city:g('city'),area:g('area'),ntn:g('ntn'),gst:g('gst'),notes:g('notes')};}
 function addAccount(){
   openModal('New Company',acctForm(),async()=>{
     const a=readAcct();if(!a.name){toast('Company name required');return false;}
@@ -2300,7 +2297,7 @@ function viewAccount(id){
   const dlRows=dls.length?dls.map(d=>`<tr><td class="mono">${esc(d.id)}</td><td>${esc(d.title)}</td><td><span class="${STAGE_CLR[d.stage]||''}">${esc(d.stage)}</span></td><td>${esc(d.assignedTo||'')}</td></tr>`).join(''):`<tr><td colspan="4"><div class="empty">No active deals.</div></td></tr>`;
   openModal(esc(a.name)+' — Detail',
     `<div style="margin-bottom:16px">
-      <div class="formgrid"><div class="field"><label>Industry</label><p>${esc(a.industry||'—')}</p></div><div class="field"><label>Type</label><p>${esc(a.accountType||'—')}</p></div><div class="field"><label>City</label><p>${esc(a.city||'—')}</p></div><div class="field"><label>Rep</label><p>${esc(a.assignedTo||'—')}</p></div></div>
+      <div class="formgrid"><div class="field"><label>Industry</label><p>${esc(a.industry||'—')}</p></div><div class="field"><label>Type</label><p>${esc(a.accountType||'—')}</p></div><div class="field"><label>City</label><p>${esc(a.city||'—')}</p></div></div>
     </div>
     <h4 style="margin:12px 0 8px">Contacts</h4>
     <div class="tablewrap"><table><thead><tr><th>ID</th><th>Name</th><th>Role</th><th>Phone</th><th>Email</th></tr></thead><tbody>${ctRows}</tbody></table></div>
@@ -2447,6 +2444,21 @@ function _kcardClean(ds){
   if(ds?.ghost)ds.ghost.remove();
   if(ds?.card){ds.card.classList.remove('kcard-dragging');ds.card.removeEventListener('pointermove',_kcardMove);}
 }
+function autoAssignRep(text){
+  if(!text) return '';
+  const t=text.toLowerCase();
+  if(/automotive|bullet|fire[\- ]?resistant/.test(t)) return 'Asma';
+  if(/tempered|laminated|double[\- ]?glaz/.test(t)) return 'Noor';
+  if(/alumin|curtain[\- ]?wall/.test(t)) return 'Ali Saad';
+  if(/skylight|shower|railing|cubicle/.test(t)) return 'Mehboob';
+  return '';
+}
+function pdAutoAssignRep(title){
+  const rep=autoAssignRep(title);
+  if(!rep) return;
+  const sel=document.getElementById('pd_assignedTo');
+  if(sel&&!sel.value) sel.value=rep;
+}
 function pdForm(d){d=d||{};
   const stageOpts=PIPELINE_STAGES.map(s=>`<option ${s===(d.stage||'New Lead')?'selected':''}>${s}</option>`).join('');
   const priOpts=['','High','Medium','Low'].map(p=>`<option ${p===(d.priority||'')?'selected':''}>${p}</option>`).join('');
@@ -2458,7 +2470,7 @@ function pdForm(d){d=d||{};
   return `<div class="formgrid">
     <div class="field"><label>Company</label><select id="pd_accountId" onchange="pdRefreshCt(this.value)">${acctOpts}</select></div>
     <div class="field"><label>Contact</label><select id="pd_contactId">${ctOpts}</select></div>
-    <div class="field full"><label>Deal Title *</label><input id="pd_title" value="${esc(d.title||'')}"></div>
+    <div class="field full"><label>Deal Title *</label><input id="pd_title" value="${esc(d.title||'')}" oninput="pdAutoAssignRep(this.value)"></div>
     <div class="field"><label>Stage</label><select id="pd_stage">${stageOpts}</select></div>
     <div class="field"><label>Priority</label><select id="pd_priority">${priOpts}</select></div>
     <div class="field"><label>Assigned To</label><select id="pd_assignedTo">${repOpts}</select></div>
@@ -2594,6 +2606,7 @@ async function chatEndHandoff(){
 function addPipelineDeal(){
   openModal('New Deal',pdForm(),async()=>{
     const d=readPD();if(!d.title){toast('Deal title required');return false;}
+    if(!d.assignedTo) d.assignedTo=autoAssignRep(d.title)||myRep()||'';
     d.id=nextId('D');d.status='active';d.firstContact=today();d.lastContact=today();
     state.pipelineDeals.push(d);await upsert('pipelineDeals',d);closeModal();toast('Deal added');go('pipeline');
   });
