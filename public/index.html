@@ -3290,7 +3290,7 @@ function convertQuoteToDeal(id){
   toast("Deal created from quote"); go("deals");
 }
 function viewQuote(id){ window.__quoteViewId=id; go("quoteView"); }
-function quoteDisplayId(q){ return q.id||("GQ-"+(q.serialNo||1)); }
+function quoteDisplayId(q){ return "GQ-"+(q.serialNo||1); }
 function quoteSerialDisplay(q, c){
   const year=(q.quoteDate?new Date(q.quoteDate):new Date()).getFullYear();
   const serial=q.serialNo||1;
