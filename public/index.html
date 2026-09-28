@@ -3066,7 +3066,7 @@ function renderScales(v){
       </td>
     </tr>`;
   }).join(""):`<tr><td colspan="6" class="help" style="text-align:center;padding:24px">No scales yet — click "+ New Scale" to create one.</td></tr>`;
-  document.getElementById("main").innerHTML=`
+  (v||document.getElementById("view")).innerHTML=`
     <div class="page-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
       <h2 style="margin:0">Scale / Rates</h2>
       <button class="btn primary" onclick="scaleForm()">+ New Scale</button>
