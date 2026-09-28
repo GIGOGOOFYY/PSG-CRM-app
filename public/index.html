@@ -3759,9 +3759,9 @@ async function waSendViaBot(num,msg){
   closeModal();
   toast("Sending quotation via WhatsApp bot…");
   try{
-    const r=await fetch(cfg.waWorkerUrl+"/wa-send-quote",{
+    const r=await fetch("/api/send-quote",{
       method:"POST",
-      headers:{"Content-Type":"application/json","X-API-Key":cfg.waApiKey},
+      headers:{"Content-Type":"application/json","X-API-Key":cfg.waApiKey,"X-Worker-Base":cfg.waWorkerUrl},
       body:JSON.stringify({phone,pdfBase64,filename:ctx.pdfFilename||"quotation.pdf",caption:msg,repName:session&&session.repName||""})
     });
     const d=await r.json();
