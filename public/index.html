@@ -2935,146 +2935,49 @@ function docRemoveFile(){ window.__docFileData=""; window.__docFileName=""; wind
   const s=document.getElementById("df_filename"); if(s)s.textContent="No file attached"; const inp=document.getElementById("df_file"); if(inp)inp.value=""; }
 function docDownload(id){ const d=state.documents.find(x=>x.id===id); if(!d||!d.fileData){toast("No file stored for this document");return;}
   const a=document.createElement("a"); a.href=d.fileData; a.download=d.fileName||d.name||"document"; document.body.appendChild(a); a.click(); a.remove(); }
-function nextScaleId(){
-  const ids=state.scales.map(s=>parseInt((s.id||"SC-0").replace("SC-",""))||0);
-  return "SC-"+(Math.max(0,...ids)+1);
-}
-function scaleTierRowHtml(si,ti,tier){
-  tier=tier||{};
-  return `<div class="scale-tier" style="display:flex;gap:8px;align-items:center;margin:4px 0;flex-wrap:wrap">
-    <div class="field" style="flex:1;min-width:100px"><label style="font-size:11px">Min SQFT</label><input type="number" step="any" value="${esc(tier.minSqft||'')}" oninput="scaleTierEdit(${si},${ti},'minSqft',this.value)" style="width:100%"></div>
-    <div class="field" style="flex:1;min-width:100px"><label style="font-size:11px">Max SQFT</label><input type="number" step="any" value="${esc(tier.maxSqft||'')}" oninput="scaleTierEdit(${si},${ti},'maxSqft',this.value)" style="width:100%"></div>
-    <div class="field" style="flex:1;min-width:100px"><label style="font-size:11px">Rate (PKR/sqft)</label><input type="number" step="any" value="${esc(tier.ratePerSqft||'')}" oninput="scaleTierEdit(${si},${ti},'ratePerSqft',this.value)" style="width:100%"></div>
-    <button class="btn sm ghost danger" style="margin-top:16px" onclick="scaleDelTier(${si},${ti})">×</button>
-  </div>`;
-}
-function scaleRenderTiers(si){
-  const wrap=document.getElementById(`scale_tiers_${si}`); if(!wrap)return;
-  const tiers=(window.__scaleForms[si]||{}).tiers||[];
-  wrap.innerHTML=tiers.length?tiers.map((t,ti)=>scaleTierRowHtml(si,ti,t)).join(""):'<div class="help" style="font-size:12px">No tiers yet — click "+ Add Tier"</div>';
-}
-function scaleTierEdit(si,ti,field,val){
-  if(!window.__scaleForms[si])return;
-  const tiers=window.__scaleForms[si].tiers||[];
-  if(!tiers[ti])return;
-  tiers[ti][field]=parseFloat(val)||0;
-}
-function scaleAddTier(si){
-  if(!window.__scaleForms[si])return;
-  window.__scaleForms[si].tiers=window.__scaleForms[si].tiers||[];
-  window.__scaleForms[si].tiers.push({minSqft:0,maxSqft:0,ratePerSqft:0});
-  scaleRenderTiers(si);
-}
-function scaleDelTier(si,ti){
-  if(!window.__scaleForms[si])return;
-  window.__scaleForms[si].tiers.splice(ti,1);
-  scaleRenderTiers(si);
-}
-function readScale(si){
-  if(!window.__scaleForms[si])return null;
-  const f=window.__scaleForms[si];
-  return {
-    id:f.id,
-    name:(document.getElementById(`sf_name_${si}`)||{}).value||"",
-    product:(document.getElementById(`sf_product_${si}`)||{}).value||"",
-    notes:(document.getElementById(`sf_notes_${si}`)||{}).value||"",
-    active:((document.getElementById(`sf_active_${si}`)||{}).checked!==false),
-    tiers:f.tiers||[]
-  };
-}
-async function addScale(si){
-  const sc=readScale(si);
-  if(!sc.name){toast("Scale name required");return;}
-  const isNew=!sc.id;
-  if(isNew){ sc.id=nextScaleId(); sc.created_at=new Date().toISOString(); }
-  const btn=document.getElementById(`sf_save_${si}`);
-  if(btn){btn.disabled=true;btn.textContent="Saving…";}
-  try{
-    if(isNew){ state.scales.push(sc); } else { const idx=state.scales.findIndex(x=>x.id===sc.id); if(idx>=0) state.scales[idx]=sc; }
-    await upsert("scales",sc);
-    toast((isNew?"Added":"Updated")+" scale "+sc.id);
-    renderScales();
-  }catch(e){
-    toast("Error: "+e.message);
-    if(btn){btn.disabled=false;btn.textContent="Save";}
-  }
-}
-async function del_scale(id){
-  if(!confirm("Delete scale "+id+"? This cannot be undone."))return;
-  state.scales=state.scales.filter(x=>x.id!==id);
-  await remove("scales",id);
-  toast("Scale deleted");
-  renderScales();
-}
-function edit_scale(id){
-  const sc=state.scales.find(x=>x.id===id);
-  if(!sc)return;
-  scaleForm(sc);
-}
-function scaleForm(sc){
-  sc=sc||{};
-  const isNew=!sc.id;
-  const si=Date.now();
-  window.__scaleForms=window.__scaleForms||{};
-  window.__scaleForms[si]={id:sc.id||null,tiers:JSON.parse(JSON.stringify(sc.tiers||[]))};
-  const products=["Saif Tough (Tempered)","Saif Lam (Annealed Laminated)","Saif Cool (Double Glaze)","Saif Armour (Multi-Lam)","Saif Curve (Bent)","Clear Float (Annealed)","Frosted","Beveled","Other"];
-  const html=`<div class="card" style="margin-bottom:12px;padding:14px;border:1px solid var(--border)">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-      <b>${isNew?"New Scale":"Edit Scale — "+esc(sc.id)}</b>
-      <label style="display:flex;align-items:center;gap:6px;font-size:13px">
-        <input type="checkbox" id="sf_active_${si}"${sc.active!==false?" checked":""}> Active
-      </label>
-    </div>
-    <div class="formgrid">
-      <div class="field"><label>Scale ID</label><input class="calc" readonly value="${esc(sc.id||nextScaleId())}"></div>
-      <div class="field"><label>Name *</label><input id="sf_name_${si}" value="${esc(sc.name||"")}" placeholder="e.g. Tempered Standard"></div>
-      <div class="field"><label>Product</label><select id="sf_product_${si}">
-        ${products.map(p=>`<option value="${esc(p)}"${(sc.product||"")==p?" selected":""}>${esc(p)}</option>`).join("")}
-      </select></div>
-      <div class="field full"><label>Notes</label><textarea id="sf_notes_${si}" rows="2">${esc(sc.notes||"")}</textarea></div>
-    </div>
-    <div style="margin-top:10px">
-      <b style="font-size:13px">Price Tiers</b>
-      <div id="scale_tiers_${si}" style="margin:6px 0"></div>
-      <button class="btn sm ghost" onclick="scaleAddTier(${si})">+ Add Tier</button>
-    </div>
-    <div style="margin-top:12px;display:flex;gap:8px">
-      <button id="sf_save_${si}" class="btn primary" onclick="addScale(${si})">Save</button>
-      <button class="btn ghost" onclick="renderScales()">Cancel</button>
-      ${!isNew?`<button class="btn danger" onclick="del_scale('${esc(sc.id)}')">Delete</button>`:""}
-    </div>
-  </div>`;
-  const wrap=document.getElementById("scale_form_area");
-  if(wrap){wrap.innerHTML=html; scaleRenderTiers(si);}
+const SCALE_TABLES={
+  1:[[0,1,1],[1,1.5,1.5],[1.5,2,2],[2,2.5,2.5],[2.5,3,3],[3,3.5,3.5],[3.5,4,4],[4,5,5],[5,6,6],[6,7,7],[7,8,8],[8,9,9],[9,10,10],[10,11,11],[11,12,12],[12,13,13],[13,14,14],[14,15,15],[15,16,16]],
+  2:[[0,1,1],[1,1.5,1.5],[1.5,2,2],[2,2.5,2.5],[2.5,3,3],[3,3.5,3.5],[3.5,4,4],[4,4.5,4.5],[4.5,5,5],[5,5.5,5.5],[5.5,6,6],[6,6.5,6.5],[6.5,7,7],[7,7.5,7.5],[7.5,8,8],[8,9,9],[9,10,10],[10,11,11],[11,12,12],[12,13,13],[13,14,14]],
+  3:[[0,1,1],[1,1.5,1.5],[1.5,2,2],[2,2.5,2.5],[2.5,3,3],[3,3.5,3.5],[3.5,4,4],[4,4.5,4.5],[4.5,5,5],[5,5.5,5.5],[5.5,6,6],[6,7,7],[7,8,8],[8,9,9],[9,10,10],[10,11,11],[11,12,12],[12,13,13],[13,14,14],[14,15,15],[15,16,16]],
+  4:[[0,1,1],[1,2,2],[2,3,3],[3,4,4],[4,5,5],[5,6,6],[6,7,7],[7,8,8],[8,9,9],[9,10,10],[10,11,11],[11,12,12],[12,14,14],[14,16,16]]
+};
+function applyScaleRounding(scale,dimFt){
+  const sc=parseInt(scale);const table=SCALE_TABLES[sc];
+  if(!table)return parseFloat(dimFt)||0;
+  const dim=parseFloat(dimFt)||0;if(dim<=0)return 0;
+  for(const[,to,val]of table){if(dim<=to)return val;}
+  return table[table.length-1][2];
 }
 function renderScales(v){
-  window.__scaleForms=window.__scaleForms||{};
-  const rows=state.scales.slice().sort((a,b)=>(a.name||"").localeCompare(b.name||""));
-  const body=rows.length?rows.map(sc=>{
-    const tierSummary=sc.tiers&&sc.tiers.length
-      ?sc.tiers.map(t=>`${t.minSqft}–${t.maxSqft} sqft @ PKR ${t.ratePerSqft}/sqft`).join("; ")
-      :"No tiers";
-    return `<tr>
-      <td>${esc(sc.id)}</td>
-      <td><b>${esc(sc.name)}</b></td>
-      <td>${esc(sc.product||"")}</td>
-      <td style="font-size:12px;color:var(--text2)">${esc(tierSummary)}</td>
-      <td><span class="badge ${sc.active!==false?"success":"neutral"}">${sc.active!==false?"Active":"Inactive"}</span></td>
-      <td>
-        <button class="btn xs ghost" onclick="edit_scale('${esc(sc.id)}')">Edit</button>
-        <button class="btn xs ghost danger" onclick="del_scale('${esc(sc.id)}')">Del</button>
-      </td>
-    </tr>`;
-  }).join(""):`<tr><td colspan="6" class="help" style="text-align:center;padding:24px">No scales yet — click "+ New Scale" to create one.</td></tr>`;
+  function scaleRows(sc){
+    const t=SCALE_TABLES[sc]||[];
+    return t.map(([from,to,val],idx)=>{
+      const wide=idx>0&&(to-from)>0.6;
+      return `<tr style="${wide?'background:var(--panel2)':''}"><td style="color:var(--text2)">${from}</td><td style="font-weight:600">${to}</td><td style="font-weight:700;color:var(--accent)">${val}</td></tr>`;
+    }).join('');
+  }
+  const scaleInfo=[
+    {n:1,label:'Scale 1',desc:'\u00bd ft steps \u2192 4 ft, then 1 ft \u2192 16 ft'},
+    {n:2,label:'Scale 2',desc:'\u00bd ft steps \u2192 8 ft, then 1 ft \u2192 14 ft'},
+    {n:3,label:'Scale 3',desc:'\u00bd ft steps \u2192 6 ft, then 1 ft \u2192 16 ft'},
+    {n:4,label:'Scale 4',desc:'1 ft steps \u2192 16 ft (2 ft bands above 12 ft)'},
+  ];
   (v||document.getElementById("view")).innerHTML=`
-    <div class="page-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-      <h2 style="margin:0">Scale / Rates</h2>
-      <button class="btn primary" onclick="scaleForm()">+ New Scale</button>
+    <div class="page-header" style="margin-bottom:16px">
+      <h2 style="margin:0">Scale Reference</h2>
+      <p style="color:var(--text2);margin:6px 0 0;font-size:13px">Each dimension (W &amp; H) is rounded <b>up</b> independently. Billing sqft = Standard W \u00d7 Standard H.</p>
     </div>
-    <div id="scale_form_area"></div>
-    <table class="table"><thead><tr>
-      <th>ID</th><th>Name</th><th>Product</th><th>Tiers</th><th>Status</th><th>Actions</th>
-    </tr></thead><tbody>${body}</tbody></table>`;
+    <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">
+      ${scaleInfo.map(s=>`
+        <div style="flex:1;min-width:170px;max-width:230px">
+          <div style="font-weight:700;font-size:15px;margin-bottom:2px">${s.label}</div>
+          <div style="font-size:11px;color:var(--text2);margin-bottom:8px">${s.desc}</div>
+          <table class="table" style="font-size:12px">
+            <thead><tr><th>From</th><th>To (ft)</th><th>Std</th></tr></thead>
+            <tbody>${scaleRows(s.n)}</tbody>
+          </table>
+        </div>`).join('')}
+    </div>`;
 }
 function renderDocuments(v){
   const rows=vDocuments().filter(matchSearch).slice().sort((a,b)=>(b.uploadedAt||"").localeCompare(a.uploadedAt||""));
@@ -3217,7 +3120,8 @@ function quoteItemRowHtml(i,it){
     <div class="field"><label>Code (auto)</label><input id="qi_code_${i}" class="calc" readonly value="${esc((window.__quoteGqSerial||1)+"/"+(i+1))}"></div>
     <div class="field full"><label>Description</label><input id="qi_desc_${i}" list="dl_products" value="${esc(it.desc||"")}" oninput="quoteItemEdit(${i},'desc',this.value)"></div>
     ${unitSel}${sizeWHtml}${sizeHHtml}
-    <div class="field"><label>SQFT</label><input id="qi_sqft_${i}" type="number" step="any" value="${esc(it.sqft||"")}" oninput="quoteItemEdit(${i},'sqft',this.value)"></div>
+    <div class="field"><label>Scale</label><select id="qi_scale_${i}" onchange="quoteItemEdit(${i},'scale',this.value)" style="width:100%"><option value=""${!it.scale?' selected':''}>Actual</option>${[1,2,3,4].map(n=>`<option value="${n}"${parseInt(it.scale)===n?' selected':''}>Scale ${n}</option>`).join('')}</select></div>
+    <div class="field"><label>Std SQFT</label><input id="qi_sqft_${i}" type="number" step="any" value="${esc(it.sqft||"")}" oninput="quoteItemEdit(${i},'sqft',this.value)"></div>
     <div class="field"><label>Pieces</label><input id="qi_pieces_${i}" type="number" step="any" value="${esc(it.pieces||"")}" oninput="quoteItemEdit(${i},'pieces',this.value)"></div>
     <div class="field"><label>SQFT Rate (PKR/sqft)</label><input id="qi_price_${i}" type="number" step="any" value="${esc(it.unitPrice||"")}" oninput="quoteItemEdit(${i},'unitPrice',this.value)"></div>
     <div class="field"><label>Type</label><select id="qi_type_${i}" onchange="quoteItemEdit(${i},'type',this.value)"><option ${(it.type||"Glass")==="Glass"?"selected":""}>Glass</option><option ${it.type==="Hardware"?"selected":""}>Hardware</option></select></div>
@@ -3232,14 +3136,21 @@ function quoteRenderItems(){
 function quoteItemEdit(i,field,val){
   if(!window.__quoteItems[i])return;
   const strFields=["desc","code","type","sizeUnit"];
-  window.__quoteItems[i][field]=strFields.includes(field)?val:num(val);
-  if(field==="sizeW"||field==="sizeH"){
+  if(field==="scale")window.__quoteItems[i].scale=val?parseInt(val):0;
+  else window.__quoteItems[i][field]=strFields.includes(field)?val:num(val);
+  if(field==="sizeW"||field==="sizeH"||field==="scale"){
     const it=window.__quoteItems[i];
     const UNIT_TO_MM={mm:1,cm:10,'in':25.4,ft:304.8};
     const fac=UNIT_TO_MM[it.sizeUnit||'mm']||1;
-    const w=(num(it.sizeW)+(it.sizeUnit==='in'?num(it.sizeWFrac||0):0))*fac;
-    const h=(num(it.sizeH)+(it.sizeUnit==='in'?num(it.sizeHFrac||0):0))*fac;
-    if(w&&h){ it.sqft=Math.round((w*h/92903.04)*100)/100; const sq=document.getElementById("qi_sqft_"+i); if(sq)sq.value=it.sqft; }
+    const wMm=(num(it.sizeW)+(it.sizeUnit==='in'?num(it.sizeWFrac||0):0))*fac;
+    const hMm=(num(it.sizeH)+(it.sizeUnit==='in'?num(it.sizeHFrac||0):0))*fac;
+    if(wMm&&hMm){
+      const sc=parseInt(it.scale)||0;
+      if(sc>=1&&sc<=4){
+        it.sqft=Math.round(applyScaleRounding(sc,wMm/304.8)*applyScaleRounding(sc,hMm/304.8)*100)/100;
+      }else{it.sqft=Math.round((wMm*hMm/92903.04)*100)/100;}
+      const sq=document.getElementById("qi_sqft_"+i);if(sq)sq.value=it.sqft;
+    }
   }
   const lineEl=document.getElementById("qi_line_"+i); if(lineEl) lineEl.value=PKR(quoteItemAmount(window.__quoteItems[i]));
   const t=document.getElementById("qi_total"); if(t)t.textContent=PKR(quoteTotal(window.__quoteItems));
@@ -3254,13 +3165,19 @@ function quoteItemFrac(i,dim,val){
   if(!window.__quoteItems[i])return;
   window.__quoteItems[i][dim+'Frac']=parseFloat(val)||0;
   const it=window.__quoteItems[i];
-  const w=(num(it.sizeW)+num(it.sizeWFrac||0))*25.4;
-  const h=(num(it.sizeH)+num(it.sizeHFrac||0))*25.4;
-  if(w&&h){ it.sqft=Math.round((w*h/92903.04)*100)/100; const sq=document.getElementById("qi_sqft_"+i); if(sq)sq.value=it.sqft; }
+  const wMm=(num(it.sizeW)+num(it.sizeWFrac||0))*25.4;
+  const hMm=(num(it.sizeH)+num(it.sizeHFrac||0))*25.4;
+  if(wMm&&hMm){
+    const sc=parseInt(it.scale)||0;
+    if(sc>=1&&sc<=4){
+      it.sqft=Math.round(applyScaleRounding(sc,wMm/304.8)*applyScaleRounding(sc,hMm/304.8)*100)/100;
+    }else{it.sqft=Math.round((wMm*hMm/92903.04)*100)/100;}
+    const sq=document.getElementById("qi_sqft_"+i);if(sq)sq.value=it.sqft;
+  }
   const lineEl=document.getElementById("qi_line_"+i); if(lineEl) lineEl.value=PKR(quoteItemAmount(it));
   const t=document.getElementById("qi_total"); if(t)t.textContent=PKR(quoteTotal(window.__quoteItems));
 }
-function quoteAddItem(){ window.__quoteItems=window.__quoteItems||[]; window.__quoteItems.push({code:"",desc:"",sizeW:"",sizeH:"",sizeUnit:"mm",sizeWFrac:0,sizeHFrac:0,sqft:"",pieces:"",unitPrice:"",type:"Glass"}); quoteRenderItems(); }
+function quoteAddItem(){ window.__quoteItems=window.__quoteItems||[]; window.__quoteItems.push({code:"",desc:"",sizeW:"",sizeH:"",sizeUnit:"mm",sizeWFrac:0,sizeHFrac:0,scale:0,sqft:"",pieces:"",unitPrice:"",type:"Glass"}); quoteRenderItems(); }
 function quoteDelItem(i){ window.__quoteItems.splice(i,1); quoteRenderItems(); }
 function quoteAttachFile(input){
   const f=input.files&&input.files[0]; if(!f)return;
