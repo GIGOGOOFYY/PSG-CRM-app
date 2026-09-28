@@ -11,7 +11,10 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script>/* atob polyfill: strip whitespace so jsPDF font-metric base64 doesn't throw in Chromium */
+(function(){var _a=window.atob;window.atob=function(s){return _a(s.replace(/\s/g,""));};})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js"></script>
 <style>
 /* ── Reset & Base ── */
 *{box-sizing:border-box;margin:0;padding:0}
@@ -3591,9 +3594,11 @@ async function generateQuotePdfBase64(q){
   try{
     const canvas=await html2canvas(tmp,{scale:2,useCORS:true,logging:false,backgroundColor:'#fff'});
     const {jsPDF}=window.jspdf;
-    const pw=canvas.width/2, ph=canvas.height/2;
-    const pdf=new jsPDF({orientation:'portrait',unit:'px',format:[pw,ph]});
-    pdf.addImage(canvas.toDataURL('image/jpeg',0.92),'JPEG',0,0,pw,ph);
+    const pw=Math.round(canvas.width/2), ph=Math.round(canvas.height/2);
+    // putOnlyUsedFonts avoids jsPDF loading unused font data via atob() during init
+    const pdf=new jsPDF({orientation:'portrait',unit:'px',format:[pw,ph],putOnlyUsedFonts:true,compress:false});
+    // PNG avoids the JPEG re-encoding path in jsPDF that can also call atob()
+    pdf.addImage(canvas.toDataURL('image/png'),'PNG',0,0,pw,ph);
     return pdf.output('datauristring');
   }finally{
     document.body.removeChild(tmp);
