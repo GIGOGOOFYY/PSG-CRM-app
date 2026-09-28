@@ -597,6 +597,7 @@ const SIDEBAR_NAV = [
   { section:"Inventory", items:[
     { id:"_prod",     icon:"package",        label:"Products",        route:"products" },
     { id:"_price",    icon:"tag",            label:"Price Books",     route:"priceBooks" },
+    { id:"_scales",   icon:"layers",         label:"Scale / Rates",   route:"scales" },
     { id:"_quotes",   icon:"clipboard",      label:"Quotes",          route:"quotes" },
     { id:"_so",       icon:"shopping-cart",  label:"Sales Orders",    route:"salesOrders" },
     { id:"_po",       icon:"truck",          label:"Purchase Orders", route:"purchaseOrders" },
@@ -718,7 +719,7 @@ function activeRepNames(){ const emp=(state.users||[]).filter(u=>u.role==="emplo
 function vocab(key, extra){ const base = key==="reps" ? activeRepNames() : DD[key]; const s=[...base]; (extra||[]).forEach(v=>{ if(v && !s.includes(v)) s.push(v); }); return s; }
 
 /* ---------- state ---------- */
-let state = { users:[], clients:[], calls:[], meetings:[], deals:[], tasks:[], repTargets:[], quotes:[], salesOrders:[], invoices:[], purchaseOrders:[], products:[], campaigns:[], priceBooks:[], documents:[], deliveryChallans:[], materialRequisitions:[], receivings:[], accounts:[], contacts:[], pipelineDeals:[] };
+let state = { users:[], clients:[], calls:[], meetings:[], deals:[], tasks:[], repTargets:[], quotes:[], salesOrders:[], invoices:[], purchaseOrders:[], products:[], campaigns:[], priceBooks:[], scales:[], documents:[], deliveryChallans:[], materialRequisitions:[], receivings:[], accounts:[], contacts:[], pipelineDeals:[] };
 let session = null;          // {username, role, repName}
 const DEFAULT_SB_URL="https://qeyeonucnlsmbeomrrwt.supabase.co";
 const DEFAULT_SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFleWVvbnVjbmxzbWJlb21ycnd0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQxODk0OTksImV4cCI6MjA5OTc2NTQ5OX0.SmacOxNWOR4HLCOQf_gkHYHFTqBWMDNWrpFAKHP5nns";
@@ -844,6 +845,9 @@ const MAP = {
   priceBooks:{table:"crm_price_books", pk:"id",
     to:p=>({id:p.id,name:p.name,tier:p.tier||null,active:p.active!==false,notes:p.notes||null,items:p.items||[]}),
     from:r=>({id:r.id,name:r.name,tier:r.tier||"",active:r.active!==false,notes:r.notes||"",items:r.items||[]}) },
+  scales:{table:"crm_scales", pk:"id",
+    to:s=>({id:s.id,name:s.name,product:s.product||null,notes:s.notes||null,tiers:s.tiers||[],active:s.active!==false,created_at:s.created_at||new Date().toISOString(),updated_at:new Date().toISOString()}),
+    from:r=>({id:r.id,name:r.name||"",product:r.product||"",notes:r.notes||"",tiers:r.tiers||[],active:r.active!==false,created_at:r.created_at||"",updated_at:r.updated_at||""}) },
   documents:{table:"crm_documents", pk:"id",
     to:d=>({id:d.id,name:d.name,type:d.type||null,client_id:d.clientId||null,company:d.company||null,file_name:d.fileName||null,file_type:d.fileType||null,file_size:num(d.fileSize),file_data:d.fileData||null,notes:d.notes||null,uploaded_by:d.uploadedBy||null,uploaded_at:d.uploadedAt||null}),
     from:r=>({id:r.id,name:r.name,type:r.type||"",clientId:r.client_id||"",company:r.company||"",fileName:r.file_name||"",fileType:r.file_type||"",fileSize:r.file_size,fileData:r.file_data||"",notes:r.notes||"",uploadedBy:r.uploaded_by||"",uploadedAt:r.uploaded_at||""}) },
@@ -868,7 +872,7 @@ function initSupabase(){
 async function cloudPull(){
   if(!sb) return false;
   let anyOK=false;
-  for(const k of ["users","clients","calls","meetings","deals","tasks","repTargets","quotes","salesOrders","invoices","purchaseOrders","products","campaigns","priceBooks","documents","deliveryChallans","materialRequisitions","receivings","accounts","contacts","pipelineDeals"]){
+  for(const k of ["users","clients","calls","meetings","deals","tasks","repTargets","quotes","salesOrders","invoices","purchaseOrders","products","campaigns","priceBooks","scales","documents","deliveryChallans","materialRequisitions","receivings","accounts","contacts","pipelineDeals"]){
     try{
       const PAGE=1000; let all=[]; let offset=0;
       while(true){
@@ -1037,7 +1041,7 @@ function renderConn(){
 function go(r){ route=r; searchTerm=""; renderSidebar(); renderRoute(); window.scrollTo(0,0); }
 function renderRoute(){
   const v=document.getElementById("view");
-  ({dashboard:renderDashboard,analytics:renderAnalytics,clients:renderClients,leads:renderLeadsOnly,clientsOnly:renderClientsOnly,prospects:renderProspectsOnly,tasks:renderTasks,calls:renderCalls,meetings:renderMeetings,deals:renderDeals,quotes:renderQuotes,quoteView:renderQuoteView,performance:renderPerformance,admin:renderAdmin,salesOrders:renderSalesOrders,invoices:renderInvoices,accounts:renderAccounts,contacts:renderContacts,pipeline:renderPipeline,purchaseOrders:renderPurchaseOrders,deliveryChallans:renderDeliveryChallans,materialRequisitions:renderMaterialRequisitions,receivings:renderReceivings,vendors:renderVendors,products:renderProducts,campaigns:renderCampaigns,priceBooks:renderPriceBooks,documents:renderDocuments}[route]||renderDashboard)(v);
+  ({dashboard:renderDashboard,analytics:renderAnalytics,clients:renderClients,leads:renderLeadsOnly,clientsOnly:renderClientsOnly,prospects:renderProspectsOnly,tasks:renderTasks,calls:renderCalls,meetings:renderMeetings,deals:renderDeals,quotes:renderQuotes,quoteView:renderQuoteView,performance:renderPerformance,admin:renderAdmin,salesOrders:renderSalesOrders,invoices:renderInvoices,accounts:renderAccounts,contacts:renderContacts,pipeline:renderPipeline,purchaseOrders:renderPurchaseOrders,deliveryChallans:renderDeliveryChallans,materialRequisitions:renderMaterialRequisitions,receivings:renderReceivings,vendors:renderVendors,products:renderProducts,campaigns:renderCampaigns,priceBooks:renderPriceBooks,scales:renderScales,documents:renderDocuments}[route]||renderDashboard)(v);
 }
 
 /* ======================================================================
@@ -2931,6 +2935,147 @@ function docRemoveFile(){ window.__docFileData=""; window.__docFileName=""; wind
   const s=document.getElementById("df_filename"); if(s)s.textContent="No file attached"; const inp=document.getElementById("df_file"); if(inp)inp.value=""; }
 function docDownload(id){ const d=state.documents.find(x=>x.id===id); if(!d||!d.fileData){toast("No file stored for this document");return;}
   const a=document.createElement("a"); a.href=d.fileData; a.download=d.fileName||d.name||"document"; document.body.appendChild(a); a.click(); a.remove(); }
+function nextScaleId(){
+  const ids=state.scales.map(s=>parseInt((s.id||"SC-0").replace("SC-",""))||0);
+  return "SC-"+(Math.max(0,...ids)+1);
+}
+function scaleTierRowHtml(si,ti,tier){
+  tier=tier||{};
+  return `<div class="scale-tier" style="display:flex;gap:8px;align-items:center;margin:4px 0;flex-wrap:wrap">
+    <div class="field" style="flex:1;min-width:100px"><label style="font-size:11px">Min SQFT</label><input type="number" step="any" value="${esc(tier.minSqft||'')}" oninput="scaleTierEdit(${si},${ti},'minSqft',this.value)" style="width:100%"></div>
+    <div class="field" style="flex:1;min-width:100px"><label style="font-size:11px">Max SQFT</label><input type="number" step="any" value="${esc(tier.maxSqft||'')}" oninput="scaleTierEdit(${si},${ti},'maxSqft',this.value)" style="width:100%"></div>
+    <div class="field" style="flex:1;min-width:100px"><label style="font-size:11px">Rate (PKR/sqft)</label><input type="number" step="any" value="${esc(tier.ratePerSqft||'')}" oninput="scaleTierEdit(${si},${ti},'ratePerSqft',this.value)" style="width:100%"></div>
+    <button class="btn sm ghost danger" style="margin-top:16px" onclick="scaleDelTier(${si},${ti})">×</button>
+  </div>`;
+}
+function scaleRenderTiers(si){
+  const wrap=document.getElementById(`scale_tiers_${si}`); if(!wrap)return;
+  const tiers=(window.__scaleForms[si]||{}).tiers||[];
+  wrap.innerHTML=tiers.length?tiers.map((t,ti)=>scaleTierRowHtml(si,ti,t)).join(""):'<div class="help" style="font-size:12px">No tiers yet — click "+ Add Tier"</div>';
+}
+function scaleTierEdit(si,ti,field,val){
+  if(!window.__scaleForms[si])return;
+  const tiers=window.__scaleForms[si].tiers||[];
+  if(!tiers[ti])return;
+  tiers[ti][field]=parseFloat(val)||0;
+}
+function scaleAddTier(si){
+  if(!window.__scaleForms[si])return;
+  window.__scaleForms[si].tiers=window.__scaleForms[si].tiers||[];
+  window.__scaleForms[si].tiers.push({minSqft:0,maxSqft:0,ratePerSqft:0});
+  scaleRenderTiers(si);
+}
+function scaleDelTier(si,ti){
+  if(!window.__scaleForms[si])return;
+  window.__scaleForms[si].tiers.splice(ti,1);
+  scaleRenderTiers(si);
+}
+function readScale(si){
+  if(!window.__scaleForms[si])return null;
+  const f=window.__scaleForms[si];
+  return {
+    id:f.id,
+    name:(document.getElementById(`sf_name_${si}`)||{}).value||"",
+    product:(document.getElementById(`sf_product_${si}`)||{}).value||"",
+    notes:(document.getElementById(`sf_notes_${si}`)||{}).value||"",
+    active:((document.getElementById(`sf_active_${si}`)||{}).checked!==false),
+    tiers:f.tiers||[]
+  };
+}
+async function addScale(si){
+  const sc=readScale(si);
+  if(!sc.name){toast("Scale name required");return;}
+  const isNew=!sc.id;
+  if(isNew){ sc.id=nextScaleId(); sc.created_at=new Date().toISOString(); }
+  const btn=document.getElementById(`sf_save_${si}`);
+  if(btn){btn.disabled=true;btn.textContent="Saving…";}
+  try{
+    if(isNew){ state.scales.push(sc); } else { const idx=state.scales.findIndex(x=>x.id===sc.id); if(idx>=0) state.scales[idx]=sc; }
+    await upsert("scales",sc);
+    toast((isNew?"Added":"Updated")+" scale "+sc.id);
+    renderScales();
+  }catch(e){
+    toast("Error: "+e.message);
+    if(btn){btn.disabled=false;btn.textContent="Save";}
+  }
+}
+async function del_scale(id){
+  if(!confirm("Delete scale "+id+"? This cannot be undone."))return;
+  state.scales=state.scales.filter(x=>x.id!==id);
+  await remove("scales",id);
+  toast("Scale deleted");
+  renderScales();
+}
+function edit_scale(id){
+  const sc=state.scales.find(x=>x.id===id);
+  if(!sc)return;
+  scaleForm(sc);
+}
+function scaleForm(sc){
+  sc=sc||{};
+  const isNew=!sc.id;
+  const si=Date.now();
+  window.__scaleForms=window.__scaleForms||{};
+  window.__scaleForms[si]={id:sc.id||null,tiers:JSON.parse(JSON.stringify(sc.tiers||[]))};
+  const products=["Saif Tough (Tempered)","Saif Lam (Annealed Laminated)","Saif Cool (Double Glaze)","Saif Armour (Multi-Lam)","Saif Curve (Bent)","Clear Float (Annealed)","Frosted","Beveled","Other"];
+  const html=`<div class="card" style="margin-bottom:12px;padding:14px;border:1px solid var(--border)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <b>${isNew?"New Scale":"Edit Scale — "+esc(sc.id)}</b>
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px">
+        <input type="checkbox" id="sf_active_${si}"${sc.active!==false?" checked":""}> Active
+      </label>
+    </div>
+    <div class="formgrid">
+      <div class="field"><label>Scale ID</label><input class="calc" readonly value="${esc(sc.id||nextScaleId())}"></div>
+      <div class="field"><label>Name *</label><input id="sf_name_${si}" value="${esc(sc.name||"")}" placeholder="e.g. Tempered Standard"></div>
+      <div class="field"><label>Product</label><select id="sf_product_${si}">
+        ${products.map(p=>`<option value="${esc(p)}"${(sc.product||"")==p?" selected":""}>${esc(p)}</option>`).join("")}
+      </select></div>
+      <div class="field full"><label>Notes</label><textarea id="sf_notes_${si}" rows="2">${esc(sc.notes||"")}</textarea></div>
+    </div>
+    <div style="margin-top:10px">
+      <b style="font-size:13px">Price Tiers</b>
+      <div id="scale_tiers_${si}" style="margin:6px 0"></div>
+      <button class="btn sm ghost" onclick="scaleAddTier(${si})">+ Add Tier</button>
+    </div>
+    <div style="margin-top:12px;display:flex;gap:8px">
+      <button id="sf_save_${si}" class="btn primary" onclick="addScale(${si})">Save</button>
+      <button class="btn ghost" onclick="renderScales()">Cancel</button>
+      ${!isNew?`<button class="btn danger" onclick="del_scale('${esc(sc.id)}')">Delete</button>`:""}
+    </div>
+  </div>`;
+  const wrap=document.getElementById("scale_form_area");
+  if(wrap){wrap.innerHTML=html; scaleRenderTiers(si);}
+}
+function renderScales(v){
+  window.__scaleForms=window.__scaleForms||{};
+  const rows=state.scales.slice().sort((a,b)=>(a.name||"").localeCompare(b.name||""));
+  const body=rows.length?rows.map(sc=>{
+    const tierSummary=sc.tiers&&sc.tiers.length
+      ?sc.tiers.map(t=>`${t.minSqft}–${t.maxSqft} sqft @ PKR ${t.ratePerSqft}/sqft`).join("; ")
+      :"No tiers";
+    return `<tr>
+      <td>${esc(sc.id)}</td>
+      <td><b>${esc(sc.name)}</b></td>
+      <td>${esc(sc.product||"")}</td>
+      <td style="font-size:12px;color:var(--text2)">${esc(tierSummary)}</td>
+      <td><span class="badge ${sc.active!==false?"success":"neutral"}">${sc.active!==false?"Active":"Inactive"}</span></td>
+      <td>
+        <button class="btn xs ghost" onclick="edit_scale('${esc(sc.id)}')">Edit</button>
+        <button class="btn xs ghost danger" onclick="del_scale('${esc(sc.id)}')">Del</button>
+      </td>
+    </tr>`;
+  }).join(""):`<tr><td colspan="6" class="help" style="text-align:center;padding:24px">No scales yet — click "+ New Scale" to create one.</td></tr>`;
+  document.getElementById("main").innerHTML=`
+    <div class="page-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h2 style="margin:0">Scale / Rates</h2>
+      <button class="btn primary" onclick="scaleForm()">+ New Scale</button>
+    </div>
+    <div id="scale_form_area"></div>
+    <table class="table"><thead><tr>
+      <th>ID</th><th>Name</th><th>Product</th><th>Tiers</th><th>Status</th><th>Actions</th>
+    </tr></thead><tbody>${body}</tbody></table>`;
+}
 function renderDocuments(v){
   const rows=vDocuments().filter(matchSearch).slice().sort((a,b)=>(b.uploadedAt||"").localeCompare(a.uploadedAt||""));
   const body=rows.length?rows.map(d=>{
