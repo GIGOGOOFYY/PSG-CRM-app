@@ -3625,8 +3625,8 @@ function waAdminCard(){
       <div class="settings-row" style="max-width:260px"><label class="help">Open messages in</label><select id="wa_mode"><option value="app" ${waMode()==="app"?"selected":""}>WhatsApp Desktop app</option><option value="web" ${waMode()==="web"?"selected":""}>WhatsApp Web (browser)</option><option value="phone" ${waMode()==="phone"?"selected":""}>wa.me universal link</option></select></div>
     </div>
     <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:10px">
-      <div class="settings-row" style="max-width:340px"><label class="help">Bot Worker URL (for Handoff Chat)</label><input id="wa_worker_url" placeholder="https://psg-whatsapp-bot.workers.dev" value="${esc(cfg.waWorkerUrl||\"\")}"></div>
-      <div class="settings-row" style="max-width:300px"><label class="help">Handoff API Key (LISTENER_API_KEY)</label><input id="wa_api_key" type="password" placeholder="•••• paste key" value="${esc(cfg.waApiKey||\"\")}"></div>
+      <div class="settings-row" style="max-width:340px"><label class="help">Bot Worker URL (for Handoff Chat)</label><input id="wa_worker_url" placeholder="https://psg-whatsapp-bot.workers.dev" value="${esc(cfg.waWorkerUrl||"")}"></div>
+      <div class="settings-row" style="max-width:300px"><label class="help">Handoff API Key (LISTENER_API_KEY)</label><input id="wa_api_key" type="password" placeholder="•••• paste key" value="${esc(cfg.waApiKey||"")}"></div>
     </div>
     <div class="help" style="margin-bottom:12px">Merge fields: {company} {contact} {rep} {city} {status} {product} {dealValue} {quoteNo} {poNumber} {date} {time} {type} {agenda} {location}</div>
     ${rows}
