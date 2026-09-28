@@ -950,7 +950,7 @@ function vClients(){
   const fromClients=state.clients.filter(c=>c.accountType!=="Vendor"&&c.accountType!=="Supplier");
   const fromAccounts=state.accounts.map(a=>({id:a.id,company:a.name||'',contact:'',city:a.city||'',industry:a.industry||'',assignedTo:a.assignedTo||'',_fromAccount:true}));
   const all=[...fromClients,...fromAccounts];
-  const r=myRep(); return r? all.filter(c=>c.assignedTo===r||!c.assignedTo) : all;
+  const r=myRep(); return r? all.filter(c=>c._fromAccount||c.assignedTo===r||!c.assignedTo) : all;
 }
 function vVendors(){ return state.clients.filter(c=>c.accountType==="Vendor" || c.accountType==="Supplier"); }
 function findClientOrAccount(id){
@@ -1774,7 +1774,7 @@ function allClientsForSelect(){
   const fromAccounts=state.accounts.map(a=>({id:a.id,company:a.name||'',contact:'',city:a.city||'',industry:a.industry||'',assignedTo:a.assignedTo||'',_fromAccount:true}));
   return [...fromClients,...fromAccounts];
 }
-function clientOptions(val){ const rep=myRep(); let list=allClientsForSelect().slice().sort((a,b)=>(a.company||a.contact||'').localeCompare(b.company||b.contact||'')); if(rep) list=list.filter(c=>!c.assignedTo||c.assignedTo===rep); return `<option value=""></option>`+list.map(c=>`<option value="${esc(c.id)}" ${c.id===val?"selected":""}>${esc(c.company||c.contact||c.id)} (${esc(c.id)})</option>`).join(""); }
+function clientOptions(val){ const rep=myRep(); let list=allClientsForSelect().slice().sort((a,b)=>(a.company||a.contact||'').localeCompare(b.company||b.contact||'')); if(rep) list=list.filter(c=>c._fromAccount||!c.assignedTo||c.assignedTo===rep); return `<option value=""></option>`+list.map(c=>`<option value="${esc(c.id)}" ${c.id===val?"selected":""}>${esc(c.company||c.contact||c.id)} (${esc(c.id)})</option>`).join(""); }
 function callForm(c){
   c=c||{}; const rep=myRep();
   const sel=(key,val,extra)=>`<select id="f_${key}"><option value=""></option>${vocab(key,extra).map(o=>`<option ${o===val?"selected":""}>${esc(o)}</option>`).join("")}</select>`;
