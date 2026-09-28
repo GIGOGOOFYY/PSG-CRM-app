@@ -908,13 +908,13 @@ function startAutoRefresh(){
   }, 20000);
 }
 async function upsert(kind, obj){
-  saveLocal();
+  try{ saveLocal(); }catch(e){ console.warn('[saveLocal]',e.message); }
   if(sb){ try{ const {error}=await sb.from(MAP[kind].table).upsert(MAP[kind].to(obj)); if(error) throw error; cloudOK=true; }
           catch(e){ cloudOK=false; toast("Saved locally — cloud sync failed"); } }
   renderConn();
 }
 async function remove(kind, id){
-  saveLocal();
+  try{ saveLocal(); }catch(e){ console.warn('[saveLocal]',e.message); }
   if(sb){ try{ const {error}=await sb.from(MAP[kind].table).delete().eq(MAP[kind].pk, id); if(error) throw error; cloudOK=true; }
           catch(e){ cloudOK=false; toast("Deleted locally — cloud sync failed"); } }
   renderConn();
@@ -3504,7 +3504,7 @@ function openModal(title, bodyHtml, onSave, afterOpen){
   document.getElementById("modalMount").innerHTML=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal"><header><h3>${esc(title)}</h3><button class="iconbtn" onclick="closeModal()">✕</button></header><div class="body">${bodyHtml}</div><footer><button class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn primary" onclick="modalCommit()">Save</button></footer></div></div>`;
   if(afterOpen) setTimeout(afterOpen,0);
 }
-async function modalCommit(){ if(modalSave){ const r=await modalSave(); /* return false to keep open */ } }
+async function modalCommit(){ if(modalSave){ try{ const r=await modalSave(); }catch(e){ toast("Error: "+e.message); console.error('[modalCommit]',e); } } }
 function closeModal(){ document.getElementById("modalMount").innerHTML=""; modalSave=null; }
 function confirmDel(msg,fn){ openModal("Please confirm", `<p style="margin:4px 0 0">${esc(msg)}</p>`, async()=>{ await fn(); closeModal(); }); }
 function toast(m){ const t=document.getElementById("toast"); t.textContent=m; t.classList.add("show"); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove("show"),2200); }
@@ -3630,9 +3630,9 @@ async function waSendViaBot(num,msg){
   closeModal();
   toast("Sending quotation via WhatsApp bot…");
   try{
-    const r=await fetch(cfg.waWorkerUrl+"/wa-send-quote",{
+    const r=await fetch("/api/send-quote",{
       method:"POST",
-      headers:{"Content-Type":"application/json","X-API-Key":cfg.waApiKey},
+      headers:{"Content-Type":"application/json","X-API-Key":cfg.waApiKey,"X-Worker-Base":cfg.waWorkerUrl},
       body:JSON.stringify({phone,pdfBase64,filename:ctx.pdfFilename||"quotation.pdf",caption:msg,repName:session&&session.repName||""})
     });
     const d=await r.json();
