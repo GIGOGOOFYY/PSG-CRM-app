@@ -3454,12 +3454,13 @@ window.renderDashboard=function(v){
 
   const tbl=(items,cols,empty,rowFn)=>items.length?`<table class="mini-tbl"><thead><tr>${cols.map(c=>`<th>${c}</th>`).join("")}</tr></thead><tbody>${items.map(rowFn).join("")}</tbody></table>`:`<div class="card-empty">${empty}</div>`;
 
-  const sc=STAGE_ORDER.map(s=>myC.filter(c=>(c.recordType||"")===s).length);
+  const PIPE_SHORT7={'New Lead':'New Lead','Contacted':'Contacted','Qualified':'Qualified','Requirement Received':'Req. Recd','Quotation Sent':'Quote Sent','Negotiation':'Negotiation','Won – Order Confirmed':'Won'};
+  const sc=PIPELINE_STAGES.map(s=>myD.filter(d=>(d.stage||'')=== s).length);
   const mx=Math.max(...sc,1);
   const pipeHtml=`<div class="hcard">
     <div class="hcard-hd"><h3>Pipeline</h3></div>
     <div style="padding:10px 18px 14px;flex:1;min-height:0">
-      <div class="pipe-bars">${STAGE_ORDER.map((s,i)=>`<div class="pipe-col"><div class="pipe-bar" style="height:${Math.max(6,(sc[i]/mx)*60)}px" title="${s}: ${sc[i]}"></div><div class="pipe-lbl">${PIPE_SHORT[s]||s}<br><b>${sc[i]}</b></div></div>`).join("")}</div>
+      <div class="pipe-bars">${PIPELINE_STAGES.map((s,i)=>`<div class="pipe-col"><div class="pipe-bar" style="height:${Math.max(6,(sc[i]/mx)*60)}px" title="${s}: ${sc[i]}"></div><div class="pipe-lbl">${PIPE_SHORT7[s]||s}<br><b>${sc[i]}</b></div></div>`).join("")}</div>
     </div></div>`;
 
 
