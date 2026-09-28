@@ -597,7 +597,7 @@ const SIDEBAR_NAV = [
   { section:"Inventory", items:[
     { id:"_prod",     icon:"package",        label:"Products",        route:"products" },
     { id:"_price",    icon:"tag",            label:"Price Books",     route:"priceBooks" },
-    { id:"_scales",   icon:"layers",         label:"Scale / Rates",   route:"scales" },
+    { id:"_scales",   icon:"layers",         label:"Scale / Rates",   route:"scales",  adminOnly:true },
     { id:"_quotes",   icon:"clipboard",      label:"Quotes",          route:"quotes" },
     { id:"_so",       icon:"shopping-cart",  label:"Sales Orders",    route:"salesOrders" },
     { id:"_po",       icon:"truck",          label:"Purchase Orders", route:"purchaseOrders" },
@@ -701,7 +701,7 @@ const DD = {
   reps:["Ahmed","Noor","Asma","Danish","Mehboob","Ali Saad","Hatim","Waseem"],
   meetingType:["Site Visit","Product Demo","Proposal Review","Negotiation","Closing Meeting","Follow-Up","Intro Meeting","Presentation","Video Call"],
   meetingStatus:["Scheduled","Completed","Cancelled","Postponed","Rescheduled"],
-  product:["Tempered 6mm","Tempered 8mm","Tempered 10mm","Tempered 12mm","DGU 4+9+4mm","DGU 6+12+6mm","DGU 8+12+8mm","Laminated Glass","Fire-Rated Glass","Frosted Tempered","Bent/Curved Glass","Printed Glass"],
+  product:["Tempered 6mm","Tempered 8mm","Tempered 10mm","Tempered 12mm","DGU 4+9+4mm","DGU 6+12+6mm","DGU 8+12+8mm","Laminated Glass","Fire-Rated Glass","Frosted Tempered","Bent/Curved Glass","Printed Glass","Saif Tough 6mm","Saif Tough 8mm","Saif Tough 10mm","Saif Tough 12mm","Cool 6mm","Cool 8mm","Cool 10mm","Lam 6+6mm","Lam 8+8mm","Lam 10+10mm","Curve 6mm","Curve 8mm","Curve 10mm"],
   collectStatus:["Received","Partial","Pending"],
   yesno:["Yes","No"],
   interest:["1","2","3","4","5"],
@@ -1945,7 +1945,7 @@ function dealForm(d){ d=d||{}; const rep=myRep();
     <div class="field"><label>Qty (sqft)</label><input id="f_qty" type="number" step="any" value="${esc(d.qty||"")}" oninput="calcDeal()"></div>
     <div class="field"><label>Unit Price (PKR)</label><input id="f_unitPrice" type="number" step="any" value="${esc(d.unitPrice||"")}" oninput="calcDeal()"></div>
     <div class="field"><label>Deal Value (auto)</label><input id="f_dealValue" class="calc" readonly value=""><div class="help">Qty × Unit Price</div></div>
-    <div class="field"><label>Commission Rate %</label><input id="f_commRate" type="number" step="any" value="${esc(d.commRate!=null?d.commRate:repCommRate(d.rep||rep))}" oninput="calcDeal()"></div>
+    <div class="field"><label>Commission Rate %</label><input id="f_commRate" type="number" step="any" value="${esc(d.commRate!=null?d.commRate:repCommRate(d.rep||rep))}" ${isAdmin()?'oninput="calcDeal()"':'readonly class="calc"'}></div>
     <div class="field"><label>Commission (auto)</label><input id="f_commEarned" class="calc" readonly value=""><div class="help">Collected × rate% (collected = value if “Received”)</div></div>
     <div class="field full"><label>Remarks</label><textarea id="f_remarks">${esc(d.remarks||"")}</textarea></div>
   </div>`;
@@ -3120,7 +3120,7 @@ function quoteItemRowHtml(i,it){
     <div class="field"><label>Code (auto)</label><input id="qi_code_${i}" class="calc" readonly value="${esc((window.__quoteGqSerial||1)+"/"+(i+1))}"></div>
     <div class="field full"><label>Description</label><input id="qi_desc_${i}" list="dl_products" value="${esc(it.desc||"")}" oninput="quoteItemEdit(${i},'desc',this.value)"></div>
     ${unitSel}${sizeWHtml}${sizeHHtml}
-    <div class="field"><label>Scale</label><select id="qi_scale_${i}" onchange="quoteItemEdit(${i},'scale',this.value)" style="width:100%"><option value=""${!it.scale?' selected':''}>Actual</option>${[1,2,3,4].map(n=>`<option value="${n}"${parseInt(it.scale)===n?' selected':''}>Scale ${n}</option>`).join('')}</select></div>
+    <div class="field"><label>Scale${isAdmin()?' <span style="font-size:10px;color:var(--accent);font-weight:400">(admin only)</span>':'' }</label><select id="qi_scale_${i}" onchange="quoteItemEdit(${i},'scale',this.value)" style="width:100%" ${isAdmin()?'':' disabled'}><option value=""${!it.scale?' selected':''}>Actual</option>${[1,2,3,4].map(n=>`<option value="${n}"${parseInt(it.scale)===n?' selected':''}>Scale ${n}</option>`).join('')}</select></div>
     <div class="field"><label>Std SQFT</label><input id="qi_sqft_${i}" type="number" step="any" value="${esc(it.sqft||"")}" oninput="quoteItemEdit(${i},'sqft',this.value)"></div>
     <div class="field"><label>Pieces</label><input id="qi_pieces_${i}" type="number" step="any" value="${esc(it.pieces||"")}" oninput="quoteItemEdit(${i},'pieces',this.value)"></div>
     <div class="field"><label>SQFT Rate (PKR/sqft)</label><input id="qi_price_${i}" type="number" step="any" value="${esc(it.unitPrice||"")}" oninput="quoteItemEdit(${i},'unitPrice',this.value)"></div>
@@ -3177,7 +3177,7 @@ function quoteItemFrac(i,dim,val){
   const lineEl=document.getElementById("qi_line_"+i); if(lineEl) lineEl.value=PKR(quoteItemAmount(it));
   const t=document.getElementById("qi_total"); if(t)t.textContent=PKR(quoteTotal(window.__quoteItems));
 }
-function quoteAddItem(){ window.__quoteItems=window.__quoteItems||[]; window.__quoteItems.push({code:"",desc:"",sizeW:"",sizeH:"",sizeUnit:"mm",sizeWFrac:0,sizeHFrac:0,scale:0,sqft:"",pieces:"",unitPrice:"",type:"Glass"}); quoteRenderItems(); }
+function quoteAddItem(){ window.__quoteItems=window.__quoteItems||[]; window.__quoteItems.push({code:"",desc:"",sizeW:"",sizeH:"",sizeUnit:"mm",sizeWFrac:0,sizeHFrac:0,scale:1,sqft:"",pieces:"",unitPrice:"",type:"Glass"}); quoteRenderItems(); }
 function quoteDelItem(i){ window.__quoteItems.splice(i,1); quoteRenderItems(); }
 function quoteAttachFile(input){
   const f=input.files&&input.files[0]; if(!f)return;
@@ -3290,7 +3290,7 @@ function convertQuoteToDeal(id){
   toast("Deal created from quote"); go("deals");
 }
 function viewQuote(id){ window.__quoteViewId=id; go("quoteView"); }
-function quoteDisplayId(q){ return "GQ-"+(q.serialNo||1); }
+function quoteDisplayId(q){ return q.id||("GQ-"+(q.serialNo||1)); }
 function quoteSerialDisplay(q, c){
   const year=(q.quoteDate?new Date(q.quoteDate):new Date()).getFullYear();
   const serial=q.serialNo||1;
