@@ -459,6 +459,15 @@ td .help{font-size:11.5px;color:var(--muted);margin-top:1px;display:block}
 .formgrid .field label{display:block;font-size:12px;font-weight:600;margin-bottom:4px;color:var(--muted)}
 .formgrid .field input,.formgrid .field select,.formgrid .field textarea{width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px;background:var(--bg);color:var(--fg)}
 .formgrid .field textarea{min-height:60px;resize:vertical}
+
+/* ── Handoff Chat Bubbles ── */
+.chat-bubble-list{display:flex;flex-direction:column;gap:8px;min-height:180px;max-height:320px;overflow-y:auto;padding:8px;background:var(--panel2,#f5f7fa);border-radius:8px;border:1px solid var(--border,#e0e6ed);}
+.chat-bubble{max-width:80%;padding:8px 12px;border-radius:12px;word-break:break-word;}
+.chat-in{align-self:flex-start;background:#fff;border:1px solid var(--border,#e0e6ed);border-bottom-left-radius:2px;}
+.chat-out{align-self:flex-end;background:#0070c9;color:#fff;border-bottom-right-radius:2px;}
+.chat-text{font-size:13px;line-height:1.45;white-space:pre-wrap;}
+.chat-meta{font-size:10px;margin-top:3px;opacity:0.7;text-align:right;}
+.chat-in .chat-meta{text-align:left;}
 </style>
 </head>
 <body>
@@ -719,7 +728,7 @@ function loadCfg(){
     const saved=JSON.parse(localStorage.getItem("psgcrm_cfg"));
     if(saved && saved.url && saved.key) return saved;
   }catch(e){}
-  return {url:DEFAULT_SB_URL, key:DEFAULT_SB_KEY};
+  return {url:DEFAULT_SB_URL, key:DEFAULT_SB_KEY, waWorkerUrl:'', waApiKey:''};
 }
 function saveCfg(){ localStorage.setItem("psgcrm_cfg", JSON.stringify(cfg)); }
 
@@ -2377,6 +2386,7 @@ function renderPipeline(v){
         <span class="kcard-id">${esc(d.id)}</span>
         ${d.priority?`<span class="pill ${PRI_CLR[d.priority]||''} sm">${esc(d.priority)}</span>`:''}
         <button class="btn sm ghost" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();waPipelineDeal('${esc(d.id)}')" style="padding:2px 6px;font-size:11px;line-height:1;background:#25d366;color:#fff;border:none;border-radius:4px">💬 WA</button>
+        ${chatBtn(esc(d.id))}
         ${isAdmin()?`<button class="btn sm ghost danger kcard-del" onclick="event.stopPropagation();del_pipelineDeal('${esc(d.id)}')">✕</button>`:''}
       </div>
     </div>`).join('');
@@ -2465,6 +2475,10 @@ function pdRefreshCt(acctId){
 }
 function readPD(){const g=id=>document.getElementById('pd_'+id)?.value||'';
   return{title:g('title').trim(),accountId:g('accountId'),contactId:g('contactId'),stage:g('stage'),priority:g('priority'),assignedTo:g('assignedTo'),leadSource:g('leadSource'),rev:g('rev'),notes:g('notes')};}
+function chatBtn(id){
+  if(!cfg.waWorkerUrl) return '';
+  return '<button class="btn sm ghost" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();openChatPanel(\'' + id + '\')" style="padding:2px 6px;font-size:11px;line-height:1;background:#0070c9;color:#fff;border:none;border-radius:4px">📨 Chat</button>';
+}
 function waPipelineDeal(id){
   const d=state.pipelineDeals.find(x=>x.id===id);if(!d)return;
   const acct=state.accounts.find(x=>x.id===d.accountId)||{};
@@ -2477,6 +2491,105 @@ function waPipelineDeal(id){
   const curIdx=PIPELINE_STAGES.indexOf(d.stage||'New Lead');
   const tgtIdx=PIPELINE_STAGES.indexOf('Contacted');
   if(curIdx<tgtIdx){d.stage='Contacted';d.lastContact=today();upsert('pipelineDeals',d);toast('Pipeline → Contacted');}
+}
+/* ── Human Handoff Chat Panel ── */
+function openChatPanel(dealId){
+  if(!cfg.waWorkerUrl){toast('Configure Bot Worker URL in Admin → WhatsApp settings first');return;}
+  var d=state.pipelineDeals.find(function(x){return x.id===dealId;});if(!d)return;
+  var ct=state.contacts.find(function(x){return x.id===d.contactId;})||state.contacts.find(function(x){return x.accountId===d.accountId;})||{};
+  var acct=state.accounts.find(function(x){return x.id===d.accountId;})||{};
+  var phone=ct.phone||'';
+  if(!phone){toast('No phone number on this deal’s contact');return;}
+  var normPhone=waNormalize(phone);
+  if(!normPhone){toast('Invalid phone number');return;}
+  var repName=(session&&session.repName)||'Rep';
+  var label=ct.name||acct.name||d.title||'';
+  window._chatState={dealId:dealId,phone:normPhone,repName:repName,label:label,interval:null};
+  document.getElementById('modalMount').innerHTML=
+    '<div class="modal-bg" onclick="if(event.target===this)_chatClose()">'
+    +'<div class="modal" style="max-width:520px;width:96vw">'
+    +'<header><h3>📨 Chat · '+esc(label)+'</h3>'
+    +'<button class="iconbtn" onclick="_chatClose()">✕</button></header>'
+    +'<div class="body" style="padding:12px;display:flex;flex-direction:column;gap:0">'
+    +'<div id="chat_handoff_status" style="font-size:12px;margin-bottom:8px;color:#888">Loading…</div>'
+    +'<div id="chat_bubble_list" class="chat-bubble-list"></div>'
+    +'<div style="display:flex;gap:6px;margin-top:8px;align-items:flex-end">'
+    +'<textarea id="chat_input" placeholder="Type a message…" rows="2" style="flex:1;resize:none;font-size:13px" onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();chatSend();}"></textarea>'
+    +'<div style="display:flex;flex-direction:column;gap:4px">'
+    +'<button class="btn primary sm" onclick="chatSend()">Send ↑</button>'
+    +'<button class="btn ghost sm danger" onclick="chatEndHandoff()" style="font-size:11px;white-space:nowrap">End Handoff</button>'
+    +'</div></div>'
+    +'<div class="help" style="margin-top:4px">Enter = send · Shift+Enter = new line</div>'
+    +'</div></div></div>';
+  _chatLoadMessages();
+  window._chatState.interval=setInterval(_chatLoadMessages,5000);
+}
+function _chatClose(){
+  if(window._chatState&&window._chatState.interval){clearInterval(window._chatState.interval);}
+  window._chatState=null;
+  document.getElementById('modalMount').innerHTML='';
+}
+async function _chatLoadMessages(){
+  var s=window._chatState;if(!s||!cfg.waWorkerUrl)return;
+  try{
+    var r=await fetch(cfg.waWorkerUrl+'/wa-messages?phone='+encodeURIComponent(s.phone)+'&key='+encodeURIComponent(cfg.waApiKey));
+    if(!r.ok)return;
+    var j=await r.json();
+    _chatUpdateUI(j.messages||[],j.inHandoff||false);
+  }catch(e){console.warn('[chat]',e.message);}
+}
+function _chatUpdateUI(msgs,inHandoff){
+  var list=document.getElementById('chat_bubble_list');
+  var statusEl=document.getElementById('chat_handoff_status');
+  if(!list)return;
+  if(statusEl){
+    statusEl.textContent=inHandoff?'🟢 In Handoff — bot paused':'⚪ Bot Mode — bot handles this customer';
+    statusEl.style.color=inHandoff?'#1f7a4d':'#888';
+  }
+  var wasAtBottom=list.scrollHeight-list.scrollTop<=list.clientHeight+40;
+  if(!msgs.length){
+    list.innerHTML='<div style="text-align:center;color:#aaa;padding:20px;font-size:13px">No messages yet — send one to start the handoff</div>';
+  }else{
+    list.innerHTML=msgs.map(function(m){
+      var isOut=m.direction==='outbound';
+      var time=m.created_at?new Date(m.created_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):'';
+      return '<div class="chat-bubble '+(isOut?'chat-out':'chat-in')+'">'
+        +'<div class="chat-text">'+esc(m.message)+'</div>'
+        +'<div class="chat-meta">'+(isOut?esc(m.rep_name||'Rep')+' · ':'')+time+'</div>'
+        +'</div>';
+    }).join('');
+  }
+  if(wasAtBottom)list.scrollTop=list.scrollHeight;
+}
+async function chatSend(){
+  var s=window._chatState;if(!s)return;
+  var inp=document.getElementById('chat_input');if(!inp)return;
+  var msg=inp.value.trim();if(!msg)return;
+  inp.value='';inp.disabled=true;
+  try{
+    var r=await fetch(cfg.waWorkerUrl+'/wa-send',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-API-Key':cfg.waApiKey},
+      body:JSON.stringify({phone:s.phone,message:msg,repName:s.repName})
+    });
+    if(!r.ok){var t=await r.text();toast('Send failed: '+t);}
+    else{toast('Sent ✓');await _chatLoadMessages();}
+  }catch(e){toast('Network error: '+e.message);}
+  inp.disabled=false;
+  var inp2=document.getElementById('chat_input');if(inp2)inp2.focus();
+}
+async function chatEndHandoff(){
+  var s=window._chatState;if(!s)return;
+  if(!confirm('End handoff for '+s.phone+'? The bot will resume handling this customer.'))return;
+  try{
+    await fetch(cfg.waWorkerUrl+'/wa-end-handoff',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-API-Key':cfg.waApiKey},
+      body:JSON.stringify({phone:s.phone})
+    });
+    toast('Handoff ended — bot resumed');
+    _chatClose();
+  }catch(e){toast('Error: '+e.message);}
 }
 function addPipelineDeal(){
   openModal('New Deal',pdForm(),async()=>{
@@ -3511,13 +3624,17 @@ function waAdminCard(){
       <div class="settings-row" style="max-width:160px"><label class="help">Default country code</label><input id="wa_cc" value="${esc(waCountry())}"></div>
       <div class="settings-row" style="max-width:260px"><label class="help">Open messages in</label><select id="wa_mode"><option value="app" ${waMode()==="app"?"selected":""}>WhatsApp Desktop app</option><option value="web" ${waMode()==="web"?"selected":""}>WhatsApp Web (browser)</option><option value="phone" ${waMode()==="phone"?"selected":""}>wa.me universal link</option></select></div>
     </div>
+    <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:10px">
+      <div class="settings-row" style="max-width:340px"><label class="help">Bot Worker URL (for Handoff Chat)</label><input id="wa_worker_url" placeholder="https://psg-whatsapp-bot.workers.dev" value="${esc(cfg.waWorkerUrl||\"\")}"></div>
+      <div class="settings-row" style="max-width:300px"><label class="help">Handoff API Key (LISTENER_API_KEY)</label><input id="wa_api_key" type="password" placeholder="•••• paste key" value="${esc(cfg.waApiKey||\"\")}"></div>
+    </div>
     <div class="help" style="margin-bottom:12px">Merge fields: {company} {contact} {rep} {city} {status} {product} {dealValue} {quoteNo} {poNumber} {date} {time} {type} {agenda} {location}</div>
     ${rows}
     <div style="display:flex;gap:8px;margin-top:10px"><button class="btn ghost" onclick="waAddTpl()">＋ Add template</button><button class="btn primary" onclick="waSaveTpls()">Save WhatsApp settings</button></div>
   </div></div>`;
 }
 function waFromDom(){ const t=[]; let i=0; while(document.getElementById("wat_n_"+i)){ t.push({name:document.getElementById("wat_n_"+i).value,body:document.getElementById("wat_b_"+i).value}); i++; } return t; }
-function waSaveTpls(){ cfg.waCountry=(document.getElementById("wa_cc").value.replace(/[^0-9]/g,""))||"92"; const md=document.getElementById("wa_mode"); if(md)cfg.waMode=md.value; cfg.waTemplates=waFromDom().filter(t=>t.name.trim()); saveCfg(); toast("WhatsApp settings saved"); go("admin"); }
+function waSaveTpls(){ cfg.waCountry=(document.getElementById("wa_cc").value.replace(/[^0-9]/g,""))||"92"; const md=document.getElementById("wa_mode"); if(md)cfg.waMode=md.value; const wk=document.getElementById("wa_worker_url");if(wk)cfg.waWorkerUrl=wk.value.trim(); const ak=document.getElementById("wa_api_key");if(ak)cfg.waApiKey=ak.value.trim(); cfg.waTemplates=waFromDom().filter(t=>t.name.trim()); saveCfg(); toast("WhatsApp settings saved"); go("admin"); }
 function waAddTpl(){ cfg.waTemplates=waFromDom(); cfg.waTemplates.push({name:"New template",body:"Dear {contact}, "}); saveCfg(); go("admin"); }
 function waDelTpl(i){ const t=waFromDom(); t.splice(i,1); cfg.waTemplates=t; saveCfg(); go("admin"); }
 
