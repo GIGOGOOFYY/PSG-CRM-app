@@ -10,11 +10,11 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="/html2canvas.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <script>/* atob polyfill: strip whitespace so jsPDF font-metric base64 doesn't throw in Chromium */
 (function(){var _a=window.atob;window.atob=function(s){return _a(s.replace(/\s/g,""));};})();
 </script>
-<script src="/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js"></script>
 <style>
 /* ── Reset & Base ── */
 *{box-sizing:border-box;margin:0;padding:0}
@@ -597,7 +597,6 @@ const SIDEBAR_NAV = [
   { section:"Inventory", items:[
     { id:"_prod",     icon:"package",        label:"Products",        route:"products" },
     { id:"_price",    icon:"tag",            label:"Price Books",     route:"priceBooks" },
-    { id:"_scales",   icon:"layers",         label:"Scale / Rates",   route:"scales",  adminOnly:true },
     { id:"_quotes",   icon:"clipboard",      label:"Quotes",          route:"quotes" },
     { id:"_so",       icon:"shopping-cart",  label:"Sales Orders",    route:"salesOrders" },
     { id:"_po",       icon:"truck",          label:"Purchase Orders", route:"purchaseOrders" },
@@ -701,7 +700,7 @@ const DD = {
   reps:["Ahmed","Noor","Asma","Danish","Mehboob","Ali Saad","Hatim","Waseem"],
   meetingType:["Site Visit","Product Demo","Proposal Review","Negotiation","Closing Meeting","Follow-Up","Intro Meeting","Presentation","Video Call"],
   meetingStatus:["Scheduled","Completed","Cancelled","Postponed","Rescheduled"],
-  product:["Tempered 6mm","Tempered 8mm","Tempered 10mm","Tempered 12mm","DGU 4+9+4mm","DGU 6+12+6mm","DGU 8+12+8mm","Laminated Glass","Fire-Rated Glass","Frosted Tempered","Bent/Curved Glass","Printed Glass","Saif Tough 6mm","Saif Tough 8mm","Saif Tough 10mm","Saif Tough 12mm","Cool 6mm","Cool 8mm","Cool 10mm","Lam 6+6mm","Lam 8+8mm","Lam 10+10mm","Curve 6mm","Curve 8mm","Curve 10mm"],
+  product:["Tempered 6mm","Tempered 8mm","Tempered 10mm","Tempered 12mm","DGU 4+9+4mm","DGU 6+12+6mm","DGU 8+12+8mm","Laminated Glass","Fire-Rated Glass","Frosted Tempered","Bent/Curved Glass","Printed Glass"],
   collectStatus:["Received","Partial","Pending"],
   yesno:["Yes","No"],
   interest:["1","2","3","4","5"],
@@ -719,7 +718,7 @@ function activeRepNames(){ const emp=(state.users||[]).filter(u=>u.role==="emplo
 function vocab(key, extra){ const base = key==="reps" ? activeRepNames() : DD[key]; const s=[...base]; (extra||[]).forEach(v=>{ if(v && !s.includes(v)) s.push(v); }); return s; }
 
 /* ---------- state ---------- */
-let state = { users:[], clients:[], calls:[], meetings:[], deals:[], tasks:[], repTargets:[], quotes:[], salesOrders:[], invoices:[], purchaseOrders:[], products:[], campaigns:[], priceBooks:[], scales:[], documents:[], deliveryChallans:[], materialRequisitions:[], receivings:[], accounts:[], contacts:[], pipelineDeals:[] };
+let state = { users:[], clients:[], calls:[], meetings:[], deals:[], tasks:[], repTargets:[], quotes:[], salesOrders:[], invoices:[], purchaseOrders:[], products:[], campaigns:[], priceBooks:[], documents:[], deliveryChallans:[], materialRequisitions:[], receivings:[], accounts:[], contacts:[], pipelineDeals:[] };
 let session = null;          // {username, role, repName}
 const DEFAULT_SB_URL="https://qeyeonucnlsmbeomrrwt.supabase.co";
 const DEFAULT_SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFleWVvbnVjbmxzbWJlb21ycnd0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQxODk0OTksImV4cCI6MjA5OTc2NTQ5OX0.SmacOxNWOR4HLCOQf_gkHYHFTqBWMDNWrpFAKHP5nns";
@@ -845,9 +844,6 @@ const MAP = {
   priceBooks:{table:"crm_price_books", pk:"id",
     to:p=>({id:p.id,name:p.name,tier:p.tier||null,active:p.active!==false,notes:p.notes||null,items:p.items||[]}),
     from:r=>({id:r.id,name:r.name,tier:r.tier||"",active:r.active!==false,notes:r.notes||"",items:r.items||[]}) },
-  scales:{table:"crm_scales", pk:"id",
-    to:s=>({id:s.id,name:s.name,product:s.product||null,notes:s.notes||null,tiers:s.tiers||[],active:s.active!==false,created_at:s.created_at||new Date().toISOString(),updated_at:new Date().toISOString()}),
-    from:r=>({id:r.id,name:r.name||"",product:r.product||"",notes:r.notes||"",tiers:r.tiers||[],active:r.active!==false,created_at:r.created_at||"",updated_at:r.updated_at||""}) },
   documents:{table:"crm_documents", pk:"id",
     to:d=>({id:d.id,name:d.name,type:d.type||null,client_id:d.clientId||null,company:d.company||null,file_name:d.fileName||null,file_type:d.fileType||null,file_size:num(d.fileSize),file_data:d.fileData||null,notes:d.notes||null,uploaded_by:d.uploadedBy||null,uploaded_at:d.uploadedAt||null}),
     from:r=>({id:r.id,name:r.name,type:r.type||"",clientId:r.client_id||"",company:r.company||"",fileName:r.file_name||"",fileType:r.file_type||"",fileSize:r.file_size,fileData:r.file_data||"",notes:r.notes||"",uploadedBy:r.uploaded_by||"",uploadedAt:r.uploaded_at||""}) },
@@ -872,7 +868,7 @@ function initSupabase(){
 async function cloudPull(){
   if(!sb) return false;
   let anyOK=false;
-  for(const k of ["users","clients","calls","meetings","deals","tasks","repTargets","quotes","salesOrders","invoices","purchaseOrders","products","campaigns","priceBooks","scales","documents","deliveryChallans","materialRequisitions","receivings","accounts","contacts","pipelineDeals"]){
+  for(const k of ["users","clients","calls","meetings","deals","tasks","repTargets","quotes","salesOrders","invoices","purchaseOrders","products","campaigns","priceBooks","documents","deliveryChallans","materialRequisitions","receivings","accounts","contacts","pipelineDeals"]){
     try{
       const PAGE=1000; let all=[]; let offset=0;
       while(true){
@@ -1041,7 +1037,7 @@ function renderConn(){
 function go(r){ route=r; searchTerm=""; renderSidebar(); renderRoute(); window.scrollTo(0,0); }
 function renderRoute(){
   const v=document.getElementById("view");
-  ({dashboard:renderDashboard,analytics:renderAnalytics,clients:renderClients,leads:renderLeadsOnly,clientsOnly:renderClientsOnly,prospects:renderProspectsOnly,tasks:renderTasks,calls:renderCalls,meetings:renderMeetings,deals:renderDeals,quotes:renderQuotes,quoteView:renderQuoteView,performance:renderPerformance,admin:renderAdmin,salesOrders:renderSalesOrders,invoices:renderInvoices,accounts:renderAccounts,contacts:renderContacts,pipeline:renderPipeline,purchaseOrders:renderPurchaseOrders,deliveryChallans:renderDeliveryChallans,materialRequisitions:renderMaterialRequisitions,receivings:renderReceivings,vendors:renderVendors,products:renderProducts,campaigns:renderCampaigns,priceBooks:renderPriceBooks,scales:renderScales,documents:renderDocuments}[route]||renderDashboard)(v);
+  ({dashboard:renderDashboard,analytics:renderAnalytics,clients:renderClients,leads:renderLeadsOnly,clientsOnly:renderClientsOnly,prospects:renderProspectsOnly,tasks:renderTasks,calls:renderCalls,meetings:renderMeetings,deals:renderDeals,quotes:renderQuotes,quoteView:renderQuoteView,performance:renderPerformance,admin:renderAdmin,salesOrders:renderSalesOrders,invoices:renderInvoices,accounts:renderAccounts,contacts:renderContacts,pipeline:renderPipeline,purchaseOrders:renderPurchaseOrders,deliveryChallans:renderDeliveryChallans,materialRequisitions:renderMaterialRequisitions,receivings:renderReceivings,vendors:renderVendors,products:renderProducts,campaigns:renderCampaigns,priceBooks:renderPriceBooks,documents:renderDocuments}[route]||renderDashboard)(v);
 }
 
 /* ======================================================================
@@ -1916,7 +1912,7 @@ async function unapproveTask(id){ const t=state.tasks.find(x=>x.id===id); if(!t|
 function renderDeals(v){
   const rows=vDeals().filter(matchSearch);
   const body=rows.length?rows.map(d=>`<tr>
-    <td>${esc(d.quoteNo||d.id)}</td><td>${esc(d.closeDate)}</td><td>${esc(d.rep)}</td>
+    <td>${esc(d.id)}</td><td>${esc(d.closeDate)}</td><td>${esc(d.rep)}</td>
     <td><b>${esc(d.company)}</b></td><td>${esc(d.product)}</td>
     <td class="num">${esc(d.qty)}</td><td class="num">${PKR(d.unitPrice)}</td>
     <td class="num"><b>${PKR(dealValue(d))}</b></td>
@@ -1928,7 +1924,7 @@ function renderDeals(v){
     :`<tr><td colspan="13"><div class="empty">No deals yet.</div></td></tr>`;
   const total=rows.reduce((s,d)=>s+dealValue(d),0), coll=rows.reduce((s,d)=>s+dealCollected(d),0);
   v.innerHTML=pagehead("Sales Tracker","Deals — "+vDeals().length+" · Value "+PKR(total)+" · Collected "+PKR(coll)+(isAdmin()?"":" (yours)"),"Add Deal","addDeal()",true)+
-   `<div class="card tablewrap"><table><thead><tr><th>Quote ID</th><th>Close</th><th>Rep</th><th>Client</th><th>Product</th><th class="num">Qty (sqft)</th><th class="num">Unit ₨</th><th class="num">Deal Value</th><th>Collection</th><th class="num">Collected</th><th class="num">Rate</th><th class="num">Commission</th><th></th></tr></thead><tbody>${body}</tbody></table></div>`;
+   `<div class="card tablewrap"><table><thead><tr><th>Deal ID</th><th>Close</th><th>Rep</th><th>Client</th><th>Product</th><th class="num">Qty (sqft)</th><th class="num">Unit ₨</th><th class="num">Deal Value</th><th>Collection</th><th class="num">Collected</th><th class="num">Rate</th><th class="num">Commission</th><th></th></tr></thead><tbody>${body}</tbody></table></div>`;
 }
 function collPill(s){ const c={Received:"green",Partial:"amber",Pending:"gray"}[s]||"gray"; return `<span class="pill ${c}">${esc(s||"")}</span>`; }
 function dealForm(d){ d=d||{}; const rep=myRep();
@@ -1945,7 +1941,7 @@ function dealForm(d){ d=d||{}; const rep=myRep();
     <div class="field"><label>Qty (sqft)</label><input id="f_qty" type="number" step="any" value="${esc(d.qty||"")}" oninput="calcDeal()"></div>
     <div class="field"><label>Unit Price (PKR)</label><input id="f_unitPrice" type="number" step="any" value="${esc(d.unitPrice||"")}" oninput="calcDeal()"></div>
     <div class="field"><label>Deal Value (auto)</label><input id="f_dealValue" class="calc" readonly value=""><div class="help">Qty × Unit Price</div></div>
-    <div class="field"><label>Commission Rate %</label><input id="f_commRate" type="number" step="any" value="${esc(d.commRate!=null?d.commRate:repCommRate(d.rep||rep))}" ${isAdmin()?'oninput="calcDeal()"':'readonly class="calc"'}></div>
+    <div class="field"><label>Commission Rate %</label><input id="f_commRate" type="number" step="any" value="${esc(d.commRate!=null?d.commRate:repCommRate(d.rep||rep))}" oninput="calcDeal()"></div>
     <div class="field"><label>Commission (auto)</label><input id="f_commEarned" class="calc" readonly value=""><div class="help">Collected × rate% (collected = value if “Received”)</div></div>
     <div class="field full"><label>Remarks</label><textarea id="f_remarks">${esc(d.remarks||"")}</textarea></div>
   </div>`;
@@ -2935,50 +2931,6 @@ function docRemoveFile(){ window.__docFileData=""; window.__docFileName=""; wind
   const s=document.getElementById("df_filename"); if(s)s.textContent="No file attached"; const inp=document.getElementById("df_file"); if(inp)inp.value=""; }
 function docDownload(id){ const d=state.documents.find(x=>x.id===id); if(!d||!d.fileData){toast("No file stored for this document");return;}
   const a=document.createElement("a"); a.href=d.fileData; a.download=d.fileName||d.name||"document"; document.body.appendChild(a); a.click(); a.remove(); }
-const SCALE_TABLES={
-  1:[[0,1,1],[1,1.5,1.5],[1.5,2,2],[2,2.5,2.5],[2.5,3,3],[3,3.5,3.5],[3.5,4,4],[4,5,5],[5,6,6],[6,7,7],[7,8,8],[8,9,9],[9,10,10],[10,11,11],[11,12,12],[12,13,13],[13,14,14],[14,15,15],[15,16,16]],
-  2:[[0,1,1],[1,1.5,1.5],[1.5,2,2],[2,2.5,2.5],[2.5,3,3],[3,3.5,3.5],[3.5,4,4],[4,4.5,4.5],[4.5,5,5],[5,5.5,5.5],[5.5,6,6],[6,6.5,6.5],[6.5,7,7],[7,7.5,7.5],[7.5,8,8],[8,9,9],[9,10,10],[10,11,11],[11,12,12],[12,13,13],[13,14,14]],
-  3:[[0,1,1],[1,1.5,1.5],[1.5,2,2],[2,2.5,2.5],[2.5,3,3],[3,3.5,3.5],[3.5,4,4],[4,4.5,4.5],[4.5,5,5],[5,5.5,5.5],[5.5,6,6],[6,7,7],[7,8,8],[8,9,9],[9,10,10],[10,11,11],[11,12,12],[12,13,13],[13,14,14],[14,15,15],[15,16,16]],
-  4:[[0,1,1],[1,2,2],[2,3,3],[3,4,4],[4,5,5],[5,6,6],[6,7,7],[7,8,8],[8,9,9],[9,10,10],[10,11,11],[11,12,12],[12,14,14],[14,16,16]]
-};
-function applyScaleRounding(scale,dimFt){
-  const sc=parseInt(scale);const table=SCALE_TABLES[sc];
-  if(!table)return parseFloat(dimFt)||0;
-  const dim=parseFloat(dimFt)||0;if(dim<=0)return 0;
-  for(const[,to,val]of table){if(dim<=to)return val;}
-  return table[table.length-1][2];
-}
-function renderScales(v){
-  function scaleRows(sc){
-    const t=SCALE_TABLES[sc]||[];
-    return t.map(([from,to,val],idx)=>{
-      const wide=idx>0&&(to-from)>0.6;
-      return `<tr style="${wide?'background:var(--panel2)':''}"><td style="color:var(--text2)">${from}</td><td style="font-weight:600">${to}</td><td style="font-weight:700;color:var(--accent)">${val}</td></tr>`;
-    }).join('');
-  }
-  const scaleInfo=[
-    {n:1,label:'Scale 1',desc:'\u00bd ft steps \u2192 4 ft, then 1 ft \u2192 16 ft'},
-    {n:2,label:'Scale 2',desc:'\u00bd ft steps \u2192 8 ft, then 1 ft \u2192 14 ft'},
-    {n:3,label:'Scale 3',desc:'\u00bd ft steps \u2192 6 ft, then 1 ft \u2192 16 ft'},
-    {n:4,label:'Scale 4',desc:'1 ft steps \u2192 16 ft (2 ft bands above 12 ft)'},
-  ];
-  (v||document.getElementById("view")).innerHTML=`
-    <div class="page-header" style="margin-bottom:16px">
-      <h2 style="margin:0">Scale Reference</h2>
-      <p style="color:var(--text2);margin:6px 0 0;font-size:13px">Each dimension (W &amp; H) is rounded <b>up</b> independently. Billing sqft = Standard W \u00d7 Standard H.</p>
-    </div>
-    <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">
-      ${scaleInfo.map(s=>`
-        <div style="flex:1;min-width:170px;max-width:230px">
-          <div style="font-weight:700;font-size:15px;margin-bottom:2px">${s.label}</div>
-          <div style="font-size:11px;color:var(--text2);margin-bottom:8px">${s.desc}</div>
-          <table class="table" style="font-size:12px">
-            <thead><tr><th>From</th><th>To (ft)</th><th>Std</th></tr></thead>
-            <tbody>${scaleRows(s.n)}</tbody>
-          </table>
-        </div>`).join('')}
-    </div>`;
-}
 function renderDocuments(v){
   const rows=vDocuments().filter(matchSearch).slice().sort((a,b)=>(b.uploadedAt||"").localeCompare(a.uploadedAt||""));
   const body=rows.length?rows.map(d=>{
@@ -3120,8 +3072,7 @@ function quoteItemRowHtml(i,it){
     <div class="field"><label>Code (auto)</label><input id="qi_code_${i}" class="calc" readonly value="${esc((window.__quoteGqSerial||1)+"/"+(i+1))}"></div>
     <div class="field full"><label>Description</label><input id="qi_desc_${i}" list="dl_products" value="${esc(it.desc||"")}" oninput="quoteItemEdit(${i},'desc',this.value)"></div>
     ${unitSel}${sizeWHtml}${sizeHHtml}
-    <div class="field"><label>Scale${isAdmin()?' <span style="font-size:10px;color:var(--accent);font-weight:400">(admin only)</span>':'' }</label><select id="qi_scale_${i}" onchange="quoteItemEdit(${i},'scale',this.value)" style="width:100%" ${isAdmin()?'':' disabled'}><option value=""${!it.scale?' selected':''}>Actual</option>${[1,2,3,4].map(n=>`<option value="${n}"${parseInt(it.scale)===n?' selected':''}>Scale ${n}</option>`).join('')}</select></div>
-    <div class="field"><label>Std SQFT</label><input id="qi_sqft_${i}" type="number" step="any" value="${esc(it.sqft||"")}" oninput="quoteItemEdit(${i},'sqft',this.value)"></div>
+    <div class="field"><label>SQFT</label><input id="qi_sqft_${i}" type="number" step="any" value="${esc(it.sqft||"")}" oninput="quoteItemEdit(${i},'sqft',this.value)"></div>
     <div class="field"><label>Pieces</label><input id="qi_pieces_${i}" type="number" step="any" value="${esc(it.pieces||"")}" oninput="quoteItemEdit(${i},'pieces',this.value)"></div>
     <div class="field"><label>SQFT Rate (PKR/sqft)</label><input id="qi_price_${i}" type="number" step="any" value="${esc(it.unitPrice||"")}" oninput="quoteItemEdit(${i},'unitPrice',this.value)"></div>
     <div class="field"><label>Type</label><select id="qi_type_${i}" onchange="quoteItemEdit(${i},'type',this.value)"><option ${(it.type||"Glass")==="Glass"?"selected":""}>Glass</option><option ${it.type==="Hardware"?"selected":""}>Hardware</option></select></div>
@@ -3136,21 +3087,14 @@ function quoteRenderItems(){
 function quoteItemEdit(i,field,val){
   if(!window.__quoteItems[i])return;
   const strFields=["desc","code","type","sizeUnit"];
-  if(field==="scale")window.__quoteItems[i].scale=val?parseInt(val):0;
-  else window.__quoteItems[i][field]=strFields.includes(field)?val:num(val);
-  if(field==="sizeW"||field==="sizeH"||field==="scale"){
+  window.__quoteItems[i][field]=strFields.includes(field)?val:num(val);
+  if(field==="sizeW"||field==="sizeH"){
     const it=window.__quoteItems[i];
     const UNIT_TO_MM={mm:1,cm:10,'in':25.4,ft:304.8};
     const fac=UNIT_TO_MM[it.sizeUnit||'mm']||1;
-    const wMm=(num(it.sizeW)+(it.sizeUnit==='in'?num(it.sizeWFrac||0):0))*fac;
-    const hMm=(num(it.sizeH)+(it.sizeUnit==='in'?num(it.sizeHFrac||0):0))*fac;
-    if(wMm&&hMm){
-      const sc=parseInt(it.scale)||0;
-      if(sc>=1&&sc<=4){
-        it.sqft=Math.round(applyScaleRounding(sc,wMm/304.8)*applyScaleRounding(sc,hMm/304.8)*100)/100;
-      }else{it.sqft=Math.round((wMm*hMm/92903.04)*100)/100;}
-      const sq=document.getElementById("qi_sqft_"+i);if(sq)sq.value=it.sqft;
-    }
+    const w=(num(it.sizeW)+(it.sizeUnit==='in'?num(it.sizeWFrac||0):0))*fac;
+    const h=(num(it.sizeH)+(it.sizeUnit==='in'?num(it.sizeHFrac||0):0))*fac;
+    if(w&&h){ it.sqft=Math.round((w*h/92903.04)*100)/100; const sq=document.getElementById("qi_sqft_"+i); if(sq)sq.value=it.sqft; }
   }
   const lineEl=document.getElementById("qi_line_"+i); if(lineEl) lineEl.value=PKR(quoteItemAmount(window.__quoteItems[i]));
   const t=document.getElementById("qi_total"); if(t)t.textContent=PKR(quoteTotal(window.__quoteItems));
@@ -3165,19 +3109,13 @@ function quoteItemFrac(i,dim,val){
   if(!window.__quoteItems[i])return;
   window.__quoteItems[i][dim+'Frac']=parseFloat(val)||0;
   const it=window.__quoteItems[i];
-  const wMm=(num(it.sizeW)+num(it.sizeWFrac||0))*25.4;
-  const hMm=(num(it.sizeH)+num(it.sizeHFrac||0))*25.4;
-  if(wMm&&hMm){
-    const sc=parseInt(it.scale)||0;
-    if(sc>=1&&sc<=4){
-      it.sqft=Math.round(applyScaleRounding(sc,wMm/304.8)*applyScaleRounding(sc,hMm/304.8)*100)/100;
-    }else{it.sqft=Math.round((wMm*hMm/92903.04)*100)/100;}
-    const sq=document.getElementById("qi_sqft_"+i);if(sq)sq.value=it.sqft;
-  }
+  const w=(num(it.sizeW)+num(it.sizeWFrac||0))*25.4;
+  const h=(num(it.sizeH)+num(it.sizeHFrac||0))*25.4;
+  if(w&&h){ it.sqft=Math.round((w*h/92903.04)*100)/100; const sq=document.getElementById("qi_sqft_"+i); if(sq)sq.value=it.sqft; }
   const lineEl=document.getElementById("qi_line_"+i); if(lineEl) lineEl.value=PKR(quoteItemAmount(it));
   const t=document.getElementById("qi_total"); if(t)t.textContent=PKR(quoteTotal(window.__quoteItems));
 }
-function quoteAddItem(){ window.__quoteItems=window.__quoteItems||[]; window.__quoteItems.push({code:"",desc:"",sizeW:"",sizeH:"",sizeUnit:"mm",sizeWFrac:0,sizeHFrac:0,scale:1,sqft:"",pieces:"",unitPrice:"",type:"Glass"}); quoteRenderItems(); }
+function quoteAddItem(){ window.__quoteItems=window.__quoteItems||[]; window.__quoteItems.push({code:"",desc:"",sizeW:"",sizeH:"",sizeUnit:"mm",sizeWFrac:0,sizeHFrac:0,sqft:"",pieces:"",unitPrice:"",type:"Glass"}); quoteRenderItems(); }
 function quoteDelItem(i){ window.__quoteItems.splice(i,1); quoteRenderItems(); }
 function quoteAttachFile(input){
   const f=input.files&&input.files[0]; if(!f)return;
@@ -3379,35 +3317,11 @@ function quoteLetterheadHtml(q){
       </div>
     </div>`;
 }
-async function approveQuote(quoteId){
-  const q=state.quotes.find(x=>x.id===quoteId);
-  if(!q){toast("Quote not found");return;}
-  if(!q.clientId){toast("This quote is not linked to a client record");return;}
-  const c=state.clients.find(x=>x.id===q.clientId);
-  if(!c){toast("Client record not found (ID: "+q.clientId+")");return;}
-  const TARGET='Quotation Approved';
-  const curRank=stageRank(c.recordType);
-  const targetRank=stageRank(TARGET);
-  if(curRank>=targetRank){
-    toast("Already at or past Quotation Approved — current stage: "+(c.recordType||"?"));
-    return;
-  }
-  if(!confirm("Mark quote "+quoteDisplayId(q)+" as approved and advance "+(c.company||c.contact||c.id)+" to 'Quotation Approved'?"))return;
-  // Mark quote Accepted
-  q.status='Accepted';
-  await upsert("quotes",q);
-  // Advance client stage
-  c.recordType=TARGET;
-  await upsert("clients",c);
-  toast("✅ Quote approved — "+(c.company||c.contact||c.id)+" advanced to Quotation Approved");
-  // Re-render
-  go(route);
-}
 function renderQuoteView(v){
   const q=state.quotes.find(x=>x.id===window.__quoteViewId);
   if(!q){ v.innerHTML='<div class="card" style="padding:20px">Quote not found. <button class="btn sm ghost" onclick="go(\'quotes\')">Back</button></div>'; return; }
   v.innerHTML=`<div class="pagehead no-print"><div><h2>Quote # ${esc(quoteDisplayId(q))}</h2><div class="sub">${quoteStatusPill(q.status)}</div></div>
-    <div class="toolbar"><button class="btn ghost sm" onclick="go('quotes')">← Back</button><button class="btn ghost sm" onclick="waQuote('${esc(q.id)}')">💬 WhatsApp</button>${q.status!=='Accepted'?`<button class="btn success sm" onclick="approveQuote('${esc(q.id)}')">✅ Approve Quote</button>`:'<span class="pill green sm" style="padding:4px 10px">✅ Approved</span>'}<button class="btn primary sm" onclick="printQuoteById('${esc(q.id)}')">🖨 Print / Save PDF</button></div></div>
+    <div class="toolbar"><button class="btn ghost sm" onclick="go('quotes')">← Back</button><button class="btn ghost sm" onclick="waQuote('${esc(q.id)}')">💬 WhatsApp</button><button class="btn primary sm" onclick="printQuoteById('${esc(q.id)}')">🖨 Print / Save PDF</button></div></div>
     ${quoteLetterheadHtml(q)}`;
 }
 // Chrome's "Save as PDF" uses document.title as the default filename -- without this override
@@ -3732,20 +3646,7 @@ async function waSendViaBot(num,msg){
     if(!quoteId){toast("No PDF available — open a specific quote first");return;}
     const q=state.quotes.find(x=>x.id===quoteId);
     if(!q){toast("Quote not found");return;}
-    if(typeof html2canvas==='undefined'||!window.jspdf){
-      // Libraries still loading (CDN slow from this network) — wait up to 15s instead of failing immediately
-      toast("Waiting for PDF library to load…");
-      let waited=0;
-      while(waited<15000){
-        await new Promise(r=>setTimeout(r,400));
-        waited+=400;
-        if(typeof html2canvas!=='undefined'&&window.jspdf) break;
-      }
-      if(typeof html2canvas==='undefined'||!window.jspdf){
-        toast("PDF library failed to load — please refresh the page and try again");
-        return;
-      }
-    }
+    if(typeof html2canvas==='undefined'||!window.jspdf){toast("PDF library still loading — wait a moment and try again");return;}
     toast("Generating PDF…");
     try{
       pdfBase64=await generateQuotePdfBase64(q);
@@ -3759,9 +3660,9 @@ async function waSendViaBot(num,msg){
   closeModal();
   toast("Sending quotation via WhatsApp bot…");
   try{
-    const r=await fetch("/api/send-quote",{
+    const r=await fetch(cfg.waWorkerUrl+"/wa-send-quote",{
       method:"POST",
-      headers:{"Content-Type":"application/json","X-API-Key":cfg.waApiKey,"X-Worker-Base":cfg.waWorkerUrl},
+      headers:{"Content-Type":"application/json","X-API-Key":cfg.waApiKey},
       body:JSON.stringify({phone,pdfBase64,filename:ctx.pdfFilename||"quotation.pdf",caption:msg,repName:session&&session.repName||""})
     });
     const d=await r.json();
