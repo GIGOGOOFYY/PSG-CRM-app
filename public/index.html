@@ -3732,7 +3732,20 @@ async function waSendViaBot(num,msg){
     if(!quoteId){toast("No PDF available — open a specific quote first");return;}
     const q=state.quotes.find(x=>x.id===quoteId);
     if(!q){toast("Quote not found");return;}
-    if(typeof html2canvas==='undefined'||!window.jspdf){toast("PDF library still loading — wait a moment and try again");return;}
+    if(typeof html2canvas==='undefined'||!window.jspdf){
+      // Libraries still loading (CDN slow from this network) — wait up to 15s instead of failing immediately
+      toast("Waiting for PDF library to load…");
+      let waited=0;
+      while(waited<15000){
+        await new Promise(r=>setTimeout(r,400));
+        waited+=400;
+        if(typeof html2canvas!=='undefined'&&window.jspdf) break;
+      }
+      if(typeof html2canvas==='undefined'||!window.jspdf){
+        toast("PDF library failed to load — please refresh the page and try again");
+        return;
+      }
+    }
     toast("Generating PDF…");
     try{
       pdfBase64=await generateQuotePdfBase64(q);
