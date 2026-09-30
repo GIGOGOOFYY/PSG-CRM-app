@@ -781,6 +781,8 @@ function repStats(rep){
    ====================================================================== */
 function localKey(){ return "psgcrm_data"; }
 function saveLocal(){ localStorage.setItem(localKey(), JSON.stringify({users:state.users,clients:state.clients,calls:state.calls,meetings:state.meetings,deals:state.deals,repTargets:state.repTargets,quotes:state.quotes,products:state.products,campaigns:state.campaigns,priceBooks:state.priceBooks})); }
+function savePendingWrites(){ try{localStorage.setItem('psgcrm_pending',JSON.stringify(pendingWrites));}catch(e){} }
+function loadPendingWrites(){ try{const d=JSON.parse(localStorage.getItem('psgcrm_pending')||'[]');if(Array.isArray(d))pendingWrites=d;}catch(e){} }
 function loadLocalOrSeed(){
   let d=null; try{ d=JSON.parse(localStorage.getItem(localKey())); }catch(e){}
   if(d && d.clients){ state=Object.assign(state,d); }
@@ -903,6 +905,7 @@ async function cloudPull(){
         if(!error) pendingWrites=pendingWrites.filter(p=>!(p.kind===kind&&p.obj[_pk]===obj[_pk]));
       }catch(e){}
     }
+    savePendingWrites(); // persist updated queue after flush
   }
   cloudOK=anyOK; return anyOK;
 }
@@ -929,9 +932,9 @@ function startAutoRefresh(){
 async function upsert(kind, obj){
   try{ saveLocal(); }catch(e){ console.warn('[saveLocal]',e.message); }
   if(sb){ try{ const {error}=await sb.from(MAP[kind].table).upsert(MAP[kind].to(obj)); if(error) throw error; cloudOK=true;
-              const _pk=MAP[kind].pk||'id'; pendingWrites=pendingWrites.filter(p=>!(p.kind===kind&&p.obj[_pk]===obj[_pk])); }
+              const _pk=MAP[kind].pk||'id'; pendingWrites=pendingWrites.filter(p=>!(p.kind===kind&&p.obj[_pk]===obj[_pk])); savePendingWrites(); }
           catch(e){ cloudOK=false; toast("Saved locally — cloud sync failed");
-              const _pk=MAP[kind].pk||'id'; pendingWrites=pendingWrites.filter(p=>!(p.kind===kind&&p.obj[_pk]===obj[_pk])); pendingWrites.push({kind,obj:{...obj}}); } }
+              const _pk=MAP[kind].pk||'id'; pendingWrites=pendingWrites.filter(p=>!(p.kind===kind&&p.obj[_pk]===obj[_pk])); pendingWrites.push({kind,obj:{...obj}}); savePendingWrites(); } }
   renderConn();
 }
 async function remove(kind, id){
@@ -3802,6 +3805,7 @@ function waDelTpl(i){ const t=waFromDom(); t.splice(i,1); cfg.waTemplates=t; sav
   if(ss){ try{ session=JSON.parse(ss); }catch(e){ session=null; } }
   if(session){ document.getElementById("login").classList.add("hidden"); document.getElementById("app").classList.remove("hidden"); }
   // try cloud first; fall back to local seed
+  loadPendingWrites(); // restore offline queue before first cloudPull
   let loaded=false;
   if(sb){ loaded=await cloudPull(); }
   if(!loaded){ loadLocalOrSeed(); }
