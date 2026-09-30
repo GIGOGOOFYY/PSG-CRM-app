@@ -453,7 +453,7 @@ td .help{font-size:11.5px;color:var(--muted);margin-top:1px;display:block}
 .kcard-acct{font-size:11.5px;color:var(--muted);margin-bottom:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .kcard-foot{display:flex;justify-content:space-between;align-items:center;gap:4px;flex-wrap:wrap}
 .kcard-id{font-size:10.5px;color:var(--muted);font-family:monospace}
-.sclr-nl{color:#1565c0}.sclr-ct{color:#6a1b9a}.sclr-ql{color:#e65100}.sclr-rr{color:#01579b}.sclr-qs{color:#4527a0}.sclr-ng{color:#b71c1c}.sclr-wn{color:#1b5e20}
+.sclr-nl{color:#1565c0}.sclr-ct{color:#6a1b9a}.sclr-ql{color:#e65100}.sclr-rr{color:#01579b}.sclr-qs{color:#4527a0}.sclr-ng{color:#b71c1c}.sclr-wn{color:#1b5e20}.sclr-cf{color:#00695c}.sclr-ls{color:#7f0000}
 .kcard-empty{font-size:12px;color:var(--muted);text-align:center;padding:10px 4px;opacity:.7}
 .kcard-dragging{opacity:.2;pointer-events:none}
 .kcolover>.kcard-list{outline:2px dashed var(--primary,#4f8ef7);background:rgba(79,142,247,.07);border-radius:0 0 8px 8px;min-height:60px}
@@ -2120,8 +2120,8 @@ function del_receiving(id){ confirmDel("Delete this receiving record?", async()=
    PHASE 2 — CRM: COMPANIES (ACCOUNTS), CONTACTS, PIPELINE KANBAN
    ====================================================================== */
 
-const PIPELINE_STAGES=['New Lead','Contacted','Qualified','Requirement Received','Quotation Sent','Negotiation','Won – Order Confirmed'];
-const STAGE_CLR={'New Lead':'sclr-nl','Contacted':'sclr-ct','Qualified':'sclr-ql','Requirement Received':'sclr-rr','Quotation Sent':'sclr-qs','Negotiation':'sclr-ng','Won – Order Confirmed':'sclr-wn'};
+const PIPELINE_STAGES=['New Lead','Contacted','Qualified','Requirement Received','Quotation Sent','Negotiation','Won – Order Confirmed','Customer Feedback','Lost'];
+const STAGE_CLR={'New Lead':'sclr-nl','Contacted':'sclr-ct','Qualified':'sclr-ql','Requirement Received':'sclr-rr','Quotation Sent':'sclr-qs','Negotiation':'sclr-ng','Won – Order Confirmed':'sclr-wn','Customer Feedback':'sclr-cf','Lost':'sclr-ls'};
 const PRI_CLR={'High':'red','Medium':'amber','Low':'gray'};
 
 // ── COMPANIES ────────────────────────────────────────────────────────
@@ -2389,7 +2389,7 @@ function renderPipeline(v){
         ${d.priority?`<span class="pill ${PRI_CLR[d.priority]||''} sm">${esc(d.priority)}</span>`:''}
         <button class="btn sm ghost" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();waPipelineDeal('${esc(d.id)}')" style="padding:2px 6px;font-size:11px;line-height:1;background:#25d366;color:#fff;border:none;border-radius:4px">💬 WA</button>
         ${chatBtn(esc(d.id))}
-        ${isAdmin()?`<button class="btn sm ghost danger kcard-del" onclick="event.stopPropagation();del_pipelineDeal('${esc(d.id)}')">✕</button>`:''}
+        ${isAdmin()?`<button class="btn sm ghost danger kcard-del" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();del_pipelineDeal('${esc(d.id)}')">✕</button>`:''}
       </div>
     </div>`).join('');
     return `<div class="kanban-col" data-stage="${esc(stage)}">
@@ -3895,7 +3895,7 @@ window.renderDashboard=function(v){
   const myM=admin?me:me.filter(m=>m.rep===rep);
   const fmt=n=>"PKR "+Number(n||0).toLocaleString();
   const fd=d=>d?new Date(d).toLocaleDateString("en-GB",{day:"2-digit",month:"short"}):"—";
-  const openDeals=vPipelineDeals().filter(d=>d.status!=='inactive'&&d.stage!=='Won – Order Confirmed');
+  const openDeals=vPipelineDeals().filter(d=>d.status!=='inactive'&&d.stage!=='Won – Order Confirmed'&&d.stage!=='Customer Feedback'&&d.stage!=='Lost');
   const todayCalls=myCl.filter(c=>(c.date||"").slice(0,10)===todayStr);
   const revenue=myD.filter(d=>d.collectStatus==="Received").reduce((s,d)=>s+(parseFloat(d.qty||0)*parseFloat(d.unitPrice||0)),0);
   const overdue=myC.filter(c=>{const f=c.followDate||c.followUpDate||"";return f&&f<todayStr&&c.status!=="Closed";}).slice(0,5);
@@ -3912,7 +3912,7 @@ window.renderDashboard=function(v){
   const tbl=(items,cols,empty,rowFn)=>items.length?`<table class="mini-tbl"><thead><tr>${cols.map(c=>`<th>${c}</th>`).join("")}</tr></thead><tbody>${items.map(rowFn).join("")}</tbody></table>`:`<div class="card-empty">${empty}</div>`;
 
   // Phase 3: pipeline from crm_deals (7-stage) instead of crm_clients
-  const PIPE_SHORT_CRM={'New Lead':'New Lead','Contacted':'Contacted','Qualified':'Qualified','Requirement Received':'Req Recv','Quotation Sent':'Quotation','Negotiation':'Negotiation','Won – Order Confirmed':'Won'};
+  const PIPE_SHORT_CRM={'New Lead':'New Lead','Contacted':'Contacted','Qualified':'Qualified','Requirement Received':'Req Recv','Quotation Sent':'Quotation','Negotiation':'Negotiation','Won – Order Confirmed':'Won','Customer Feedback':'Feedback','Lost':'Lost'};
   const pipeSC=PIPELINE_STAGES.map(s=>vPipelineDeals().filter(d=>d.stage===s&&d.status!=='inactive').length);
   const pipeMX=Math.max(...pipeSC,1);
   const pipeHtml=`<div class="hcard">
