@@ -443,22 +443,22 @@ td .help{font-size:11.5px;color:var(--muted);margin-top:1px;display:block}
   .topbar{padding:0 12px;gap:8px}
 }
 /* PIPELINE KANBAN */
-.kanban-wrap{display:flex;gap:12px;overflow-x:auto;padding-bottom:14px;align-items:flex-start;min-height:60vh}
-.kanban-col{flex:0 0 210px;background:var(--panel2);border-radius:10px;padding:0 0 10px;min-height:200px}
-.kanban-col-head{padding:10px 12px 8px;font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;border-bottom:3px solid currentColor;display:flex;justify-content:space-between;align-items:center;border-radius:10px 10px 0 0}
-.kanban-col-head .kcnt{font-size:11.5px;font-weight:700;background:rgba(0,0,0,.07);border-radius:10px;padding:1px 8px;min-width:22px;text-align:center}
-.kcard{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:7px 7px 0;cursor:pointer;transition:box-shadow .15s,transform .1s}
+.kanban-wrap{display:flex;gap:8px;overflow-x:auto;padding-bottom:14px;align-items:flex-start;min-height:60vh}
+.kanban-col{flex:0 0 155px;background:var(--panel2);border-radius:10px;padding:0 0 8px;min-height:200px}
+.kanban-col-head{padding:7px 9px 5px;font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;border-bottom:3px solid currentColor;display:flex;justify-content:space-between;align-items:center;gap:4px;border-radius:10px 10px 0 0}
+.kanban-col-head .kcnt{font-size:11px;font-weight:700;background:rgba(0,0,0,.07);border-radius:10px;padding:1px 6px;min-width:18px;text-align:center;flex-shrink:0}
+.kcard{background:var(--bg);border:1px solid var(--line);border-radius:7px;padding:7px 8px;margin:5px 5px 0;cursor:pointer;transition:box-shadow .15s,transform .1s}
 .kcard:hover{box-shadow:0 3px 12px rgba(0,0,0,.13);transform:translateY(-1px)}
-.kcard-title{font-size:13px;font-weight:600;color:var(--fg);line-height:1.3;margin-bottom:3px}
-.kcard-acct{font-size:11.5px;color:var(--muted);margin-bottom:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.kcard-foot{display:flex;justify-content:space-between;align-items:center;gap:4px;flex-wrap:wrap}
-.kcard-id{font-size:10.5px;color:var(--muted);font-family:monospace}
+.kcard-title{font-size:12px;font-weight:600;color:var(--fg);line-height:1.25;margin-bottom:2px}
+.kcard-acct{font-size:10.5px;color:var(--muted);margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kcard-foot{display:flex;justify-content:space-between;align-items:center;gap:3px;flex-wrap:wrap}
+.kcard-id{font-size:10px;color:var(--muted);font-family:monospace}
 .sclr-nl{color:#1565c0}.sclr-ct{color:#6a1b9a}.sclr-ql{color:#e65100}.sclr-rr{color:#01579b}.sclr-qs{color:#4527a0}.sclr-ng{color:#b71c1c}.sclr-wn{color:#1b5e20}.sclr-cf{color:#00695c}.sclr-ls{color:#7f0000}
 .kcard-empty{font-size:12px;color:var(--muted);text-align:center;padding:10px 4px;opacity:.7}
 .kcard-dragging{opacity:.2;pointer-events:none}
 .kcolover>.kcard-list{outline:2px dashed var(--primary,#4f8ef7);background:rgba(79,142,247,.07);border-radius:0 0 8px 8px;min-height:60px}
 .kcard-del{padding:1px 5px !important;font-size:11px !important;line-height:1.3 !important;margin-left:auto}
-@media(max-width:640px){.kanban-col{flex:0 0 158px}.kanban-wrap{gap:8px}}
+@media(max-width:640px){.kanban-col{flex:0 0 130px}.kanban-wrap{gap:6px}}
 .formgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px 14px}
 .formgrid .field.full{grid-column:1/-1}
 .formgrid .field label{display:block;font-size:12px;font-weight:600;margin-bottom:4px;color:var(--muted)}
@@ -725,6 +725,7 @@ const DEFAULT_SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 let cfg = loadCfg();
 let sb = null;               // supabase client
 let cloudOK = false;
+let pendingWrites = []; // offline write queue: [{kind, obj}]
 let route = "dashboard";
 let searchTerm = "";
 
@@ -885,6 +886,24 @@ async function cloudPull(){
   if(!state.users||!state.users.length) state.users=seedUsers();
   await backfillQuoteSerials();
   await reconcileProductionLinks();
+  // Re-apply pending offline writes on top of fresh Supabase data
+  for(const {kind,obj} of pendingWrites){
+    const _pk=MAP[kind].pk||'id';
+    const idx=(state[kind]||[]).findIndex(x=>x[_pk]===obj[_pk]);
+    if(idx>=0) state[kind][idx]=Object.assign({},state[kind][idx],obj);
+    else if(state[kind]) state[kind].push(obj);
+  }
+  // Flush queue now that we're back online
+  if(anyOK && pendingWrites.length){
+    const toFlush=[...pendingWrites];
+    for(const {kind,obj} of toFlush){
+      try{
+        const _pk=MAP[kind].pk||'id';
+        const {error}=await sb.from(MAP[kind].table).upsert(MAP[kind].to(obj));
+        if(!error) pendingWrites=pendingWrites.filter(p=>!(p.kind===kind&&p.obj[_pk]===obj[_pk]));
+      }catch(e){}
+    }
+  }
   cloudOK=anyOK; return anyOK;
 }
 async function backfillQuoteSerials(){
@@ -909,8 +928,10 @@ function startAutoRefresh(){
 }
 async function upsert(kind, obj){
   try{ saveLocal(); }catch(e){ console.warn('[saveLocal]',e.message); }
-  if(sb){ try{ const {error}=await sb.from(MAP[kind].table).upsert(MAP[kind].to(obj)); if(error) throw error; cloudOK=true; }
-          catch(e){ cloudOK=false; toast("Saved locally — cloud sync failed"); } }
+  if(sb){ try{ const {error}=await sb.from(MAP[kind].table).upsert(MAP[kind].to(obj)); if(error) throw error; cloudOK=true;
+              const _pk=MAP[kind].pk||'id'; pendingWrites=pendingWrites.filter(p=>!(p.kind===kind&&p.obj[_pk]===obj[_pk])); }
+          catch(e){ cloudOK=false; toast("Saved locally — cloud sync failed");
+              const _pk=MAP[kind].pk||'id'; pendingWrites=pendingWrites.filter(p=>!(p.kind===kind&&p.obj[_pk]===obj[_pk])); pendingWrites.push({kind,obj:{...obj}}); } }
   renderConn();
 }
 async function remove(kind, id){
@@ -2393,7 +2414,7 @@ function renderPipeline(v){
       </div>
     </div>`).join('');
     return `<div class="kanban-col" data-stage="${esc(stage)}">
-      <div class="kanban-col-head ${clr}">${esc(stage)}<span class="kcnt">${stageDls.length}</span></div>
+      <div class="kanban-col-head ${clr}"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1" title="${esc(stage)}">${esc(stage)}</span><span class="kcnt">${stageDls.length}</span></div>
       <div class="kcard-list" style="padding:8px;min-height:50px">${cards||`<div class="kcard-empty">No deals</div>`}</div>
     </div>`;
   }).join('');
