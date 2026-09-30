@@ -2323,7 +2323,7 @@ function renderContacts(v){
       <td>${aName?`<a href="#" onclick="go('accounts');return false">${esc(aName)}</a>`:''}</td>
       <td>${esc(c.phone||'')}</td>
       <td>${esc(c.email||'')}</td>
-      <td style="text-align:center">${c.waVerified?'<span class="pill green">WA</span>':''}</td>
+      <td style="text-align:center">${c.whatsappVerified?'<span class="pill green">WA</span>':''}</td>
       <td class="no-print"><div class="rowbtns">
         <button class="btn ghost sm" onclick="edit_contact('${esc(c.id)}')">Edit</button>
         <button class="btn ghost sm red" onclick="del_contact('${esc(c.id)}')">Del</button>
@@ -2348,7 +2348,7 @@ function ctForm(c){c=c||{};
   </div>`;
 }
 function readCt(){const g=id=>document.getElementById('fc_'+id)?.value||'';
-  return{name:g('name').trim(),accountId:g('accountId'),phone:g('phone').trim(),email:g('email').trim(),designation:g('designation').trim(),waVerified:g('wa')==='true',city:g('city').trim(),area:g('area').trim(),address:g('address').trim(),notes:g('notes')};}
+  return{name:g('name').trim(),accountId:g('accountId'),phone:g('phone').trim(),email:g('email').trim(),designation:g('designation').trim(),whatsappVerified:g('wa')==='true',city:g('city').trim(),area:g('area').trim(),address:g('address').trim(),notes:g('notes')};}
 function addContact(){
   openModal('New Contact',ctForm(),async()=>{
     const c=readCt();if(!c.name){toast('Name required');return false;}
@@ -2440,7 +2440,7 @@ async function _kcardUp(e){
   if(!ds.moved){editPipelineDeal(ds.id);return;}
   if(ds.targetStage){
     const d=state.pipelineDeals.find(x=>x.id===ds.id);
-    if(d&&d.stage!==ds.targetStage){d.stage=ds.targetStage;d.lastContact=today();await upsert('pipelineDeals',d);toast('Moved → '+ds.targetStage);go('pipeline');}
+    if(d&&d.stage!==ds.targetStage){d.stage=ds.targetStage;d.lastContact=today();await upsert('pipelineDeals',d);await dualWriteDealToClients(d);toast('Moved → '+ds.targetStage);go('pipeline');}
   }
 }
 function _kcardCancel(){const ds=_kDrag;_kcardClean(ds);_kDrag=null;}
@@ -2507,7 +2507,7 @@ function waPipelineDeal(id){
   // Sending an intro = first contact made → advance New Lead → Contacted
   const curIdx=PIPELINE_STAGES.indexOf(d.stage||'New Lead');
   const tgtIdx=PIPELINE_STAGES.indexOf('Contacted');
-  if(curIdx<tgtIdx){d.stage='Contacted';d.lastContact=today();upsert('pipelineDeals',d);toast('Pipeline → Contacted');}
+  if(curIdx<tgtIdx){d.stage='Contacted';d.lastContact=today();upsert('pipelineDeals',d);dualWriteDealToClients(d);toast('Pipeline → Contacted');}
 }
 /* ── Human Handoff Chat Panel ── */
 function openChatPanel(dealId){
@@ -2608,12 +2608,52 @@ async function chatEndHandoff(){
     _chatClose();
   }catch(e){toast('Error: '+e.message);}
 }
+/* ── Phase 2-D: dual-write crm_deals → crm_clients (transition period) ──
+   Keeps the old Leads/Prospects views and the WhatsApp bot in sync
+   while crm_deals is the source of truth for the pipeline.
+   Remove this function and its call-sites once Phase 3 (bot migration) is done. */
+async function dualWriteDealToClients(d){
+  if(!sb) return;
+  try{
+    const acct=state.accounts.find(a=>a.id===d.accountId)||{};
+    const ct=state.contacts.find(c=>c.id===d.contactId)
+      ||state.contacts.find(c=>c.accountId===d.accountId)||{};
+    // account_type: 'Prospect' for early stages, 'Lead' for qualified+
+    const earlyStages=['New Lead','Contacted'];
+    const acctType=earlyStages.includes(d.stage||'New Lead')?'Prospect':'Lead';
+    const payload={
+      id:d.id,
+      company:acct.name||d.title||'',
+      contact:ct.name||'',
+      phone:ct.phone||null,
+      email:ct.email||null,
+      city:acct.city||null,
+      area:acct.area||null,
+      industry:acct.industry||null,
+      assigned_to:d.assignedTo||null,
+      lead_source:d.leadSource||null,
+      record_type:d.stage||'New Lead',
+      priority:d.priority||null,
+      first_contact:d.firstContact||null,
+      last_contact:d.lastContact||null,
+      notes:d.notes||null,
+      active:d.status!=='inactive',
+      account_type:acctType
+    };
+    const {error}=await sb.from('crm_clients').upsert(payload,{onConflict:'id'});
+    if(error) console.warn('[dualWrite crm_clients]',error.message);
+  }catch(e){ console.warn('[dualWrite crm_clients]',e.message); }
+}
+
 function addPipelineDeal(){
   openModal('New Deal',pdForm(),async()=>{
     const d=readPD();if(!d.title){toast('Deal title required');return false;}
     if(!d.assignedTo) d.assignedTo=autoAssignRep(d.title)||myRep()||'';
     d.id=nextId('D');d.status='active';d.firstContact=today();d.lastContact=today();
-    state.pipelineDeals.push(d);await upsert('pipelineDeals',d);closeModal();toast('Deal added');go('pipeline');
+    state.pipelineDeals.push(d);
+    await upsert('pipelineDeals',d);
+    await dualWriteDealToClients(d); // Phase 2-D dual-write
+    closeModal();toast('Deal added');go('pipeline');
   });
 }
 function editPipelineDeal(id){
@@ -2621,13 +2661,17 @@ function editPipelineDeal(id){
   openModal('Edit Deal',pdForm(d),async()=>{
     const u=readPD();if(!u.title){toast('Deal title required');return false;}
     Object.assign(d,u);d.lastContact=today();
-    await upsert('pipelineDeals',d);closeModal();toast('Updated');go('pipeline');
+    await upsert('pipelineDeals',d);
+    await dualWriteDealToClients(d); // Phase 2-D dual-write
+    closeModal();toast('Updated');go('pipeline');
   });
 }
 function del_pipelineDeal(id){
   confirmDel('Archive this deal? It will be removed from the pipeline.',async()=>{
     const d=state.pipelineDeals.find(x=>x.id===id);if(!d)return;
-    d.status='inactive';await upsert('pipelineDeals',d);
+    d.status='inactive';
+    await upsert('pipelineDeals',d);
+    await dualWriteDealToClients(d); // Phase 2-D: mark inactive in crm_clients too
     toast('Deal archived');go('pipeline');
   });
 }
@@ -3169,7 +3213,7 @@ function waQuote(id){
   if(deal){
     const curIdx=PIPELINE_STAGES.indexOf(deal.stage||'New Lead');
     const tgtIdx=PIPELINE_STAGES.indexOf('Quotation Sent');
-    if(curIdx<tgtIdx){deal.stage='Quotation Sent';deal.lastContact=today();upsert('pipelineDeals',deal);toast('Pipeline → Quotation Sent');}
+    if(curIdx<tgtIdx){deal.stage='Quotation Sent';deal.lastContact=today();upsert('pipelineDeals',deal);dualWriteDealToClients(deal);toast('Pipeline → Quotation Sent');}
   }
 }
 // Shared by the manual "Convert to Deal" button on Quotes and the automatic Won-stage
