@@ -3181,6 +3181,7 @@ function quoteMaterialEdit(i,mi,field,val){
   it.materials[mi][field]=field==='po'?!!val:val;
   const derived=deriveGlassProduct(it.workcenters,it.materials);
   it.product=derived;
+  if(derived)it.desc=derived;
   quoteRenderItems();
 }
 function quoteAddMaterial(i){
@@ -3218,7 +3219,7 @@ function quoteItemRowHtml(i,it){
     it.materials=it.materials||[{type:'Glass',thickness:'',color:'',size:'',stock:'',balance:'',po:false}];
     const derivedProd=deriveGlassProduct(wcsDat,it.materials);
     if(!it.product&&derivedProd)it.product=derivedProd;
-    const totalThick=it.materials.filter(m=>m.type==='Glass').reduce((s,m)=>s+(parseFloat(m.thickness)||0),0);
+    const totalThick=it.materials.reduce((s,m)=>s+(parseFloat(m.thickness)||0),0);
     const wcBtns=wcs_arr.map(w=>{const active=!!wcsDat[w];const stl=active?'background:var(--accent);color:#fff;border-color:var(--accent)':'border:1.5px solid var(--border)';return `<button type="button" id="qi_wc_${w}_${i}" onclick="quoteWcToggle(${i},'${w}')" style="${stl};border-radius:6px;padding:5px 9px;font-size:12px;font-weight:700;cursor:pointer;min-width:38px">${w.toUpperCase()}</button>`;}).join('');
     const MAT_TYPES=['Glass','PVB','Spacer'];
     const GLASS_THICK=['3','4','5','6','8','10','12','15'];
@@ -3425,7 +3426,7 @@ function quoteForm(q){ q=q||{};
 function readQuote(existing){
   const id=document.getElementById("qf_clientId").value; const cl=findClientOrAccount(id); const rep=myRep();
   const gqSerial=(existing&&existing.serialNo)||window.__quoteGqSerial||((state.quotes||[]).length+1);
-  const items=(window.__quoteItems||[]).filter(it=>(it.desc&&it.desc.trim())||num(it.pieces)||num(it.unitPrice)).map((it,idx)=>Object.assign({},it,{code:gqSerial+"/"+(idx+1)}));
+  const items=(window.__quoteItems||[]).filter(it=>it.type==='Glass'||(it.desc&&it.desc.trim())||num(it.pieces)||num(it.unitPrice)).map((it,idx)=>Object.assign({},it,{code:gqSerial+"/"+(idx+1)}));
   return Object.assign({},existing||{},{
     quoteDate:document.getElementById("qf_quoteDate").value,
     validUntil:document.getElementById("qf_validUntil").value,
