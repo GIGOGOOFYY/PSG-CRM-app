@@ -869,7 +869,7 @@ const MAP = {
 };
 
 function initSupabase(){
-  cloudOK=false; sb=null;
+  cloudOK=false; sb=null; stopRealtime();
   if(cfg.url && cfg.key && window.supabase){
     try{ sb = window.supabase.createClient(cfg.url, cfg.key); }catch(e){ sb=null; }
   }
@@ -925,6 +925,44 @@ async function backfillQuoteSerials(){
     if(!q.serialNo){ q.serialNo=n; try{ await upsert("quotes",q); }catch(e){ console.warn("serial backfill failed for",q.id,e.message); } }
   }
 }
+/* ── Phase 4-G: Supabase Realtime for hot tables ──────────────────────
+   Subscribes to crm_accounts, crm_deals, crm_contacts so the pipeline
+   and accounts list update instantly when the WhatsApp bot writes.
+   Requires those tables to be added to the "supabase_realtime" publication
+   in Supabase Dashboard → Database → Replication → Tables. Falls back
+   gracefully — if a table isn't published, the subscription fires no events
+   and the 20-second poll handles consistency as before. */
+let __rtChannel=null;
+function startRealtime(){
+  if(!sb||__rtChannel) return;
+  const HOTKEYS=['pipelineDeals','accounts','contacts'];
+  const ch=sb.channel('crm-live');
+  HOTKEYS.forEach(k=>{
+    const tbl=MAP[k].table;
+    ch.on('postgres_changes',{event:'*',schema:'public',table:tbl},payload=>{
+      const row=payload.new||payload.old;
+      if(!row) return;
+      if(payload.eventType==='DELETE'){
+        state[k]=state[k].filter(x=>x.id!==row.id);
+      } else {
+        const mapped=MAP[k].from(row);
+        const idx=state[k].findIndex(x=>x.id===mapped.id);
+        if(idx>=0) state[k][idx]=mapped; else state[k].push(mapped);
+      }
+      const modalOpen=document.getElementById('modalMount')?.innerHTML?.trim().length>0;
+      if(!modalOpen) renderRoute();
+    });
+  });
+  ch.subscribe(status=>{
+    if(status==='SUBSCRIBED') console.info('[RT] Realtime active on',HOTKEYS.map(k=>MAP[k].table).join(', '));
+    else if(status==='CHANNEL_ERROR') console.warn('[RT] Realtime channel error — poll-only mode');
+  });
+  __rtChannel=ch;
+}
+function stopRealtime(){
+  if(__rtChannel&&sb){ sb.removeChannel(__rtChannel); __rtChannel=null; }
+}
+
 let __pollTimer=null;
 function startAutoRefresh(){
   if(__pollTimer) return;
@@ -935,7 +973,8 @@ function startAutoRefresh(){
     const modalOpen = document.getElementById("modalMount") && document.getElementById("modalMount").innerHTML.trim().length>0;
     const ok = await cloudPull();
     if(ok){ renderConn(); if(!modalOpen){ renderRoute(); } }
-  }, 20000);
+  }, 60000); // reduced from 20s — Realtime handles hot tables
+  startRealtime();
 }
 async function upsert(kind, obj){
   try{ saveLocal(); }catch(e){ console.warn('[saveLocal]',e.message); }
@@ -978,7 +1017,7 @@ async function doLogin(){
   startApp();
   startAutoRefresh();
 }
-function logout(){ sessionStorage.removeItem("psgcrm_session"); session=null; if(__pollTimer){ clearInterval(__pollTimer); __pollTimer=null; } location.reload(); }
+function logout(){ sessionStorage.removeItem("psgcrm_session"); session=null; if(__pollTimer){ clearInterval(__pollTimer); __pollTimer=null; } stopRealtime(); location.reload(); }
 function isAdmin(){ return session && session.role==="admin"; }
 function myRep(){ return isAdmin()? null : session.repName; }
 
@@ -2328,18 +2367,61 @@ function del_account(id){
 function viewAccount(id){
   const a=state.accounts.find(x=>x.id===id);if(!a)return;
   const cts=state.contacts.filter(c=>c.accountId===id);
-  const dls=state.pipelineDeals.filter(d=>d.accountId===id&&d.status!=='inactive');
+  const allDls=state.pipelineDeals.filter(d=>d.accountId===id);
+  const activeDls=allDls.filter(d=>d.status!=='inactive');
   const ctRows=cts.length?cts.map(c=>`<tr><td class="mono">${esc(c.id)}</td><td>${esc(c.name)}</td><td>${esc(c.designation||'')}</td><td>${esc(c.phone||'')}</td><td>${esc(c.email||'')}</td></tr>`).join(''):`<tr><td colspan="5"><div class="empty">No contacts yet.</div></td></tr>`;
-  const dlRows=dls.length?dls.map(d=>`<tr><td class="mono">${esc(d.id)}</td><td>${esc(d.title)}</td><td><span class="${STAGE_CLR[d.stage]||''}">${esc(d.stage)}</span></td><td>${esc(d.assignedTo||'')}</td></tr>`).join(''):`<tr><td colspan="4"><div class="empty">No active deals.</div></td></tr>`;
-  openModal(esc(a.name)+' — Detail',
-    `<div style="margin-bottom:16px">
-      <div class="formgrid"><div class="field"><label>Industry</label><p>${esc(a.industry||'—')}</p></div><div class="field"><label>Type</label><p>${esc(a.accountType||'—')}</p></div><div class="field"><label>City</label><p>${esc(a.city||'—')}</p></div></div>
+  const dlRows=activeDls.length?activeDls.map(d=>`<tr><td class="mono">${esc(d.id)}</td><td>${esc(d.title)}</td><td><span class="${STAGE_CLR[d.stage]||''}">${esc(d.stage)}</span></td><td>${esc(d.assignedTo||'')}</td></tr>`).join(''):`<tr><td colspan="4"><div class="empty">No active deals.</div></td></tr>`;
+
+  // ── Phase 4-B: activity timeline ──────────────────────────────────
+  const aNameLc=(a.name||'').toLowerCase();
+  const qts=state.quotes.filter(q=>(q.accountId===id)||(q.clientId===id)||((q.company||'').toLowerCase()===aNameLc));
+  const cls=state.calls.filter(c=>(c.company||'').toLowerCase()===aNameLc);
+  const mts=state.meetings.filter(m=>(m.company||'').toLowerCase()===aNameLc);
+
+  const evts=[];
+  allDls.forEach(d=>{
+    const stLbl=d.stage||'New Lead';
+    const sta=d.status==='inactive'?'Archived':'Active';
+    evts.push({date:d.lastContact||d.firstContact||'',sort:d.lastContact||d.firstContact||'',type:'deal',icon:'💼',title:`Deal: ${d.title}`,detail:`Stage: ${stLbl} • Rep: ${d.assignedTo||'—'} • ${sta}`,tag:stLbl,tagCls:STAGE_CLR[stLbl]||''});
+  });
+  qts.forEach(q=>{
+    evts.push({date:q.quoteDate||'',sort:q.quoteDate||'',type:'deal',icon:'📋',title:`Quote ${q.id||''} — ${q.status||''}`,detail:(q.items||[]).length+' line item(s)'+(q.notes?` • ${q.notes.slice(0,60)}`:''),tag:q.status||'',tagCls:q.status==='Approved'?'green':q.status==='Sent'?'amber':''});
+  });
+  cls.forEach(c=>{
+    evts.push({date:c.date||'',sort:c.date||'',type:'call',icon:'📞',title:`Call — ${c.result||''}`,detail:[c.notes,c.nextAction?`Next: ${c.nextAction}`:null].filter(Boolean).join(' • ').slice(0,80),tag:c.rep||'',tagCls:''});
+  });
+  mts.forEach(m=>{
+    evts.push({date:m.date||'',sort:m.date||'',type:'meeting',icon:'🗓',title:`Meeting — ${m.type||''} (${m.status||''})`,detail:[m.agenda,m.followNotes].filter(Boolean).join(' • ').slice(0,80),tag:m.rep||'',tagCls:''});
+  });
+
+  evts.sort((a,b)=>b.sort.localeCompare(a.sort));
+
+  const tlHtml=evts.length?evts.map(e=>`
+    <div class="tl-item">
+      <div class="tl-icon ${e.type}">${e.icon}</div>
+      <div class="tl-body">
+        <div class="tl-head"><span class="tl-title">${esc(e.title)}</span>${e.date?` <span class="tl-date">${esc(e.date)}</span>`:''
+        }${e.tag?` <span class="tl-tag ${e.tagCls}">${esc(e.tag)}</span>`:''}</div>
+        ${e.detail?`<div class="tl-detail">${esc(e.detail)}</div>`:''}
+      </div>
+    </div>`).join(''):`<div class="tl-empty">No activity recorded for this account yet.</div>`;
+
+  const actCount=[allDls.length,qts.length,cls.length,mts.length].map((n,i)=>`<div class="ch-stat"><div class="sv">${n}</div><div class="sl">${['Deals','Quotes','Calls','Meetings'][i]}</div></div>`).join('');
+
+  openInfoModal(esc(a.name)+' — Detail',
+    `<div class="client-header" style="margin-bottom:16px">
+      <div class="ch-body">
+        <div class="ch-name">${esc(a.name)}</div>
+        <div class="ch-meta"><b>Industry:</b> ${esc(a.industry||'—')} &nbsp;•&nbsp; <b>Type:</b> ${esc(a.accountType||'—')} &nbsp;•&nbsp; <b>City:</b> ${esc(a.city||'—')}${a.assignedTo?` &nbsp;•&nbsp; <b>Rep:</b> ${esc(a.assignedTo)}`:''}</div>
+        <div class="ch-stats">${actCount}</div>
+      </div>
     </div>
     <h4 style="margin:12px 0 8px">Contacts</h4>
     <div class="tablewrap"><table><thead><tr><th>ID</th><th>Name</th><th>Role</th><th>Phone</th><th>Email</th></tr></thead><tbody>${ctRows}</tbody></table></div>
     <h4 style="margin:12px 0 8px">Active Deals</h4>
-    <div class="tablewrap"><table><thead><tr><th>ID</th><th>Title</th><th>Stage</th><th>Rep</th></tr></thead><tbody>${dlRows}</tbody></table></div>`,
-    ()=>{});
+    <div class="tablewrap"><table><thead><tr><th>ID</th><th>Title</th><th>Stage</th><th>Rep</th></tr></thead><tbody>${dlRows}</tbody></table></div>
+    <h4 style="margin:12px 0 8px">Activity Timeline</h4>
+    <div class="timeline">${tlHtml}</div>`);
 }
 
 // ── CONTACTS ─────────────────────────────────────────────────────────
@@ -2352,7 +2434,7 @@ function renderContacts(v){
       <td class="mono">${esc(c.id)}</td>
       <td><b>${esc(c.name)}</b>${c.designation?`<br><small class="help">${esc(c.designation)}</small>`:''}</td>
       <td>${aName?`<a href="#" onclick="go('accounts');return false">${esc(aName)}</a>`:''}</td>
-      <td>${esc(c.phone||'')}</td>
+      <td>${esc(c.phone||'')}${(()=>{const _d=findDupContact(c,c.id);const _a=_d&&state.accounts.find(a=>a.id===_d.accountId);return _d?` <span class="pill red sm" title="Same phone as ${_d.name}${_a?' @ '+_a.name:''}">DUP</span>`:''})()}</td>
       <td>${esc(c.email||'')}</td>
       <td style="text-align:center">${c.whatsappVerified?'<span class="pill green">WA</span>':''}</td>
       <td class="no-print"><div class="rowbtns">
@@ -2380,9 +2462,20 @@ function ctForm(c){c=c||{};
 }
 function readCt(){const g=id=>document.getElementById('fc_'+id)?.value||'';
   return{name:g('name').trim(),accountId:g('accountId'),phone:g('phone').trim(),email:g('email').trim(),designation:g('designation').trim(),whatsappVerified:g('wa')==='true',city:g('city').trim(),area:g('area').trim(),address:g('address').trim(),notes:g('notes')};}
-function addContact(){
+/* ── Phase 4-C: contact dedup ── */
+function findDupContact(candidate, excludeId){
+  const pd=phoneDigits(candidate.phone);
+  if(!pd) return null;
+  return state.contacts.find(x=>{
+    if(excludeId && x.id===excludeId) return false;
+    return pd && phoneDigits(x.phone)===pd;
+  })||null;
+}
+function addContact(){ let _dupOK=false;
   openModal('New Contact',ctForm(),async()=>{
     const c=readCt();if(!c.name){toast('Name required');return false;}
+    const _dup=findDupContact(c);
+    if(_dup&&!_dupOK){_dupOK=true;const _acct=state.accounts.find(a=>a.id===_dup.accountId);toast('⚠ Phone already used by '+esc(_dup.name)+(_acct?' @ '+esc(_acct.name):'')+' — click Save again to add anyway');return false;}
     c.id=nextId('CT');
     state.contacts.push(c);await upsert('contacts',c);closeModal();toast('Contact added');go('contacts');
   });
@@ -2471,7 +2564,7 @@ async function _kcardUp(e){
   if(!ds.moved){editPipelineDeal(ds.id);return;}
   if(ds.targetStage){
     const d=state.pipelineDeals.find(x=>x.id===ds.id);
-    if(d&&d.stage!==ds.targetStage){d.stage=ds.targetStage;d.lastContact=today();await upsert('pipelineDeals',d);await dualWriteDealToClients(d);toast('Moved → '+ds.targetStage);go('pipeline');}
+    if(d&&d.stage!==ds.targetStage){d.stage=ds.targetStage;d.lastContact=today();await upsert('pipelineDeals',d);await maybeConvertToClient(d);toast('Moved → '+ds.targetStage);go('pipeline');}
   }
 }
 function _kcardCancel(){const ds=_kDrag;_kcardClean(ds);_kDrag=null;}
@@ -2538,7 +2631,7 @@ function waPipelineDeal(id){
   // Sending an intro = first contact made → advance New Lead → Contacted
   const curIdx=PIPELINE_STAGES.indexOf(d.stage||'New Lead');
   const tgtIdx=PIPELINE_STAGES.indexOf('Contacted');
-  if(curIdx<tgtIdx){d.stage='Contacted';d.lastContact=today();upsert('pipelineDeals',d);dualWriteDealToClients(d);toast('Pipeline → Contacted');}
+  if(curIdx<tgtIdx){d.stage='Contacted';d.lastContact=today();upsert('pipelineDeals',d);toast('Pipeline → Contacted');}
 }
 /* ── Human Handoff Chat Panel ── */
 function openChatPanel(dealId){
@@ -2639,43 +2732,15 @@ async function chatEndHandoff(){
     _chatClose();
   }catch(e){toast('Error: '+e.message);}
 }
-/* ── Phase 2-D: dual-write crm_deals → crm_clients (transition period) ──
-   Keeps the old Leads/Prospects views and the WhatsApp bot in sync
-   while crm_deals is the source of truth for the pipeline.
-   Remove this function and its call-sites once Phase 3 (bot migration) is done. */
-async function dualWriteDealToClients(d){
-  if(!sb) return;
-  try{
-    const acct=state.accounts.find(a=>a.id===d.accountId)||{};
-    const ct=state.contacts.find(c=>c.id===d.contactId)
-      ||state.contacts.find(c=>c.accountId===d.accountId)||{};
-    // account_type: 'Prospect' for early stages, 'Lead' for qualified+
-    const earlyStages=['New Lead','Contacted'];
-    const acctType=earlyStages.includes(d.stage||'New Lead')?'Prospect':'Lead';
-    const payload={
-      id:d.id,
-      company:acct.name||d.title||'',
-      contact:ct.name||'',
-      phone:ct.phone||null,
-      email:ct.email||null,
-      city:acct.city||null,
-      area:acct.area||null,
-      industry:acct.industry||null,
-      assigned_to:d.assignedTo||null,
-      lead_source:d.leadSource||null,
-      record_type:d.stage||'New Lead',
-      priority:d.priority||null,
-      first_contact:d.firstContact||null,
-      last_contact:d.lastContact||null,
-      notes:d.notes||null,
-      active:d.status!=='inactive',
-      account_type:acctType
-    };
-    const {error}=await sb.from('crm_clients').upsert(payload,{onConflict:'id'});
-    if(error) console.warn('[dualWrite crm_clients]',error.message);
-  }catch(e){ console.warn('[dualWrite crm_clients]',e.message); }
+/* ── Phase 4-D: auto-convert Account → Client on Won – Order Confirmed ── */
+async function maybeConvertToClient(deal){
+  if((deal.stage||'')!=='Won – Order Confirmed') return;
+  const acct=state.accounts.find(a=>a.id===deal.accountId);
+  if(!acct||acct.accountType==='Client'||acct.accountType==='Vendor'||acct.accountType==='Supplier') return;
+  acct.accountType='Client';
+  await upsert('accounts',acct);
+  toast((acct.name||'Account')+' → Client');
 }
-
 function addPipelineDeal(){
   openModal('New Deal',pdForm(),async()=>{
     const d=readPD();if(!d.title){toast('Deal title required');return false;}
@@ -2683,7 +2748,6 @@ function addPipelineDeal(){
     d.id=nextId('D');d.status='active';d.firstContact=today();d.lastContact=today();
     state.pipelineDeals.push(d);
     await upsert('pipelineDeals',d);
-    await dualWriteDealToClients(d); // Phase 2-D dual-write
     closeModal();toast('Deal added');go('pipeline');
   });
 }
@@ -2692,8 +2756,7 @@ function editPipelineDeal(id){
   openModal('Edit Deal',pdForm(d),async()=>{
     const u=readPD();if(!u.title){toast('Deal title required');return false;}
     Object.assign(d,u);d.lastContact=today();
-    await upsert('pipelineDeals',d);
-    await dualWriteDealToClients(d); // Phase 2-D dual-write
+    await upsert('pipelineDeals',d);await maybeConvertToClient(d);
     closeModal();toast('Updated');go('pipeline');
   });
 }
@@ -2702,7 +2765,6 @@ function del_pipelineDeal(id){
     const d=state.pipelineDeals.find(x=>x.id===id);if(!d)return;
     d.status='inactive';
     await upsert('pipelineDeals',d);
-    await dualWriteDealToClients(d); // Phase 2-D: mark inactive in crm_clients too
     toast('Deal archived');go('pipeline');
   });
 }
@@ -3504,7 +3566,7 @@ function waQuote(id){
   if(deal){
     const curIdx=PIPELINE_STAGES.indexOf(deal.stage||'New Lead');
     const tgtIdx=PIPELINE_STAGES.indexOf('Quotation Sent');
-    if(curIdx<tgtIdx){deal.stage='Quotation Sent';deal.lastContact=today();upsert('pipelineDeals',deal);dualWriteDealToClients(deal);toast('Pipeline → Quotation Sent');}
+    if(curIdx<tgtIdx){deal.stage='Quotation Sent';deal.lastContact=today();upsert('pipelineDeals',deal);toast('Pipeline → Quotation Sent');}
   }
 }
 // Shared by the manual "Convert to Deal" button on Quotes and the automatic Won-stage
@@ -4027,7 +4089,7 @@ function waOpenModal(phone, ctx, presetName){
         const _pd=state.pipelineDeals.find(x=>x.id===ctx._pipelineDealId);
         if(_pd&&PIPELINE_STAGES.indexOf(_tgtStage)>PIPELINE_STAGES.indexOf(_pd.stage||'New Lead')){
           _pd.stage=_tgtStage;_pd.lastContact=today();
-          upsert('pipelineDeals',_pd);dualWriteDealToClients(_pd);
+          upsert('pipelineDeals',_pd);maybeConvertToClient(_pd);
           toast('Pipeline \u2192 '+_tgtStage);
         }
       }
