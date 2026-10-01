@@ -3140,7 +3140,7 @@ function printQuotesLetterhead(){
   setTimeout(()=>{ area.innerHTML=""; document.title=prevTitle; },300);
 }
 function deriveGlassProduct(wcs,materials){
-  if(materials&&materials.filter(m=>m.type==='Glass').length>=2)return'Saif Armour';
+  if(materials){const _gl=materials.filter(m=>m.type==='Glass');const _gt=_gl.reduce((s,m)=>s+(parseFloat(m.thickness)||0),0);if(_gl.length>=2&&_gt>=35)return'Saif Armour';}
   if(!wcs)return'';
   const tg=!!wcs.tg,lg=!!wcs.lg,dg=!!wcs.dg,bg=!!wcs.bg;
   if(dg&&tg&&lg)return'Saif Cool + Lam';
@@ -3177,6 +3177,7 @@ function quoteMaterialEdit(i,mi,field,val){
   const it=window.__quoteItems[i];
   it.materials=it.materials||[];
   if(!it.materials[mi])return;
+  if(field==='type'){it.materials[mi].thickness='';it.materials[mi].color='';it.materials[mi].size='';}
   it.materials[mi][field]=field==='po'?!!val:val;
   const derived=deriveGlassProduct(it.workcenters,it.materials);
   it.product=derived;
@@ -3219,25 +3220,38 @@ function quoteItemRowHtml(i,it){
     if(!it.product&&derivedProd)it.product=derivedProd;
     const totalThick=it.materials.filter(m=>m.type==='Glass').reduce((s,m)=>s+(parseFloat(m.thickness)||0),0);
     const wcBtns=wcs_arr.map(w=>{const active=!!wcsDat[w];const stl=active?'background:var(--accent);color:#fff;border-color:var(--accent)':'border:1.5px solid var(--border)';return `<button type="button" id="qi_wc_${w}_${i}" onclick="quoteWcToggle(${i},'${w}')" style="${stl};border-radius:6px;padding:5px 9px;font-size:12px;font-weight:700;cursor:pointer;min-width:38px">${w.toUpperCase()}</button>`;}).join('');
+    const MAT_TYPES=['Glass','PVB','Spacer'];
     const GLASS_THICK=['3','4','5','6','8','10','12','15'];
+    const PVB_THICK=['0.38','0.68','0.78','1.12','1.52'];
+    const SPACER_THICK=['6','8','10','12','14','16'];
     const GLASS_COLORS=['CF','BF','GF','Crystal','Blue','Dark Blue','Dark Grey','Euro Grey','Green','Blue Reflective'];
+    const PVB_COLORS=['Clear','Blue','Green','Grey','Bronze','Acoustic','Safety White'];
+    const SPACER_COLORS=['Aluminium','Black','Silver','White'];
     const GLASS_SIZES=['1525×2850','1800×3050','2134×3660','2440×2850','2440×3660','2591×3660'];
-    const matRowsHtml=it.materials.map((mat,mi)=>`<tr>
-      <td style="padding:4px 6px;font-weight:600;font-size:13px">Glass</td>
-      <td style="padding:4px 6px"><select onchange="quoteMaterialEdit(${i},${mi},'thickness',this.value)" style="width:70px;padding:3px">
-        <option value="">—</option>${GLASS_THICK.map(t=>`<option value="${t}"${mat.thickness===t?' selected':''}>${t}mm</option>`).join('')}
+    const PVB_SIZES=['1200 Rft','1400 Rft','1500 Rft','1600 Rft','1700 Rft','1800 Rft','2134 Rft','2440 Rft'];
+    const matRowsHtml=it.materials.map((mat,mi)=>{
+      const mType=mat.type||'Glass';
+      const thickOpts=mType==='PVB'?PVB_THICK:mType==='Spacer'?SPACER_THICK:GLASS_THICK;
+      const colorOpts=mType==='PVB'?PVB_COLORS:mType==='Spacer'?SPACER_COLORS:GLASS_COLORS;
+      const sizeOpts=mType==='PVB'?PVB_SIZES:mType==='Spacer'?[]:GLASS_SIZES;
+      return `<tr>
+      <td style="padding:4px 4px"><select onchange="quoteMaterialEdit(${i},${mi},'type',this.value)" style="width:76px;padding:3px;font-weight:600">
+        ${MAT_TYPES.map(t=>`<option value="${t}"${mType===t?' selected':''}>${t}</option>`).join('')}
       </select></td>
-      <td style="padding:4px 6px"><select onchange="quoteMaterialEdit(${i},${mi},'color',this.value)" style="width:120px;padding:3px">
-        <option value="">—</option>${GLASS_COLORS.map(c=>`<option value="${c}"${mat.color===c?' selected':''}>${esc(c)}</option>`).join('')}
+      <td style="padding:4px 4px"><select onchange="quoteMaterialEdit(${i},${mi},'thickness',this.value)" style="width:78px;padding:3px">
+        <option value="">—</option>${thickOpts.map(t=>`<option value="${t}"${mat.thickness===t?' selected':''}>${t}mm</option>`).join('')}
       </select></td>
-      <td style="padding:4px 6px"><select onchange="quoteMaterialEdit(${i},${mi},'size',this.value)" style="width:130px;padding:3px">
-        <option value="">—</option>${GLASS_SIZES.map(s=>`<option value="${s}"${mat.size===s?' selected':''}>${esc(s)}</option>`).join('')}
+      <td style="padding:4px 4px"><select onchange="quoteMaterialEdit(${i},${mi},'color',this.value)" style="width:120px;padding:3px">
+        <option value="">—</option>${colorOpts.map(c=>`<option value="${c}"${mat.color===c?' selected':''}>${esc(c)}</option>`).join('')}
       </select></td>
-      <td style="padding:4px 6px"><input type="number" step="1" placeholder="Stock" value="${esc(mat.stock||'')}" onchange="quoteMaterialEdit(${i},${mi},'stock',this.value)" style="width:65px;padding:3px"></td>
-      <td style="padding:4px 6px"><input type="number" step="1" placeholder="Bal" value="${esc(mat.balance||'')}" onchange="quoteMaterialEdit(${i},${mi},'balance',this.value)" style="width:65px;padding:3px"></td>
-      <td style="padding:4px 6px;text-align:center"><input type="checkbox"${mat.po?' checked':''} onchange="quoteMaterialEdit(${i},${mi},'po',this.checked)"></td>
+      <td style="padding:4px 4px"><select onchange="quoteMaterialEdit(${i},${mi},'size',this.value)" style="width:130px;padding:3px">
+        <option value="">—</option>${sizeOpts.map(s=>`<option value="${s}"${mat.size===s?' selected':''}>${esc(s)}</option>`).join('')}
+      </select></td>
+      <td style="padding:4px 4px"><input type="number" step="0.01" placeholder="Stock" value="${esc(mat.stock||'')}" onchange="quoteMaterialEdit(${i},${mi},'stock',this.value)" style="width:64px;padding:3px"></td>
+      <td style="padding:4px 4px"><input type="number" step="0.01" placeholder="Bal" value="${esc(mat.balance||'')}" onchange="quoteMaterialEdit(${i},${mi},'balance',this.value)" style="width:64px;padding:3px"></td>
+      <td style="padding:4px 4px;text-align:center"><input type="checkbox"${mat.po?' checked':''} onchange="quoteMaterialEdit(${i},${mi},'po',this.checked)"></td>
       <td style="padding:4px 2px">${mi>0?`<button type="button" onclick="quoteRemoveMaterial(${i},${mi})" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:14px">×</button>`:''}</td>
-    </tr>`).join('');
+    </tr>`;}).join('');
     fields=`
       <div class="field full"><label>Workcenters</label>
         <div style="display:flex;flex-wrap:wrap;gap:6px;padding:4px 0">${wcBtns}</div></div>
