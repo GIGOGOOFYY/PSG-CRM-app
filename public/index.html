@@ -859,7 +859,13 @@ const MAP = {
     from:r=>({id:r.id,accountId:r.account_id||"",name:r.name,phone:r.phone||"",email:r.email||"",designation:r.designation||"",whatsappVerified:!!r.whatsapp_verified,city:r.city||"",area:r.area||"",address:r.address||"",notes:r.notes||"",active:r.active!==false}) },
   pipelineDeals:{table:"crm_deals", pk:"id",
     to:d=>({id:d.id,account_id:d.accountId||null,contact_id:d.contactId||null,stage:d.stage||"New Lead",title:d.title||null,assigned_to:d.assignedTo||null,lead_source:d.leadSource||null,priority:d.priority||"Medium",revenue_potential:d.revenuePotential||null,first_contact:d.firstContact||null,last_contact:d.lastContact||null,status:d.status||"active",notes:d.notes||null,updated_at:new Date().toISOString()}),
-    from:r=>({id:r.id,accountId:r.account_id||"",contactId:r.contact_id||"",stage:r.stage||"New Lead",title:r.title||"",assignedTo:r.assigned_to||"",leadSource:r.lead_source||"",priority:r.priority||"Medium",revenuePotential:r.revenue_potential||null,firstContact:r.first_contact||"",lastContact:r.last_contact||"",status:r.status||"active",notes:r.notes||"",createdAt:r.created_at||""}) }
+    from:r=>({id:r.id,accountId:r.account_id||"",contactId:r.contact_id||"",stage:r.stage||"New Lead",title:r.title||"",assignedTo:r.assigned_to||"",leadSource:r.lead_source||"",priority:r.priority||"Medium",revenuePotential:r.revenue_potential||null,firstContact:r.first_contact||"",lastContact:r.last_contact||"",status:r.status||"active",notes:r.notes||"",createdAt:r.created_at||""}) },
+  scales:{table:"crm_scales", pk:"id",
+    to:s=>({id:s.id,name:s.name,product:s.product||null,notes:s.notes||null,tiers:s.tiers||[],active:s.active!==false}),
+    from:r=>({id:r.id,name:r.name,product:r.product||"",notes:r.notes||"",tiers:r.tiers||[],active:r.active!==false}) },
+  configurations:{table:"crm_configurations", pk:"id",
+    to:c=>({id:c.id,name:c.name,workcenters:c.workcenters||{},sort_order:c.sortOrder||0,active:c.active!==false}),
+    from:r=>({id:r.id,name:r.name,workcenters:r.workcenters||{},sortOrder:r.sort_order||0,active:r.active!==false}) }
 };
 
 function initSupabase(){
@@ -871,7 +877,7 @@ function initSupabase(){
 async function cloudPull(){
   if(!sb) return false;
   let anyOK=false;
-  for(const k of ["users","clients","calls","meetings","deals","tasks","repTargets","quotes","salesOrders","invoices","purchaseOrders","products","campaigns","priceBooks","documents","deliveryChallans","materialRequisitions","receivings","accounts","contacts","pipelineDeals"]){
+  for(const k of ["users","clients","calls","meetings","deals","tasks","repTargets","quotes","salesOrders","invoices","purchaseOrders","products","campaigns","priceBooks","documents","deliveryChallans","materialRequisitions","receivings","accounts","contacts","pipelineDeals","scales","configurations"]){
     try{
       const PAGE=1000; let all=[]; let offset=0;
       while(true){
@@ -3070,7 +3076,16 @@ const PSG_TERMS = [
   "Any dispute arising from this quotation/order shall be subject to the exclusive jurisdiction of the courts at Karachi."
 ];
 const PSG_DISCLAIMER = "Toughened/tempered safety glass, in extremely rare cases, may fracture spontaneously without any external cause due to Nickel Sulphide (NiS) inclusions that can be present in float glass. This is a recognized industry-wide phenomenon and is not covered under warranty. Pakistan Safety Glass shall not be liable for any loss, damage, or injury arising from such spontaneous breakage.";
-function quoteItemAmount(it){ return num(it&&it.sqft)*num(it&&it.pieces)*num(it&&it.unitPrice); }
+// ── Quotation Builder helpers ──────────────────────────────────────────────
+function toInches(val,unit){const v=num(val);if(!v)return 0;switch(unit){case'mm':return v/25.4;case'cm':return v/2.54;case'ft':return v*12;default:return v;}}
+function toMm(val,unit){const v=num(val);if(!v)return 0;switch(unit){case'in':return v*25.4;case'cm':return v*10;case'ft':return v*304.8;default:return v;}}
+function applyScaleRoundup(dimInches,tiers){if(!tiers||!tiers.length||!dimInches)return dimInches;const tier=tiers.find(t=>dimInches<=(t.upTo||9999))||tiers[tiers.length-1];const inc=tier.increment||3;return Math.ceil(dimInches/inc)*inc;}
+function quoteItemAmount(it){
+  if(!it)return 0;
+  const type=it.type||"Glass";
+  if(type==="Service"||type==="Hardware")return num(it.pieces)*num(it.unitPrice);
+  return num(it.sqft)*num(it.pieces)*num(it.unitPrice);
+}
 function quoteTotal(items){ return (items||[]).reduce((s,it)=>s+quoteItemAmount(it),0); }
 function quoteSumQty(items){ return (items||[]).reduce((s,it)=>s+num(it.pieces),0); }
 function quoteSumByType(items,type){ return (items||[]).reduce((s,it)=>s+((it.type||"Glass")===type?num(it.pieces):0),0); }
@@ -3124,36 +3139,136 @@ function printQuotesLetterhead(){
 }
 function quoteItemRowHtml(i,it){
   it=it||{};
-  return `<div class="card" style="margin:6px 0;padding:10px;background:var(--panel2)"><div class="formgrid">
-    <div class="field"><label>Code (auto)</label><input id="qi_code_${i}" class="calc" readonly value="${esc((window.__quoteGqSerial||1)+"/"+(i+1))}"></div>
-    <div class="field full"><label>Description</label><input id="qi_desc_${i}" list="dl_products" value="${esc(it.desc||"")}" oninput="quoteItemEdit(${i},'desc',this.value)"></div>
-    <div class="field"><label>Size W (mm)</label><input id="qi_sizeW_${i}" type="number" step="any" value="${esc(it.sizeW||"")}" oninput="quoteItemEdit(${i},'sizeW',this.value)"></div>
-    <div class="field"><label>Size H (mm)</label><input id="qi_sizeH_${i}" type="number" step="any" value="${esc(it.sizeH||"")}" oninput="quoteItemEdit(${i},'sizeH',this.value)"></div>
-    <div class="field"><label>SQFT</label><input id="qi_sqft_${i}" type="number" step="any" value="${esc(it.sqft||"")}" oninput="quoteItemEdit(${i},'sqft',this.value)"></div>
-    <div class="field"><label>Pieces</label><input id="qi_pieces_${i}" type="number" step="any" value="${esc(it.pieces||"")}" oninput="quoteItemEdit(${i},'pieces',this.value)"></div>
-    <div class="field"><label>SQFT Rate (PKR/sqft)</label><input id="qi_price_${i}" type="number" step="any" value="${esc(it.unitPrice||"")}" oninput="quoteItemEdit(${i},'unitPrice',this.value)"></div>
-    <div class="field"><label>Type</label><select id="qi_type_${i}" onchange="quoteItemEdit(${i},'type',this.value)"><option ${(it.type||"Glass")==="Glass"?"selected":""}>Glass</option><option ${it.type==="Hardware"?"selected":""}>Hardware</option></select></div>
-    <div class="field"><label>Line Amount</label><input id="qi_line_${i}" readonly class="calc" value="${PKR(quoteItemAmount(it))}"></div>
-  </div><button class="btn sm ghost danger" onclick="quoteDelItem(${i})">Remove item</button></div>`;
+  const type=it.type||"Glass";
+  const scales=(state.scales||[]).filter(s=>s.active!==false);
+  const configs=(state.configurations||[]).filter(c=>c.active!==false).sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0));
+  const prods=(state.products||[]).filter(p=>p.active!==false);
+  const typeLabel=`<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:${type==='Glass'?'var(--accent)':type==='Service'?'#16a34a':'#d97706'};color:#fff">${type}</span>`;
+  let fields='';
+  if(type==='Glass'){
+    const unit=it.unit||'mm';
+    const scId=it.scaleId||(scales[0]?scales[0].id:'');
+    const scaledWmm=it.scaledW?Math.round(it.scaledW*10)/10:'';
+    const scaledHmm=it.scaledH?Math.round(it.scaledH*10)/10:'';
+    const scaledWin=it.scaledW?Math.round((it.scaledW/25.4)*100)/100:'';
+    const scaledHin=it.scaledH?Math.round((it.scaledH/25.4)*100)/100:'';
+    const sizeInfo=scaledWmm?`Scaled: <b>${scaledWmm}×${scaledHmm} mm</b> (${scaledWin}"×${scaledHin}")`:'Enter dimensions above';
+    fields=`
+      <div class="field"><label>Product</label>
+        <select id="qi_product_${i}" onchange="quoteItemEdit(${i},'productId',this.value)">
+          <option value="">— Product —</option>
+          ${prods.map(p=>`<option value="${esc(p.id)}"${it.productId===p.id?' selected':''}>${esc(p.name)}</option>`).join('')}
+        </select></div>
+      <div class="field"><label>Configuration</label>
+        <select id="qi_config_${i}" onchange="quoteItemEdit(${i},'configId',this.value)">
+          <option value="">— Config —</option>
+          ${configs.map(c=>`<option value="${esc(c.id)}"${it.configId===c.id?' selected':''}>${esc(c.name)}</option>`).join('')}
+        </select></div>
+      <div class="field"><label>Unit</label>
+        <select id="qi_unit_${i}" onchange="quoteItemEdit(${i},'unit',this.value)">
+          ${['mm','in','cm','ft'].map(u=>`<option${unit===u?' selected':''}>${u}</option>`).join('')}
+        </select></div>
+      <div class="field"><label>Width (${unit})</label>
+        <input id="qi_inputW_${i}" type="number" step="any" value="${esc(it.inputW||'')}" oninput="quoteItemEdit(${i},'inputW',this.value)"></div>
+      <div class="field"><label>Height (${unit})</label>
+        <input id="qi_inputH_${i}" type="number" step="any" value="${esc(it.inputH||'')}" oninput="quoteItemEdit(${i},'inputH',this.value)"></div>
+      <div class="field"><label>Scale</label>
+        <select id="qi_scale_${i}" onchange="quoteItemEdit(${i},'scaleId',this.value)">
+          ${scales.map(s=>`<option value="${esc(s.id)}"${scId===s.id?' selected':''}>${esc(s.name)}</option>`).join('')}
+        </select></div>
+      <div class="field full"><div class="help" id="qi_sized_${i}">${sizeInfo}</div></div>
+      <div class="field"><label>Sqft (auto)</label>
+        <input id="qi_sqft_${i}" readonly class="calc" value="${esc(it.sqft||'')}"></div>
+      <div class="field"><label>Pieces</label>
+        <input id="qi_pieces_${i}" type="number" step="1" value="${esc(it.pieces||'')}" oninput="quoteItemEdit(${i},'pieces',this.value)"></div>
+      <div class="field"><label>Rate (PKR/sqft)</label>
+        <input id="qi_price_${i}" type="number" step="any" value="${esc(it.unitPrice||'')}" oninput="quoteItemEdit(${i},'unitPrice',this.value)"></div>`;
+  } else if(type==='Service'){
+    const SVCS=['Cartage','Packing','Installation','Cradle'];
+    fields=`
+      <div class="field"><label>Service</label>
+        <select id="qi_service_${i}" onchange="quoteItemEdit(${i},'service',this.value)">
+          <option value="">— Service —</option>
+          ${SVCS.map(s=>`<option${it.service===s?' selected':''}>${esc(s)}</option>`).join('')}
+        </select></div>
+      <div class="field"><label>Qty</label>
+        <input id="qi_pieces_${i}" type="number" step="1" value="${esc(it.pieces||'')}" oninput="quoteItemEdit(${i},'pieces',this.value)"></div>
+      <div class="field"><label>Unit Price (PKR)</label>
+        <input id="qi_price_${i}" type="number" step="any" value="${esc(it.unitPrice||'')}" oninput="quoteItemEdit(${i},'unitPrice',this.value)"></div>`;
+  } else {
+    const HW=['Glass Hardware','ACP','Ready Windscreen'];
+    fields=`
+      <div class="field"><label>Hardware</label>
+        <select id="qi_hw_${i}" onchange="quoteItemEdit(${i},'hardware',this.value)">
+          <option value="">— Hardware —</option>
+          ${HW.map(h=>`<option${it.hardware===h?' selected':''}>${esc(h)}</option>`).join('')}
+        </select></div>
+      <div class="field"><label>Qty</label>
+        <input id="qi_pieces_${i}" type="number" step="1" value="${esc(it.pieces||'')}" oninput="quoteItemEdit(${i},'pieces',this.value)"></div>
+      <div class="field"><label>Unit Price (PKR)</label>
+        <input id="qi_price_${i}" type="number" step="any" value="${esc(it.unitPrice||'')}" oninput="quoteItemEdit(${i},'unitPrice',this.value)"></div>`;
+  }
+  return `<div class="card" style="margin:6px 0;padding:10px;background:var(--panel2)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">${typeLabel}<button class="btn sm ghost danger" onclick="quoteDelItem(${i})">✕ Remove</button></div>
+    <div class="formgrid">${fields}
+      <div class="field"><label>Line Amount</label><input id="qi_line_${i}" readonly class="calc" value="${PKR(quoteItemAmount(it))}"></div>
+    </div></div>`;
 }
 function quoteRenderItems(){
   const wrap=document.getElementById("qi_rows"); if(!wrap)return;
-  wrap.innerHTML=(window.__quoteItems||[]).map((it,i)=>quoteItemRowHtml(i,it)).join("") || '<div class="help">No items yet — click "+ Add item" below.</div>';
-  const lineEl=document.getElementById("qi_line_"+i); if(lineEl) lineEl.value=PKR(quoteItemAmount(window.__quoteItems[i]));
+  wrap.innerHTML=(window.__quoteItems||[]).map((it,i)=>quoteItemRowHtml(i,it)).join("") || '<div class="help">No items yet — click a "+ Add" button below.</div>';
   const t=document.getElementById("qi_total"); if(t)t.textContent=PKR(quoteTotal(window.__quoteItems));
 }
 function quoteItemEdit(i,field,val){
-  if(!window.__quoteItems[i])return;
-  const strFields=["desc","code","type"];
-  window.__quoteItems[i][field]=strFields.includes(field)?val:num(val);
-  if(field==="sizeW"||field==="sizeH"){
-    const it=window.__quoteItems[i]; const w=num(it.sizeW), h=num(it.sizeH);
-    if(w&&h){ it.sqft=Math.round((w*h/92903.04)*100)/100; const sq=document.getElementById("qi_sqft_"+i); if(sq)sq.value=it.sqft; }
+  if(!window.__quoteItems||!window.__quoteItems[i])return;
+  const it=window.__quoteItems[i];
+  const strFields=["desc","code","type","product","service","hardware","unit","configId","productId","scaleId","config"];
+  it[field]=strFields.includes(field)?val:num(val);
+  const type=it.type||"Glass";
+  if(type==="Glass"){
+    // Resolve product name from id
+    if(field==="productId"){ const p=(state.products||[]).find(x=>x.id===val); if(p){it.product=p.name;} }
+    // Resolve config workcenters from id
+    if(field==="configId"){ const c=(state.configurations||[]).find(x=>x.id===val); if(c){it.config=c.name;it.workcenters=c.workcenters||{};} }
+    // Auto-description
+    it.desc=[it.product,it.config].filter(Boolean).join(" ");
+    // Recalc dimensions + sqft when any size/scale/unit field changes
+    if(["inputW","inputH","unit","scaleId"].includes(field)){
+      const unit=it.unit||"mm";
+      const wIn=toInches(num(it.inputW),unit);
+      const hIn=toInches(num(it.inputH),unit);
+      if(wIn&&hIn){
+        const scale=(state.scales||[]).find(s=>s.id===it.scaleId);
+        const tiers=scale?(scale.tiers||[]):[{upTo:9999,increment:3}];
+        const scaledWin=applyScaleRoundup(wIn,tiers);
+        const scaledHin=applyScaleRoundup(hIn,tiers);
+        it.scaledW=Math.round(scaledWin*25.4*10)/10;
+        it.scaledH=Math.round(scaledHin*25.4*10)/10;
+        it.sizeW=Math.round(toMm(num(it.inputW),unit)*10)/10;
+        it.sizeH=Math.round(toMm(num(it.inputH),unit)*10)/10;
+        it.sqft=Math.round((it.scaledW*it.scaledH/92903.04)*100)/100;
+        const sq=document.getElementById("qi_sqft_"+i); if(sq)sq.value=it.sqft;
+        const sd=document.getElementById("qi_sized_"+i);
+        if(sd) sd.innerHTML=`Scaled: <b>${it.scaledW}×${it.scaledH} mm</b> (${Math.round(scaledWin*100)/100}"×${Math.round(scaledHin*100)/100}")`;
+      }
+    }
+  } else if(type==="Service"){
+    if(field==="service") it.desc=val;
+  } else {
+    if(field==="hardware") it.desc=val;
   }
-  const lineEl=document.getElementById("qi_line_"+i); if(lineEl) lineEl.value=PKR(quoteItemAmount(window.__quoteItems[i]));
+  const lineEl=document.getElementById("qi_line_"+i); if(lineEl)lineEl.value=PKR(quoteItemAmount(it));
   const t=document.getElementById("qi_total"); if(t)t.textContent=PKR(quoteTotal(window.__quoteItems));
 }
-function quoteAddItem(){ window.__quoteItems=window.__quoteItems||[]; window.__quoteItems.push({code:"",desc:"",sizeW:"",sizeH:"",sqft:"",pieces:"",unitPrice:"",type:"Glass"}); quoteRenderItems(); }
+function quoteAddItem(type){
+  type=type||"Glass"; window.__quoteItems=window.__quoteItems||[];
+  const defScale=(state.scales||[]).find(s=>s.active!==false);
+  const defScaleId=defScale?defScale.id:"";
+  const item=type==="Glass"?{type:"Glass",product:"",productId:"",config:"",configId:"",unit:"mm",inputW:"",inputH:"",sizeW:"",sizeH:"",scaledW:"",scaledH:"",sqft:"",pieces:"",unitPrice:"",desc:"",workcenters:{},scaleId:defScaleId}:
+    type==="Service"?{type:"Service",service:"",pieces:"",unitPrice:"",desc:""}:
+    {type:"Hardware",hardware:"",pieces:"",unitPrice:"",desc:""};
+  window.__quoteItems.push(item); quoteRenderItems();
+}
 function quoteDelItem(i){ window.__quoteItems.splice(i,1); quoteRenderItems(); }
 function quoteAttachFile(input){
   const f=input.files&&input.files[0]; if(!f)return;
@@ -3186,7 +3301,7 @@ function quoteForm(q){ q=q||{};
     </div>
     <h4 style="margin:14px 0 4px">Line items</h4>
     <div id="qi_rows"></div>
-    <div style="display:flex;gap:8px;align-items:center;margin:8px 0"><button class="btn sm ghost" onclick="quoteAddItem()">＋ Add item</button><div class="help">Total: <b id="qi_total">${PKR(quoteTotal(window.__quoteItems))}</b></div></div>
+    <div style="display:flex;gap:8px;align-items:center;margin:8px 0;flex-wrap:wrap"><button class="btn sm ghost" onclick="quoteAddItem('Glass')">＋ Glass</button><button class="btn sm ghost" onclick="quoteAddItem('Service')">＋ Service</button><button class="btn sm ghost" onclick="quoteAddItem('Hardware')">＋ Hardware</button><div class="help">Total: <b id="qi_total">${PKR(quoteTotal(window.__quoteItems))}</b></div></div>
     <div class="field full"><label>Notes / Terms</label><textarea id="qf_notes">${esc(q.notes||"")}</textarea></div>
     <div class="field full"><label>Attach PDF (optional — if the quotation was prepared outside the CRM)</label>
       <input id="qi_pdf" type="file" accept="application/pdf" onchange="quoteAttachFile(this)">
@@ -3213,8 +3328,49 @@ function readQuote(existing){
     pdfData:window.__quotePdfData||""
   });
 }
-function addQuote(){ openModal("New Quote", quoteForm({rep:myRep()||"",status:"Draft"}), async()=>{ const q=readQuote(); if(!q.clientId){toast("Pick a client");return false;} if(!q.items.length){toast("Add at least one item");return false;} q.id=nextId("QT",q.rep); q.serialNo=(state.quotes||[]).length+1; state.quotes.push(q); await upsert("quotes",q); if(q.status==="Sent"){ const c=state.clients.find(x=>x.id===q.clientId); if(c) promoteStage(c,"Quotation Sent"); } if(q.status==="Accepted"){ const c=state.clients.find(x=>x.id===q.clientId); if(c) promoteStage(c,"Quotation Approved"); } closeModal(); toast("Quote added"); go("quotes"); }, quoteRenderItems); }
-function edit_quote(id){ const q=state.quotes.find(x=>x.id===id); if(!q)return; openModal("Edit Quote", quoteForm(q), async()=>{ const upd=readQuote(q); if(!upd.items.length){toast("Add at least one item");return false;} Object.assign(q,upd); await upsert("quotes",q); if(q.status==="Sent"){ const c=state.clients.find(x=>x.id===q.clientId); if(c) promoteStage(c,"Quotation Sent"); } if(q.status==="Accepted"){ const c=state.clients.find(x=>x.id===q.clientId); if(c) promoteStage(c,"Quotation Approved"); } closeModal(); toast("Quote updated"); go("quotes"); }, quoteRenderItems); }
+async function createProductionOrdersFromQuote(q){
+  if(!sb){toast("Not connected — production orders skipped");return;}
+  const soId=q.id; // use quote id as SO reference
+  const glassItems=(q.items||[]).filter(it=>(it.type||"Glass")==="Glass"&&num(it.pieces)>0);
+  let created=0;
+  for(let idx=0;idx<glassItems.length;idx++){
+    const it=glassItems[idx];
+    const wcs=it.workcenters||{};
+    const qty=num(it.pieces);
+    const prodOrder={
+      order_number:soId+"-"+(idx+1),
+      parent_order:soId,
+      height_mm:num(it.scaledH)||num(it.sizeH)||0,
+      width_mm:num(it.scaledW)||num(it.sizeW)||0,
+      order_type:"Architectural",
+      client_name:q.company||"",
+      ct:(wcs.ct?1:0)*qty,
+      gr:(wcs.gr?1:0)*qty,
+      pe:(wcs.pe?1:0)*qty,
+      bv:(wcs.bv?1:0)*qty,
+      hl:(wcs.hl?1:0)*qty,
+      pr:(wcs.pr?1:0)*qty,
+      tg:(wcs.tg?1:0)*qty,
+      bg:(wcs.bg?1:0)*qty,
+      lg:(wcs.lg?1:0)*qty,
+      fr:(wcs.fr?1:0)*qty,
+      dg:(wcs.dg?1:0)*qty,
+      qc:qty,
+      order_qty:qty,
+      status:"Pending",
+      notes:it.desc||("Quote "+quoteDisplayId(q)+" item "+(idx+1)),
+      crm_so_id:soId
+    };
+    try{
+      const {error}=await sb.from("orders").insert(prodOrder);
+      if(error) throw error;
+      created++;
+    }catch(e){ console.warn("Production order failed:",e.message); }
+  }
+  if(created>0) toast(created+" production order"+(created>1?"s":"")+" sent to production planning");
+}
+function addQuote(){ openModal("New Quote", quoteForm({rep:myRep()||"",status:"Draft"}), async()=>{ const q=readQuote(); if(!q.clientId){toast("Pick a client");return false;} if(!q.items.length){toast("Add at least one item");return false;} q.id=nextId("QT",q.rep); q.serialNo=(state.quotes||[]).length+1; state.quotes.push(q); await upsert("quotes",q); if(q.status==="Sent"){ const c=state.clients.find(x=>x.id===q.clientId); if(c) promoteStage(c,"Quotation Sent"); } if(q.status==="Accepted"){ const c=state.clients.find(x=>x.id===q.clientId); if(c) promoteStage(c,"Quotation Approved"); await createProductionOrdersFromQuote(q); } closeModal(); toast("Quote added"); go("quotes"); }, quoteRenderItems); }
+function edit_quote(id){ const q=state.quotes.find(x=>x.id===id); if(!q)return; openModal("Edit Quote", quoteForm(q), async()=>{ const upd=readQuote(q); if(!upd.items.length){toast("Add at least one item");return false;} Object.assign(q,upd); await upsert("quotes",q); if(q.status==="Sent"){ const c=state.clients.find(x=>x.id===q.clientId); if(c) promoteStage(c,"Quotation Sent"); } if(q.status==="Accepted"){ const c=state.clients.find(x=>x.id===q.clientId); if(c) promoteStage(c,"Quotation Approved"); await createProductionOrdersFromQuote(q); } closeModal(); toast("Quote updated"); go("quotes"); }, quoteRenderItems); }
 function del_quote(id){ confirmDel("Delete this quote?", async()=>{ state.quotes=state.quotes.filter(x=>x.id!==id); await remove("quotes",id); toast("Deleted"); go("quotes"); }); }
 function waQuote(id){
   const q=state.quotes.find(x=>x.id===id); if(!q)return;
