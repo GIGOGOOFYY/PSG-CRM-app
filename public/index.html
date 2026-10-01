@@ -2378,6 +2378,9 @@ function viewAccount(id){
   const cls=state.calls.filter(c=>(c.company||'').toLowerCase()===aNameLc);
   const mts=state.meetings.filter(m=>(m.company||'').toLowerCase()===aNameLc);
 
+  // ── Phase 4-E: historical commission deals from old system ──────────
+  const oldDls=state.deals.filter(d=>(d.company||'').toLowerCase()===aNameLc);
+
   const evts=[];
   allDls.forEach(d=>{
     const stLbl=d.stage||'New Lead';
@@ -2393,6 +2396,10 @@ function viewAccount(id){
   mts.forEach(m=>{
     evts.push({date:m.date||'',sort:m.date||'',type:'meeting',icon:'🗓',title:`Meeting — ${m.type||''} (${m.status||''})`,detail:[m.agenda,m.followNotes].filter(Boolean).join(' • ').slice(0,80),tag:m.rep||'',tagCls:''});
   });
+  oldDls.forEach(d=>{
+    const val=typeof PKR==='function'?PKR(d.unitPrice*(d.qty||1)):'';
+    evts.push({date:d.closeDate||'',sort:d.closeDate||'',type:'deal',icon:'💰',title:`Order: ${d.product||'Product'} × ${d.qty||1}`,detail:[val?`Value: ${val}`:'',d.collectStatus?`Status: ${d.collectStatus}`:'',d.rep?`Rep: ${d.rep}`:''].filter(Boolean).join(' • '),tag:d.collectStatus||'',tagCls:d.collectStatus==='Received'?'green':'amber'});
+  });
 
   evts.sort((a,b)=>b.sort.localeCompare(a.sort));
 
@@ -2406,7 +2413,7 @@ function viewAccount(id){
       </div>
     </div>`).join(''):`<div class="tl-empty">No activity recorded for this account yet.</div>`;
 
-  const actCount=[allDls.length,qts.length,cls.length,mts.length].map((n,i)=>`<div class="ch-stat"><div class="sv">${n}</div><div class="sl">${['Deals','Quotes','Calls','Meetings'][i]}</div></div>`).join('');
+  const actCount=[allDls.length,qts.length,cls.length,mts.length,oldDls.length].map((n,i)=>`<div class="ch-stat"><div class="sv">${n}</div><div class="sl">${['Pipeline','Quotes','Calls','Meetings','History'][i]}</div></div>`).join('');
 
   openInfoModal(esc(a.name)+' — Detail',
     `<div class="client-header" style="margin-bottom:16px">
