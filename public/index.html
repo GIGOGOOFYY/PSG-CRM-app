@@ -780,7 +780,7 @@ function repStats(rep){
    PERSISTENCE
    ====================================================================== */
 function localKey(){ return "psgcrm_data"; }
-function saveLocal(){ localStorage.setItem(localKey(), JSON.stringify({users:state.users,clients:state.clients,calls:state.calls,meetings:state.meetings,deals:state.deals,repTargets:state.repTargets,quotes:state.quotes,products:state.products,campaigns:state.campaigns,priceBooks:state.priceBooks})); }
+function saveLocal(){ localStorage.setItem(localKey(), JSON.stringify({users:state.users,clients:state.clients,calls:state.calls,meetings:state.meetings,deals:state.deals,repTargets:state.repTargets,quotes:state.quotes,products:state.products,campaigns:state.campaigns,priceBooks:state.priceBooks,pipelineDeals:state.pipelineDeals,accounts:state.accounts,contacts:state.contacts})); }
 function savePendingWrites(){ try{localStorage.setItem('psgcrm_pending',JSON.stringify(pendingWrites));}catch(e){} }
 function loadPendingWrites(){ try{const d=JSON.parse(localStorage.getItem('psgcrm_pending')||'[]');if(Array.isArray(d))pendingWrites=d;}catch(e){} }
 function loadLocalOrSeed(){
@@ -927,9 +927,11 @@ async function backfillQuoteSerials(){
 }
 let __pollTimer=null;
 function startAutoRefresh(){
-  if(__pollTimer || !sb) return;
+  if(__pollTimer) return;
   __pollTimer=setInterval(async()=>{
     if(!session) return;
+    if(!sb){ initSupabase(); } // recover if Supabase CDN loaded after boot
+    if(!sb) return;
     const modalOpen = document.getElementById("modalMount") && document.getElementById("modalMount").innerHTML.trim().length>0;
     const ok = await cloudPull();
     if(ok){ renderConn(); if(!modalOpen){ renderRoute(); } }
@@ -2532,7 +2534,7 @@ function waPipelineDeal(id){
   const ct=state.contacts.find(x=>x.id===d.contactId)
     ||state.contacts.find(x=>x.accountId===d.accountId)||{};
   const phone=ct.phone||"";
-  const ctx={company:acct.name||d.title,contact:ct.name||"",rep:d.assignedTo||myRep()||"",city:acct.city||""};
+  const ctx={company:acct.name||d.title,contact:ct.name||"",rep:d.assignedTo||myRep()||"",city:acct.city||"",_pipelineDealId:d.id};
   waOpenModal(phone,ctx,"Introduction");
   // Sending an intro = first contact made → advance New Lead → Contacted
   const curIdx=PIPELINE_STAGES.indexOf(d.stage||'New Lead');
@@ -3920,6 +3922,19 @@ function waOpenModal(phone, ctx, presetName){
       }
     }
     // (no auto stage-bump on a plain WhatsApp send \u2014 'New Inquiry' has no finer sub-stage in the unified flow; sending a quote still bumps to 'Quotation Sent' above)
+    // Pipeline deal: advance stage when a stage-linked template is sent
+    if(ctx._pipelineDealId){
+      const _WA_TPL_STAGE={'Requirement Confirmation':'Requirement Received','Quotation Sent':'Quotation Sent'};
+      const _tgtStage=_WA_TPL_STAGE[tplName];
+      if(_tgtStage){
+        const _pd=state.pipelineDeals.find(x=>x.id===ctx._pipelineDealId);
+        if(_pd&&PIPELINE_STAGES.indexOf(_tgtStage)>PIPELINE_STAGES.indexOf(_pd.stage||'New Lead')){
+          _pd.stage=_tgtStage;_pd.lastContact=today();
+          upsert('pipelineDeals',_pd);dualWriteDealToClients(_pd);
+          toast('Pipeline \u2192 '+_tgtStage);
+        }
+      }
+    }
     waFire(waMode(), num, msg);
     closeModal(); toast("Opening WhatsApp…"+pdfNote);
   });
@@ -3966,6 +3981,14 @@ function waDelTpl(i){ const t=waFromDom(); t.splice(i,1); cfg.waTemplates=t; sav
   applyTheme(cfg.theme || (matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"));
   applyBrand();
   initSupabase();
+  // If the Supabase CDN script failed to load (network error, timeout), sb=null.
+  // Poll briefly so a slow-but-successful CDN load can still initialize sb.
+  if(!sb && typeof window.supabase==="undefined"){
+    await new Promise(r=>{
+      const _sbPoll=setInterval(()=>{ if(typeof window.supabase!=="undefined"){ clearInterval(_sbPoll); initSupabase(); r(); }},50);
+      setTimeout(()=>{ clearInterval(_sbPoll); r(); },3000);
+    });
+  }
   // restore session FIRST (before any network calls) so an already-signed-in
   // user sees the app shell immediately instead of a login-screen flash
   // while cloud data is still loading
