@@ -706,7 +706,7 @@ const DD = {
   interest:["1","2","3","4","5"],
   taskStatus:["Open","In Progress","Done"],
   quoteStatus:["Draft","Sent","Accepted","Rejected","Expired"],
-  productCategory:["Aluminium Windows","Processed Glass","Bullet Resistant Glass","Automotive Glass","Decorative Glass","ACP / Alucobond","Accessories","Other"],
+  productCategory:["Glass","PVB","Aluminium Windows","Processed Glass","Bullet Resistant Glass","Automotive Glass","Decorative Glass","ACP / Alucobond","Accessories","Other"],
   productUnit:["Sqft","Piece","Rft","Meter","Set","Kg"],
   campaignChannel:["WhatsApp","Instagram","Facebook","Google Ads","Email","Trade Show","Referral Program","Website","Other"],
   campaignStatus:["Planned","Active","Paused","Completed"],
@@ -2832,13 +2832,13 @@ function renderProducts(v){
     <td class="no-print"><div class="rowbtns"><button class="btn sm ghost" onclick="edit_product('${esc(p.id)}')">Edit</button><button class="btn sm ghost danger" onclick="del_product('${esc(p.id)}')">✕</button></div></td></tr>`).join("")
     :`<tr><td colspan="8"><div class="empty">No products yet. Click "Add Product" to create your catalog.</div></td></tr>`;
   v.innerHTML=pagehead("Products","Product catalog — "+rows.length+" item"+(rows.length===1?"":"s"),"Add Product","addProduct()",true)+
-   `<div class="card tablewrap"><table><thead><tr><th>ID</th><th>Product</th><th>SKU</th><th>Category</th><th>Unit</th><th class="num">Unit Price</th><th>Status</th><th></th></tr></thead><tbody>${body}</tbody></table></div>`;
+   `<div class="card tablewrap"><table><thead><tr><th>ID</th><th>Product</th><th>Barcode</th><th>Category</th><th>Unit</th><th class="num">Unit Price</th><th>Status</th><th></th></tr></thead><tbody>${body}</tbody></table></div>`;
 }
 function productForm(p){ p=p||{};
   const sel=(key,val,extra)=>`<select id="f_${key}"><option value=""></option>${vocab(key,extra).map(o=>`<option ${o===val?"selected":""}>${esc(o)}</option>`).join("")}</select>`;
   return `<div class="formgrid">
     <div class="field full"><label>Product Name</label><input id="f_name" value="${esc(p.name||"")}" placeholder="e.g. Tempered Glass 10mm"></div>
-    <div class="field"><label>SKU / Code</label><input id="f_sku" value="${esc(p.sku||"")}"></div>
+    <div class="field"><label>Barcode</label><input id="f_sku" value="${esc(p.sku||"")}"></div>
     <div class="field"><label>Category</label>${sel("productCategory",p.category,[p.category])}</div>
     <div class="field"><label>Unit</label>${sel("productUnit",p.unit,[p.unit])}</div>
     <div class="field"><label>Unit Price (PKR)</label><input id="f_unitPrice" type="number" step="any" value="${esc(p.unitPrice!=null?p.unitPrice:"")}"></div>
@@ -3139,14 +3139,17 @@ function printQuotesLetterhead(){
   window.print();
   setTimeout(()=>{ area.innerHTML=""; document.title=prevTitle; },300);
 }
-function deriveGlassProduct(wcs){
+function deriveGlassProduct(wcs,materials){
+  if(materials&&materials.filter(m=>m.type==='Glass').length>=2)return'Saif Armour';
   if(!wcs)return'';
-  const tg=!!wcs.tg,lg=!!wcs.lg,dg=!!wcs.dg;
+  const tg=!!wcs.tg,lg=!!wcs.lg,dg=!!wcs.dg,bg=!!wcs.bg;
   if(dg&&tg&&lg)return'Saif Cool + Lam';
   if(dg&&tg)return'Saif Cool';
   if(tg&&lg)return'Saif Tough + Lam';
+  if(tg&&bg)return'Saif Tough + Curve';
   if(tg)return'Saif Tough';
   if(lg)return'Saif Lam';
+  if(bg)return'Curve';
   return'';
 }
 function quoteWcToggle(i,wc){
@@ -3154,7 +3157,7 @@ function quoteWcToggle(i,wc){
   const it=window.__quoteItems[i];
   it.workcenters=it.workcenters||{};
   it.workcenters[wc]=!it.workcenters[wc];
-  const derived=deriveGlassProduct(it.workcenters);
+  const derived=deriveGlassProduct(it.workcenters,it.materials);
   it.product=derived;
   it.productId='';
   it.desc=[it.product,it.thickness,it.color].filter(Boolean).join(' ');
@@ -3168,6 +3171,30 @@ function quoteWcToggle(i,wc){
       btn.style.borderColor=it.workcenters[b]?'var(--accent)':'';
     }
   });
+}
+function quoteMaterialEdit(i,mi,field,val){
+  if(!window.__quoteItems||!window.__quoteItems[i])return;
+  const it=window.__quoteItems[i];
+  it.materials=it.materials||[];
+  if(!it.materials[mi])return;
+  it.materials[mi][field]=field==='po'?!!val:val;
+  const derived=deriveGlassProduct(it.workcenters,it.materials);
+  it.product=derived;
+  quoteRenderItems();
+}
+function quoteAddMaterial(i){
+  if(!window.__quoteItems||!window.__quoteItems[i])return;
+  const it=window.__quoteItems[i];
+  it.materials=it.materials||[];
+  it.materials.push({type:'Glass',thickness:'',color:'',size:'',stock:'',balance:'',po:false});
+  quoteRenderItems();
+}
+function quoteRemoveMaterial(i,mi){
+  if(!window.__quoteItems||!window.__quoteItems[i])return;
+  const it=window.__quoteItems[i];
+  if(!it.materials||it.materials.length<=1)return;
+  it.materials.splice(mi,1);
+  quoteRenderItems();
 }
 function quoteItemRowHtml(i,it){
   it=it||{};
@@ -3187,24 +3214,53 @@ function quoteItemRowHtml(i,it){
     const sizeInfo=scaledWmm?`Scaled: <b>${scaledWmm}×${scaledHmm} mm</b> (${scaledWin}"×${scaledHin}")`:'Enter dimensions above';
         const wcs_arr=['ct','gr','pe','bv','hl','pr','tg','bg','lg','fr','dg'];
     const wcsDat=it.workcenters||{};
-    const derivedProd=deriveGlassProduct(wcsDat);
+    it.materials=it.materials||[{type:'Glass',thickness:'',color:'',size:'',stock:'',balance:'',po:false}];
+    const derivedProd=deriveGlassProduct(wcsDat,it.materials);
     if(!it.product&&derivedProd)it.product=derivedProd;
+    const totalThick=it.materials.filter(m=>m.type==='Glass').reduce((s,m)=>s+(parseFloat(m.thickness)||0),0);
     const wcBtns=wcs_arr.map(w=>{const active=!!wcsDat[w];const stl=active?'background:var(--accent);color:#fff;border-color:var(--accent)':'border:1.5px solid var(--border)';return `<button type="button" id="qi_wc_${w}_${i}" onclick="quoteWcToggle(${i},'${w}')" style="${stl};border-radius:6px;padding:5px 9px;font-size:12px;font-weight:700;cursor:pointer;min-width:38px">${w.toUpperCase()}</button>`;}).join('');
+    const GLASS_THICK=['3','4','5','6','8','10','12','15'];
+    const GLASS_COLORS=['CF','BF','GF','Crystal','Blue','Dark Blue','Dark Grey','Euro Grey','Green','Blue Reflective'];
+    const GLASS_SIZES=['1525×2850','1800×3050','2134×3660','2440×2850','2440×3660','2591×3660'];
+    const matRowsHtml=it.materials.map((mat,mi)=>`<tr>
+      <td style="padding:4px 6px;font-weight:600;font-size:13px">Glass</td>
+      <td style="padding:4px 6px"><select onchange="quoteMaterialEdit(${i},${mi},'thickness',this.value)" style="width:70px;padding:3px">
+        <option value="">—</option>${GLASS_THICK.map(t=>`<option value="${t}"${mat.thickness===t?' selected':''}>${t}mm</option>`).join('')}
+      </select></td>
+      <td style="padding:4px 6px"><select onchange="quoteMaterialEdit(${i},${mi},'color',this.value)" style="width:120px;padding:3px">
+        <option value="">—</option>${GLASS_COLORS.map(c=>`<option value="${c}"${mat.color===c?' selected':''}>${esc(c)}</option>`).join('')}
+      </select></td>
+      <td style="padding:4px 6px"><select onchange="quoteMaterialEdit(${i},${mi},'size',this.value)" style="width:130px;padding:3px">
+        <option value="">—</option>${GLASS_SIZES.map(s=>`<option value="${s}"${mat.size===s?' selected':''}>${esc(s)}</option>`).join('')}
+      </select></td>
+      <td style="padding:4px 6px"><input type="number" step="1" placeholder="Stock" value="${esc(mat.stock||'')}" onchange="quoteMaterialEdit(${i},${mi},'stock',this.value)" style="width:65px;padding:3px"></td>
+      <td style="padding:4px 6px"><input type="number" step="1" placeholder="Bal" value="${esc(mat.balance||'')}" onchange="quoteMaterialEdit(${i},${mi},'balance',this.value)" style="width:65px;padding:3px"></td>
+      <td style="padding:4px 6px;text-align:center"><input type="checkbox"${mat.po?' checked':''} onchange="quoteMaterialEdit(${i},${mi},'po',this.checked)"></td>
+      <td style="padding:4px 2px">${mi>0?`<button type="button" onclick="quoteRemoveMaterial(${i},${mi})" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:14px">×</button>`:''}</td>
+    </tr>`).join('');
     fields=`
       <div class="field full"><label>Workcenters</label>
         <div style="display:flex;flex-wrap:wrap;gap:6px;padding:4px 0">${wcBtns}</div></div>
       <div class="field"><label>Product (auto)</label>
         <input id="qi_product_${i}" readonly class="calc" style="font-weight:600" value="${esc(derivedProd||it.product||'')}"></div>
-      <div class="field"><label>Thickness</label>
-        <select id="qi_thick_${i}" onchange="quoteItemEdit(${i},'thickness',this.value)">
-          <option value="">— Thickness —</option>
-          ${['3MM','4MM','5MM','6MM','8MM','10MM','12MM','15MM','19MM'].map(t=>`<option${it.thickness===t?' selected':''}>${t}</option>`).join('')}
-        </select></div>
-      <div class="field"><label>Color</label>
-        <select id="qi_color_${i}" onchange="quoteItemEdit(${i},'color',this.value)">
-          <option value="">— Color —</option>
-          ${['CF – Clear Float','BF – Brown Float','GF – Grey Float','FG – French Green','Blue','Green','Reflective','ST-167','MORU','Auto Blue'].map(col=>`<option${col===it.color?' selected':''}>${col}</option>`).join('')}
-        </select></div>
+      <div class="field"><label>Total Thickness (auto)</label>
+        <input readonly class="calc" style="font-weight:700;font-size:15px" value="${totalThick?totalThick+'mm':'—'}"></div>
+      <div class="field full" style="overflow-x:auto"><label>Glass Layers</label>
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead><tr style="background:var(--panel);font-weight:600">
+            <th style="padding:4px 6px;text-align:left">Item</th>
+            <th style="padding:4px 6px;text-align:left">Thickness</th>
+            <th style="padding:4px 6px;text-align:left">Colour</th>
+            <th style="padding:4px 6px;text-align:left">Sheet Size</th>
+            <th style="padding:4px 6px;text-align:left">Stock</th>
+            <th style="padding:4px 6px;text-align:left">Balance</th>
+            <th style="padding:4px 6px;text-align:center">PO</th>
+            <th style="padding:4px 6px"></th>
+          </tr></thead>
+          <tbody id="qi_mats_${i}">${matRowsHtml}</tbody>
+        </table>
+        <button type="button" onclick="quoteAddMaterial(${i})" style="margin-top:6px;padding:4px 12px;background:var(--accent);color:#fff;border:none;border-radius:6px;font-size:12px;cursor:pointer">+ Add Glass Layer</button>
+      </div>
       <div class="field"><label>Unit</label>
         <select id="qi_unit_${i}" onchange="quoteItemEdit(${i},'unit',this.value)">
           ${['mm','in','cm','ft'].map(u=>`<option${unit===u?' selected':''}>${u}</option>`).join('')}
@@ -3307,7 +3363,7 @@ function quoteAddItem(type){
   type=type||"Glass"; window.__quoteItems=window.__quoteItems||[];
   const defScale=(state.scales||[]).find(s=>s.active!==false);
   const defScaleId=defScale?defScale.id:"";
-  const item=type==="Glass"?{type:"Glass",product:"",productId:"",config:"",configId:"",thickness:"",color:"",unit:"mm",inputW:"",inputH:"",sizeW:"",sizeH:"",scaledW:"",scaledH:"",sqft:"",pieces:"",unitPrice:"",desc:"",workcenters:{},scaleId:defScaleId}:
+  const item=type==="Glass"?{type:"Glass",product:"",productId:"",config:"",configId:"",thickness:"",color:"",unit:"mm",inputW:"",inputH:"",sizeW:"",sizeH:"",scaledW:"",scaledH:"",sqft:"",pieces:"",unitPrice:"",desc:"",workcenters:{},materials:[{type:"Glass",thickness:"",color:"",size:"",stock:"",balance:"",po:false}],scaleId:defScaleId}:
     type==="Service"?{type:"Service",service:"",pieces:"",unitPrice:"",desc:""}:
     {type:"Hardware",hardware:"",hwDesc:"",pieces:"",unitPrice:"",desc:""};
   window.__quoteItems.push(item); quoteRenderItems();
