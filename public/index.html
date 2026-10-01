@@ -3079,7 +3079,7 @@ const PSG_DISCLAIMER = "Toughened/tempered safety glass, in extremely rare cases
 // ── Quotation Builder helpers ──────────────────────────────────────────────
 function toInches(val,unit){const v=num(val);if(!v)return 0;switch(unit){case'mm':return v/25.4;case'cm':return v/2.54;case'ft':return v*12;default:return v;}}
 function toMm(val,unit){const v=num(val);if(!v)return 0;switch(unit){case'in':return v*25.4;case'cm':return v*10;case'ft':return v*304.8;default:return v;}}
-function applyScaleRoundup(dimInches,tiers){if(!tiers||!tiers.length||!dimInches)return dimInches;const tier=tiers.find(t=>dimInches<=(t.upTo||9999))||tiers[tiers.length-1];const inc=tier.increment||3;return Math.ceil(dimInches/inc)*inc;}
+function applyScaleRoundup(dimInches,tiers){if(!tiers||!tiers.length||!dimInches)return dimInches;const dimFt=dimInches/12;const band=tiers.find(b=>dimFt>b.from&&dimFt<=b.to)||tiers[tiers.length-1];return band.value*12;}
 function quoteItemAmount(it){
   if(!it)return 0;
   const type=it.type||"Glass";
@@ -3167,7 +3167,7 @@ function quoteItemRowHtml(i,it){
       <div class="field"><label>Color</label>
         <select id="qi_color_${i}" onchange="quoteItemEdit(${i},'color',this.value)">
           <option value="">— Color —</option>
-          ${['Clear','Tinted','Euro Grey','HD-Grey','Low-E','Blue','Bronze'].map(col=>`<option${it.color===col?' selected':''}>${col}</option>`).join('')}
+          ${['CF – Clear Float','BF – Brown Float','GF – Grey Float','FG – French Green','Blue','Green','Reflective','ST-167','MORU','Auto Blue'].map(col=>`<option${it.color===col?' selected':''}>${col}</option>`).join('')}
         </select></div>
       <div class="field"><label>Configuration</label>
         <select id="qi_config_${i}" onchange="quoteItemEdit(${i},'configId',this.value)">
@@ -3251,7 +3251,7 @@ function quoteItemEdit(i,field,val){
       const hIn=toInches(num(it.inputH),unit);
       if(wIn&&hIn){
         const scale=(state.scales||[]).find(s=>s.id===it.scaleId);
-        const tiers=scale?(scale.tiers||[]):[{upTo:9999,increment:3}];
+        const tiers=scale?(scale.tiers||[]):[];
         const scaledWin=applyScaleRoundup(wIn,tiers);
         const scaledHin=applyScaleRoundup(hIn,tiers);
         it.scaledW=Math.round(scaledWin*25.4*10)/10;
