@@ -3139,6 +3139,36 @@ function printQuotesLetterhead(){
   window.print();
   setTimeout(()=>{ area.innerHTML=""; document.title=prevTitle; },300);
 }
+function deriveGlassProduct(wcs){
+  if(!wcs)return'';
+  const tg=!!wcs.tg,lg=!!wcs.lg,dg=!!wcs.dg;
+  if(dg&&tg&&lg)return'Saif Cool + Lam';
+  if(dg&&tg)return'Saif Cool';
+  if(tg&&lg)return'Saif Tough + Lam';
+  if(tg)return'Saif Tough';
+  if(lg)return'Saif Lam';
+  return'';
+}
+function quoteWcToggle(i,wc){
+  if(!window.__quoteItems||!window.__quoteItems[i])return;
+  const it=window.__quoteItems[i];
+  it.workcenters=it.workcenters||{};
+  it.workcenters[wc]=!it.workcenters[wc];
+  const derived=deriveGlassProduct(it.workcenters);
+  it.product=derived;
+  it.productId='';
+  it.desc=[it.product,it.thickness,it.color].filter(Boolean).join(' ');
+  const pd=document.getElementById('qi_product_'+i);
+  if(pd)pd.value=derived;
+  ['ct','gr','pe','bv','hl','pr','tg','bg','lg','fr','dg'].forEach(function(b){
+    const btn=document.getElementById('qi_wc_'+b+'_'+i);
+    if(btn){
+      btn.style.background=it.workcenters[b]?'var(--accent)':'';
+      btn.style.color=it.workcenters[b]?'#fff':'';
+      btn.style.borderColor=it.workcenters[b]?'var(--accent)':'';
+    }
+  });
+}
 function quoteItemRowHtml(i,it){
   it=it||{};
   const type=it.type||"Glass";
@@ -3155,12 +3185,16 @@ function quoteItemRowHtml(i,it){
     const scaledWin=it.scaledW?Math.round((it.scaledW/25.4)*100)/100:'';
     const scaledHin=it.scaledH?Math.round((it.scaledH/25.4)*100)/100:'';
     const sizeInfo=scaledWmm?`Scaled: <b>${scaledWmm}×${scaledHmm} mm</b> (${scaledWin}"×${scaledHin}")`:'Enter dimensions above';
+        const wcs_arr=['ct','gr','pe','bv','hl','pr','tg','bg','lg','fr','dg'];
+    const wcsDat=it.workcenters||{};
+    const derivedProd=deriveGlassProduct(wcsDat);
+    if(!it.product&&derivedProd)it.product=derivedProd;
+    const wcBtns=wcs_arr.map(w=>{const active=!!wcsDat[w];const stl=active?'background:var(--accent);color:#fff;border-color:var(--accent)':'border:1.5px solid var(--border)';return `<button type="button" id="qi_wc_${w}_${i}" onclick="quoteWcToggle(${i},'${w}')" style="${stl};border-radius:6px;padding:5px 9px;font-size:12px;font-weight:700;cursor:pointer;min-width:38px">${w.toUpperCase()}</button>`;}).join('');
     fields=`
-      <div class="field"><label>Product</label>
-        <select id="qi_product_${i}" onchange="quoteItemEdit(${i},'productId',this.value)">
-          <option value="">— Product —</option>
-          ${prods.map(p=>`<option value="${esc(p.id)}"${it.productId===p.id?' selected':''}>${esc(p.name)}</option>`).join('')}
-        </select></div>
+      <div class="field full"><label>Workcenters</label>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;padding:4px 0">${wcBtns}</div></div>
+      <div class="field"><label>Product (auto)</label>
+        <input id="qi_product_${i}" readonly class="calc" style="font-weight:600" value="${esc(derivedProd||it.product||'')}"></div>
       <div class="field"><label>Thickness</label>
         <select id="qi_thick_${i}" onchange="quoteItemEdit(${i},'thickness',this.value)">
           <option value="">— Thickness —</option>
@@ -3169,12 +3203,7 @@ function quoteItemRowHtml(i,it){
       <div class="field"><label>Color</label>
         <select id="qi_color_${i}" onchange="quoteItemEdit(${i},'color',this.value)">
           <option value="">— Color —</option>
-          ${['CF – Clear Float','BF – Brown Float','GF – Grey Float','FG – French Green','Blue','Green','Reflective','ST-167','MORU','Auto Blue'].map(col=>`<option${it.color===col?' selected':''}>${col}</option>`).join('')}
-        </select></div>
-      <div class="field"><label>Configuration</label>
-        <select id="qi_config_${i}" onchange="quoteItemEdit(${i},'configId',this.value)">
-          <option value="">— Config —</option>
-          ${configs.map(c=>`<option value="${esc(c.id)}"${it.configId===c.id?' selected':''}>${esc(c.name)}</option>`).join('')}
+          ${['CF – Clear Float','BF – Brown Float','GF – Grey Float','FG – French Green','Blue','Green','Reflective','ST-167','MORU','Auto Blue'].map(col=>`<option${col===it.color?' selected':''}>${col}</option>`).join('')}
         </select></div>
       <div class="field"><label>Unit</label>
         <select id="qi_unit_${i}" onchange="quoteItemEdit(${i},'unit',this.value)">
@@ -3245,7 +3274,7 @@ function quoteItemEdit(i,field,val){
     // Resolve config workcenters from id
     if(field==="configId"){ const c=(state.configurations||[]).find(x=>x.id===val); if(c){it.config=c.name;it.workcenters=c.workcenters||{};} }
     // Auto-description
-    it.desc=[it.product,it.thickness,it.color,it.config].filter(Boolean).join(" ");
+    it.desc=[it.product,it.thickness,it.color].filter(Boolean).join(" ");
     // Recalc dimensions + sqft when any size/scale/unit field changes
     if(["inputW","inputH","unit","scaleId"].includes(field)){
       const unit=it.unit||"mm";
