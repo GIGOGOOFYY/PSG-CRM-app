@@ -669,8 +669,8 @@ function deviceId(){
 }
 
 /* ── Idle / auto-logout ── */
-const IDLE_TIMEOUT_MS = 30*60*1000;   // 30 min → auto logout
-const IDLE_WARN_MS    = 25*60*1000;   // 25 min → show warning
+function idleTimeoutMs(){ return ((cfg.idleMinutes&&cfg.idleMinutes>0?cfg.idleMinutes:30))*60*1000; }
+function idleWarnMs(){    return Math.max(idleTimeoutMs()-5*60*1000, 60*1000); }
 let __idleTimer=null, __idleWarnTimer=null, __idleCountTimer=null;
 function _clearIdleTimers(){
   if(__idleTimer)      { clearTimeout(__idleTimer);      __idleTimer=null;      }
@@ -694,8 +694,8 @@ function _showIdleWarning(){
 }
 function startIdleTimer(){
   _clearIdleTimers();
-  __idleWarnTimer=setTimeout(_showIdleWarning, IDLE_WARN_MS);
-  __idleTimer=setTimeout(()=>{ _clearIdleTimers(); logout(); }, IDLE_TIMEOUT_MS);
+  __idleWarnTimer=setTimeout(_showIdleWarning, idleWarnMs());
+  __idleTimer=setTimeout(()=>{ _clearIdleTimers(); logout(); }, idleTimeoutMs());
 }
 function resetIdleTimer(){
   if(!session) return;
@@ -703,6 +703,7 @@ function resetIdleTimer(){
   startIdleTimer();
 }
 function stopIdleTimer(){ _clearIdleTimers(); }
+function setIdleTimeout(mins){ cfg.idleMinutes=parseInt(mins,10)||30; saveCfg(); const _ii=document.getElementById('idleIndicator'); if(_ii){ const _m=cfg.idleMinutes; _ii.textContent='🔒 '+(_m<60?_m+' min':(_m/60)+'h'); _ii.title='Auto sign-out after '+_m+' minutes of inactivity'; } if(session) resetIdleTimer(); toast('Auto sign-out set to '+(cfg.idleMinutes<60?cfg.idleMinutes+' min':cfg.idleMinutes/60+'h')); }
 ['click','keydown','mousemove','touchstart','scroll'].forEach(ev=>
   document.addEventListener(ev,()=>{ if(session) resetIdleTimer(); },{passive:true})
 );
@@ -949,8 +950,8 @@ const MAP = {
     to:t=>({id:t.id,title:t.title,due_date:t.dueDate||null,assigned_to:t.assignedTo,assigned_by:t.assignedBy,priority:t.priority,status:t.status,client_id:t.clientId||null,company:t.company||"",notes:t.notes,approved:!!t.approved,created_by_admin:!!t.createdByAdmin}),
     from:r=>({id:r.id,title:r.title,dueDate:r.due_date||"",assignedTo:r.assigned_to,assignedBy:r.assigned_by,priority:r.priority,status:r.status,clientId:r.client_id||"",company:r.company||"",notes:r.notes,approved:!!r.approved,createdByAdmin:!!r.created_by_admin}) },
   users:{table:"crm_users", pk:"username",
-    to:u=>({username:u.username,role:u.role,rep_name:u.repName,active:u.active!==false,permissions:u.permissions||{}}),
-    from:r=>({username:r.username,role:r.role,repName:r.rep_name,active:r.active!==false,permissions:r.permissions||{}}) },
+    to:u=>({username:u.username,role:u.role,rep_name:u.repName,active:u.active!==false,permissions:u.permissions||{},wa_phone:u.waPhone||null}),
+    from:r=>({username:r.username,role:r.role,repName:r.rep_name,active:r.active!==false,permissions:r.permissions||{},waPhone:r.wa_phone||""}) },
   repTargets:{table:"crm_rep_targets", pk:"rep",
     to:t=>({rep:t.rep,target:num(t.target),comm_rate:num(t.commRate)}),
     from:r=>({rep:r.rep,target:r.target,commRate:r.comm_rate}) },
@@ -1250,7 +1251,7 @@ const TABS = [
   {id:"admin",     label:"⚙️ Admin",     admin:true},
 ];
 function startApp(){ startIdleTimer();
-  const _ii=document.getElementById('idleIndicator'); if(_ii) _ii.style.display='';
+  const _ii=document.getElementById('idleIndicator'); if(_ii){ const _m=cfg.idleMinutes||30; _ii.style.display=''; _ii.textContent='🔒 '+(_m<60?_m+' min':(_m/60)+'h'); _ii.title='Auto sign-out after '+_m+' minutes of inactivity'; }
   document.getElementById("login").classList.add("hidden");
   document.getElementById("app").classList.remove("hidden");
   document.getElementById("who").textContent=session.username;
@@ -3959,6 +3960,7 @@ function renderAdmin(v){
         <div class="settings-row"><label class="help">Brand accent colour</label><input id="cfg_accent" type="color" value="${esc(cfg.accent||'#1f7a4d')}" onchange="setAccent(this.value)"></div>
         <div class="settings-row"><label class="help">Top-bar title</label><input id="cfg_title" value="${esc(cfg.title||'PSG CRM')}" onchange="cfg.title=this.value;saveCfg();applyBrand()"></div>
         <div class="settings-row"><label class="help">Subtitle</label><input id="cfg_sub" value="${esc(cfg.subtitle||'Pakistan Safety Glass')}" onchange="cfg.subtitle=this.value;saveCfg();applyBrand()"></div>
+        <div class="settings-row"><label class="help">Auto sign-out</label><select onchange="setIdleTimeout(this.value)">${[5,10,15,20,30,45,60,120].map(m=>`<option value="${m}" ${(cfg.idleMinutes||30)==m?"selected":""}>${m<60?m+" min":m/60+"h"}</option>`).join("")}</select></div>
         <div class="help">Tip: paste your logo later and I can wire it in, or drop a PNG at the top of the file.</div>
      </div></div>
    </div>
@@ -4053,10 +4055,11 @@ function userForm(u){ u=u||{}; const isEdit=!!u.username;
     <div class="field"><label>Password${isEdit?" (leave blank to keep current)":""}</label><input id="u_pass" type="password" placeholder="${isEdit?"unchanged":"required"}"></div>
     <div class="field"><label>Role</label><select id="u_role" onchange="document.getElementById('u_rep').parentNode.style.opacity=this.value==='employee'?1:.5"><option value="employee" ${u.role!=="admin"?"selected":""}>Employee (own data)</option><option value="admin" ${u.role==="admin"?"selected":""}>Master (all data)</option></select></div>
     <div class="field"><label>Rep name (for employees)</label><select id="u_rep"><option value=""></option>${vocab("reps",[u.repName]).map(o=>`<option ${o===u.repName?"selected":""}>${esc(o)}</option>`).join("")}</select></div>
+    <div class="field"><label>WhatsApp number <span style="font-weight:400;color:#9ca3af">(for reminders)</span></label><input id="u_waphone" type="tel" value="${esc(u.waPhone||"")}" placeholder="e.g. 923001234567"></div>
   </div>`;
 }
-function addUser(){ openModal("New User", userForm({role:"employee"}), async()=>{ const rawPass=document.getElementById("u_pass").value; const u={username:document.getElementById("u_name").value.trim(),role:document.getElementById("u_role").value,repName:document.getElementById("u_rep").value,active:true,permissions:{}}; if(!u.username){toast("Username required");return false;} if(!rawPass){toast("Password required");return false;} if(state.users.some(x=>x.username.toLowerCase()===u.username.toLowerCase())){toast("Username exists");return false;} state.users.push(u); await upsert("users",u); if(sb) await sb.rpc("set_crm_user_password",{p_username:u.username,p_password:rawPass}); closeModal(); toast("User added"); go("admin"); }); }
-function editUser(name){ const u=state.users.find(x=>x.username===name); if(!u)return; openModal("Edit User", userForm(u), async()=>{ const rawPass=document.getElementById("u_pass").value; u.role=document.getElementById("u_role").value; u.repName=document.getElementById("u_rep").value; await upsert("users",u); if(rawPass && sb) await sb.rpc("set_crm_user_password",{p_username:u.username,p_password:rawPass}); closeModal(); toast("User updated"); go("admin"); }); }
+function addUser(){ openModal("New User", userForm({role:"employee"}), async()=>{ const rawPass=document.getElementById("u_pass").value; const u={username:document.getElementById("u_name").value.trim(),role:document.getElementById("u_role").value,repName:document.getElementById("u_rep").value,waPhone:(document.getElementById("u_waphone")||{}).value?.trim()||"",active:true,permissions:{}}; if(!u.username){toast("Username required");return false;} if(!rawPass){toast("Password required");return false;} if(state.users.some(x=>x.username.toLowerCase()===u.username.toLowerCase())){toast("Username exists");return false;} state.users.push(u); await upsert("users",u); if(sb) await sb.rpc("set_crm_user_password",{p_username:u.username,p_password:rawPass}); closeModal(); toast("User added"); go("admin"); }); }
+function editUser(name){ const u=state.users.find(x=>x.username===name); if(!u)return; openModal("Edit User", userForm(u), async()=>{ const rawPass=document.getElementById("u_pass").value; u.role=document.getElementById("u_role").value; u.repName=document.getElementById("u_rep").value; u.waPhone=(document.getElementById("u_waphone")||{}).value?.trim()??u.waPhone??""; await upsert("users",u); if(rawPass && sb) await sb.rpc("set_crm_user_password",{p_username:u.username,p_password:rawPass}); closeModal(); toast("User updated"); go("admin"); }); }
 function delUser(name){ confirmDel("Delete user "+name+"?", async()=>{ state.users=state.users.filter(x=>x.username!==name); await remove("users",name); toast("User deleted"); go("admin"); }); }
 
 function renderPermMatrix(){
