@@ -473,6 +473,19 @@ td .help{font-size:11.5px;color:var(--muted);margin-top:1px;display:block}
 .chat-text{font-size:13px;line-height:1.45;white-space:pre-wrap;}
 .chat-meta{font-size:10px;margin-top:3px;opacity:0.7;text-align:right;}
 .chat-in .chat-meta{text-align:left;}
+.perm-matrix-wrap{overflow-x:auto;padding:12px 16px 16px}
+.perm-matrix{width:100%;border-collapse:collapse;font-size:13px}
+.perm-matrix th,.perm-matrix td{padding:8px 10px;border-bottom:1px solid var(--line)}
+.perm-matrix thead th{background:var(--card);font-weight:600;text-align:center;white-space:nowrap}
+.perm-matrix thead th:first-child{text-align:left}
+.perm-user-col{min-width:120px;font-size:12px}
+.perm-section-row td{background:var(--line);color:var(--accent);padding:5px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.5px;font-weight:700}
+.perm-module-label{white-space:nowrap;color:var(--text)}
+.perm-cell{text-align:center;padding:5px 8px}
+.perm-select{font-size:12px;padding:4px 6px;border:1.5px solid var(--line);border-radius:6px;background:#fff;cursor:pointer;min-width:102px;width:100%}
+.perm-select[data-val="none"]{background:#fff5f5;border-color:#fca5a5;color:#dc2626}
+.perm-select[data-val="view"]{background:#fffbeb;border-color:#fcd34d;color:#92400e}
+.perm-select[data-val="full"]{background:#f0fdf4;border-color:#86efac;color:#166534}
 </style>
 </head>
 <body>
@@ -614,6 +627,46 @@ const SIDEBAR_NAV = [
 
 let sbCollapsed = {};
 
+const PERM_MODULES = [
+  { section:"CRM", modules:[
+    { key:"companies", label:"Companies" },
+    { key:"contacts",  label:"Contacts"  },
+    { key:"pipeline",  label:"Pipeline"  },
+  ]},
+  { section:"Sales", modules:[
+    { key:"deals",     label:"Deals"     },
+    { key:"forecasts", label:"Forecasts" },
+    { key:"documents", label:"Documents" },
+    { key:"campaigns", label:"Campaigns" },
+  ]},
+  { section:"Activities", modules:[
+    { key:"tasks",    label:"Tasks"    },
+    { key:"meetings", label:"Meetings" },
+    { key:"calls",    label:"Calls"    },
+  ]},
+  { section:"Inventory", modules:[
+    { key:"products",             label:"Products"              },
+    { key:"priceBooks",           label:"Price Books"           },
+    { key:"quotes",               label:"Quotes"                },
+    { key:"salesOrders",          label:"Sales Orders"          },
+    { key:"purchaseOrders",       label:"Purchase Orders"       },
+    { key:"deliveryChallans",     label:"Delivery Challans"     },
+    { key:"materialRequisitions", label:"Material Requisitions" },
+    { key:"receivings",           label:"Receivings"            },
+    { key:"invoices",             label:"Invoices"              },
+    { key:"vendors",              label:"Vendors"               },
+  ]},
+];
+const ROUTE_PERM = {
+  accounts:"companies", contacts:"contacts", pipeline:"pipeline",
+  deals:"deals", performance:"forecasts", documents:"documents", campaigns:"campaigns",
+  tasks:"tasks", meetings:"meetings", calls:"calls",
+  products:"products", priceBooks:"priceBooks", quotes:"quotes",
+  salesOrders:"salesOrders", purchaseOrders:"purchaseOrders",
+  deliveryChallans:"deliveryChallans", materialRequisitions:"materialRequisitions",
+  receivings:"receivings", invoices:"invoices", vendors:"vendors",
+};
+
 function renderSidebar(){
   const el=document.getElementById("sidebar");
   if(!el) return;
@@ -643,6 +696,7 @@ function renderSidebar(){
       if(!collapsed){
         item.items.forEach(nav=>{
           if(nav.adminOnly && !admin) return;
+          if(!admin && typeof getPerm==='function' && ROUTE_PERM[nav.route||nav.id] && getPerm(nav.route||nav.id)==='none') return;
           const active=activeIds.has(nav.id);
           const dest=nav.route||nav.id;
           const onclick=dest==="_soon"
@@ -815,8 +869,8 @@ const MAP = {
     to:t=>({id:t.id,title:t.title,due_date:t.dueDate||null,assigned_to:t.assignedTo,assigned_by:t.assignedBy,priority:t.priority,status:t.status,client_id:t.clientId||null,company:t.company||"",notes:t.notes,approved:!!t.approved,created_by_admin:!!t.createdByAdmin}),
     from:r=>({id:r.id,title:r.title,dueDate:r.due_date||"",assignedTo:r.assigned_to,assignedBy:r.assigned_by,priority:r.priority,status:r.status,clientId:r.client_id||"",company:r.company||"",notes:r.notes,approved:!!r.approved,createdByAdmin:!!r.created_by_admin}) },
   users:{table:"crm_users", pk:"username",
-    to:u=>({username:u.username,role:u.role,rep_name:u.repName,active:u.active!==false}),
-    from:r=>({username:r.username,role:r.role,repName:r.rep_name,active:r.active!==false}) },
+    to:u=>({username:u.username,role:u.role,rep_name:u.repName,active:u.active!==false,permissions:u.permissions||{}}),
+    from:r=>({username:r.username,role:r.role,repName:r.rep_name,active:r.active!==false,permissions:r.permissions||{}}) },
   repTargets:{table:"crm_rep_targets", pk:"rep",
     to:t=>({rep:t.rep,target:num(t.target),comm_rate:num(t.commRate)}),
     from:r=>({rep:r.rep,target:r.target,commRate:r.comm_rate}) },
@@ -1021,6 +1075,17 @@ function logout(){ sessionStorage.removeItem("psgcrm_session"); session=null; if
 function isAdmin(){ return session && session.role==="admin"; }
 function myRep(){ return isAdmin()? null : session.repName; }
 
+function getPerm(routeId){
+  if(isAdmin()) return 'full';
+  const key=ROUTE_PERM[routeId];
+  if(!key) return 'full';
+  const u=session&&state.users.find(x=>x.username===session.username);
+  const perms=(u&&u.permissions)||{};
+  return (perms[key]!==undefined)?perms[key]:'full';
+}
+function canView(r){ return getPerm(r)!=='none'; }
+function canEdit(r){ return getPerm(r)==='full'; }
+
 /* filter helpers — employees only ever see their own rows */
 function vClients(){
   const fromClients=state.clients.filter(c=>c.accountType!=="Vendor"&&c.accountType!=="Supplier");
@@ -1108,6 +1173,7 @@ function renderConn(){
 function go(r){ route=r; searchTerm=""; renderSidebar(); renderRoute(); window.scrollTo(0,0); }
 function renderRoute(){
   const v=document.getElementById("view");
+  if(!isAdmin()&&typeof canView==='function'&&ROUTE_PERM&&ROUTE_PERM[route]&&!canView(route)){route='dashboard';renderSidebar();renderDashboard(v);return;}
   ({dashboard:renderDashboard,analytics:renderAnalytics,clients:renderClients,leads:renderLeadsOnly,clientsOnly:renderClientsOnly,prospects:renderProspectsOnly,tasks:renderTasks,calls:renderCalls,meetings:renderMeetings,deals:renderDeals,quotes:renderQuotes,quoteView:renderQuoteView,performance:renderPerformance,admin:renderAdmin,salesOrders:renderSalesOrders,invoices:renderInvoices,accounts:renderAccounts,contacts:renderContacts,pipeline:renderPipeline,purchaseOrders:renderPurchaseOrders,deliveryChallans:renderDeliveryChallans,materialRequisitions:renderMaterialRequisitions,receivings:renderReceivings,vendors:renderVendors,products:renderProducts,campaigns:renderCampaigns,priceBooks:renderPriceBooks,documents:renderDocuments}[route]||renderDashboard)(v);
 }
 
@@ -1243,7 +1309,7 @@ function pagehead(title,sub,addLabel,addFn,withSearch,extraHtml,printFn,printLab
       ${withSearch?`<div class="search"><input placeholder="Search…" value="${esc(searchTerm)}" oninput="searchTerm=this.value;rerender()"></div>`:""}
       ${extraHtml||""}
       <button class="btn ghost sm" onclick="${printFn||"window.print()"}">🖨 ${printLabel||"Print"}</button>
-      ${addLabel?`<button class="btn primary" onclick="${addFn}">＋ ${addLabel}</button>`:""}
+      ${addLabel&&(typeof canEdit==='function'?canEdit(route):true)?`<button class="btn primary" onclick="${addFn}">＋ ${addLabel}</button>`:""}
     </div></div>`;
 }
 function rerender(){
@@ -3795,7 +3861,8 @@ function renderAdmin(v){
    </div>
    ${waAdminCard()}
    <div class="card" style="margin-top:16px"><h3>👤 Users & access</h3><div class="tablewrap"><table><thead><tr><th>Username</th><th>Role</th><th>Rep</th><th>Password</th><th></th></tr></thead><tbody>${users}</tbody></table></div>
-      <div style="padding:14px"><button class="btn primary" onclick="addUser()">＋ Add User</button></div></div>`;
+      <div style="padding:14px"><button class="btn primary" onclick="addUser()">＋ Add User</button></div></div>
+   <div class="card" style="margin-top:16px"><h3>🔐 Module Permissions</h3><div class="help" style="padding:12px 16px 0;color:#666;font-size:12.5px">Set per-module access for each employee. Masters always have full access.</div>${renderPermMatrix()}</div>`;
 }
 
 async function normalizeAllPhones(){
@@ -3883,9 +3950,40 @@ function userForm(u){ u=u||{}; const isEdit=!!u.username;
     <div class="field"><label>Rep name (for employees)</label><select id="u_rep"><option value=""></option>${vocab("reps",[u.repName]).map(o=>`<option ${o===u.repName?"selected":""}>${esc(o)}</option>`).join("")}</select></div>
   </div>`;
 }
-function addUser(){ openModal("New User", userForm({role:"employee"}), async()=>{ const rawPass=document.getElementById("u_pass").value; const u={username:document.getElementById("u_name").value.trim(),role:document.getElementById("u_role").value,repName:document.getElementById("u_rep").value,active:true}; if(!u.username){toast("Username required");return false;} if(!rawPass){toast("Password required");return false;} if(state.users.some(x=>x.username.toLowerCase()===u.username.toLowerCase())){toast("Username exists");return false;} state.users.push(u); await upsert("users",u); if(sb) await sb.rpc("set_crm_user_password",{p_username:u.username,p_password:rawPass}); closeModal(); toast("User added"); go("admin"); }); }
+function addUser(){ openModal("New User", userForm({role:"employee"}), async()=>{ const rawPass=document.getElementById("u_pass").value; const u={username:document.getElementById("u_name").value.trim(),role:document.getElementById("u_role").value,repName:document.getElementById("u_rep").value,active:true,permissions:{}}; if(!u.username){toast("Username required");return false;} if(!rawPass){toast("Password required");return false;} if(state.users.some(x=>x.username.toLowerCase()===u.username.toLowerCase())){toast("Username exists");return false;} state.users.push(u); await upsert("users",u); if(sb) await sb.rpc("set_crm_user_password",{p_username:u.username,p_password:rawPass}); closeModal(); toast("User added"); go("admin"); }); }
 function editUser(name){ const u=state.users.find(x=>x.username===name); if(!u)return; openModal("Edit User", userForm(u), async()=>{ const rawPass=document.getElementById("u_pass").value; u.role=document.getElementById("u_role").value; u.repName=document.getElementById("u_rep").value; await upsert("users",u); if(rawPass && sb) await sb.rpc("set_crm_user_password",{p_username:u.username,p_password:rawPass}); closeModal(); toast("User updated"); go("admin"); }); }
 function delUser(name){ confirmDel("Delete user "+name+"?", async()=>{ state.users=state.users.filter(x=>x.username!==name); await remove("users",name); toast("User deleted"); go("admin"); }); }
+
+function renderPermMatrix(){
+  const employees=state.users.filter(u=>u.role!=='admin');
+  if(!employees.length) return '<div style="padding:16px;color:#888">No employee accounts to configure.</div>';
+  let h=`<div class="perm-matrix-wrap"><table class="perm-matrix"><thead><tr><th>Module</th>${employees.map(u=>`<th class="perm-user-col">${esc(u.repName||u.username)}<br><span style="font-weight:400;color:#888;font-size:11px">${esc(u.username)}</span></th>`).join('')}</tr></thead><tbody>`;
+  PERM_MODULES.forEach(sec=>{
+    h+=`<tr class="perm-section-row"><td colspan="${employees.length+1}">${sec.section}</td></tr>`;
+    sec.modules.forEach(mod=>{
+      h+=`<tr><td class="perm-module-label">${mod.label}</td>`;
+      employees.forEach(u=>{
+        const cur=((u.permissions||{})[mod.key])||'full';
+        h+=`<td class="perm-cell"><select class="perm-select" data-val="${cur}" onchange="setUserPerm('${esc(u.username)}','${mod.key}',this.value);this.setAttribute('data-val',this.value)"><option value="full" ${cur==='full'?'selected':''}>✅ Full</option><option value="view" ${cur==='view'?'selected':''}>👁 View only</option><option value="none" ${cur==='none'?'selected':''}>🚫 No access</option></select></td>`;
+      });
+      h+=`</tr>`;
+    });
+  });
+  h+=`</tbody></table></div>`;
+  return h;
+}
+async function setUserPerm(username,key,val){
+  const u=state.users.find(x=>x.username===username);
+  if(!u) return;
+  if(!u.permissions) u.permissions={};
+  u.permissions[key]=val;
+  await saveUserPermissions(username,u.permissions);
+}
+async function saveUserPermissions(username,perms){
+  if(!sb){ return; }
+  try{ await sb.from('crm_users').update({permissions:perms}).eq('username',username); toast('Permissions saved'); }
+  catch(e){ toast('Permission save failed: '+e.message); }
+}
 
 /* ======================================================================
    ID generator, modal, toast, theme, brand
