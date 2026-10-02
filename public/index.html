@@ -935,8 +935,8 @@ const MAP = {
     to:c=>({id:c.id,company:c.company,contact:c.contact,designation:c.designation,phone:c.phone,email:c.email,city:c.city,area:c.area||null,industry:c.industry,lead_source:c.leadSource,priority:c.priority,assigned_to:c.assignedTo,first_contact:c.firstContact||null,last_contact:c.lastContact||null,status:c.status,notes:c.notes,revenue_potential:num(c.revenuePotential),record_type:c.recordType,active:!!c.active,account_type:c.accountType||'Client'}),
     from:r=>({id:r.id,company:r.company,contact:r.contact,designation:r.designation,phone:r.phone,email:r.email,city:r.city,area:r.area||"",industry:r.industry,leadSource:r.lead_source,priority:r.priority,assignedTo:r.assigned_to,firstContact:r.first_contact||"",lastContact:r.last_contact||"",status:r.status,notes:r.notes,revenuePotential:r.revenue_potential,recordType:normalizeRecordType(r.record_type),active:r.active,accountType:r.account_type||'Client'}) },
   calls:{table:"crm_calls", pk:"id",
-    to:c=>({id:c.id,call_date:c.date||null,rep:c.rep,client_id:c.clientId,company:c.company,contact:c.contact,duration:num(c.duration),result:c.result,interest:num(c.interest),next_action:c.nextAction,follow_up:c.followUp||null,notes:c.notes,converted:c.converted}),
-    from:r=>({id:r.id,date:r.call_date||"",rep:r.rep,clientId:r.client_id,company:r.company,contact:r.contact,duration:r.duration,result:r.result,interest:r.interest,nextAction:r.next_action,followUp:r.follow_up||"",notes:r.notes,converted:r.converted}) },
+    to:c=>({id:c.id,call_date:c.date||null,rep:c.rep,client_id:c.clientId,company:c.company,contact:c.contact,duration:num(c.duration),result:c.result,interest:num(c.interest),next_action:c.nextAction,follow_up:c.followUp||null,follow_up_time:c.followUpTime||null,notes:c.notes,converted:c.converted}),
+    from:r=>({id:r.id,date:r.call_date||"",rep:r.rep,clientId:r.client_id,company:r.company,contact:r.contact,duration:r.duration,result:r.result,interest:r.interest,nextAction:r.next_action,followUp:r.follow_up||"",followUpTime:r.follow_up_time||"",notes:r.notes,converted:r.converted}) },
   meetings:{table:"crm_meetings", pk:"id",
     to:m=>({id:m.id,meet_date:m.date||null,meet_time:m.time,rep:m.rep,client_id:m.clientId,company:m.company,contact:m.contact,type:m.type,location:m.location,agenda:m.agenda,status:m.status,follow_notes:m.followNotes,source_call:m.sourceCall}),
     from:r=>({id:r.id,date:r.meet_date||"",time:r.meet_time,rep:r.rep,clientId:r.client_id,company:r.company,contact:r.contact,type:r.type,location:r.location,agenda:r.agenda,status:r.status,followNotes:r.follow_notes,sourceCall:r.source_call}) },
@@ -2033,6 +2033,7 @@ function callForm(c){
     <div class="field"><label>Call Result</label>${sel("clientStatus",c.result,[c.result])}</div>
     <div class="field"><label>Interest Level (1–5)</label>${sel("interest",String(c.interest||""),[])}</div>
     <div class="field"><label>Follow-Up Date</label><input id="f_followUp" type="date" value="${esc(c.followUp||"")}"></div>
+    <div class="field"><label>Follow-Up Time</label><input id="f_followUpTime" type="time" value="${esc(c.followUpTime||"")}"></div>
     <div class="field"><label>Converted to Meeting?</label>${sel("yesno",c.converted,[])}</div>
     <div class="field full"><label>Next Action</label><input id="f_nextAction" value="${esc(c.nextAction||"")}"></div>
     <div class="field full"><label>Notes</label><textarea id="f_notes">${esc(c.notes||"")}</textarea></div>
@@ -2040,7 +2041,7 @@ function callForm(c){
 }
 function fillCompany(kind){ const id=document.getElementById("f_clientId").value; const c=findClientOrAccount(id); if(c){ const ct=document.getElementById("f_contact"); if(ct&&!ct.value)ct.value=c.contact||""; } }
 function readCall(existing){ const g=id=>document.getElementById("f_"+id).value; const rep=myRep(); const id=g("clientId"); const cl=findClientOrAccount(id);
-  return Object.assign({},existing||{},{date:g("date"),rep:rep?rep:g("reps"),clientId:id,company:cl?cl.company:"",contact:g("contact"),duration:num(g("duration")),result:g("clientStatus"),interest:num(g("interest")),followUp:g("followUp"),converted:g("yesno"),nextAction:g("nextAction"),notes:g("notes")}); }
+  return Object.assign({},existing||{},{date:g("date"),rep:rep?rep:g("reps"),clientId:id,company:cl?cl.company:"",contact:g("contact"),duration:num(g("duration")),result:g("clientStatus"),interest:num(g("interest")),followUp:g("followUp"),followUpTime:g("followUpTime"),converted:g("yesno"),nextAction:g("nextAction"),notes:g("notes")}); }
 function addCall(){ openModal("Log Call", callForm({rep:myRep()||""}), async()=>{ const c=readCall(); if(!c.clientId){toast("Pick a client");return false;} c.id=nextId("CL",c.rep); state.calls.push(c); await upsert("calls",c); closeModal(); toast("Call logged"); go("calls"); }); }
 function edit_call(id){ const c=state.calls.find(x=>x.id===id); if(!c)return; openModal("Edit Call", callForm(c), async()=>{ Object.assign(c,readCall(c)); await upsert("calls",c); closeModal(); toast("Call updated"); go("calls"); }); }
 function del_call(id){ confirmDel("Delete this call log?", async()=>{ state.calls=state.calls.filter(x=>x.id!==id); await remove("calls",id); toast("Deleted"); go("calls"); }); }
