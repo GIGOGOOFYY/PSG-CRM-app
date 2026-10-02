@@ -486,11 +486,34 @@ td .help{font-size:11.5px;color:var(--muted);margin-top:1px;display:block}
 .perm-select[data-val="none"]{background:#fff5f5;border-color:#fca5a5;color:#dc2626}
 .perm-select[data-val="view"]{background:#fffbeb;border-color:#fcd34d;color:#92400e}
 .perm-select[data-val="full"]{background:#f0fdf4;border-color:#86efac;color:#166534}
+.dev-blocked{display:none;margin-top:12px;background:#fff5f5;border:1px solid #fca5a5;border-radius:8px;padding:14px 16px;color:#dc2626;font-size:13px;line-height:1.6}
+.dev-blocked.show{display:block}
+.dev-id-code{font-family:monospace;font-size:13px;background:#fee2e2;padding:2px 7px;border-radius:4px;letter-spacing:.05em;user-select:all;cursor:text}
+#idleWarnOverlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;align-items:center;justify-content:center}
+#idleWarnOverlay.show{display:flex}
+#idleWarnBox{background:#fff;border-radius:12px;padding:32px 36px;max-width:360px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+#idleWarnBox h3{margin:0 0 10px;font-size:18px;color:#1a2332}
+#idleWarnBox p{margin:0 0 20px;color:#6b7280;font-size:14px;line-height:1.5}
+#idleCountdown{font-size:28px;font-weight:700;color:#dc2626;margin-bottom:20px}
+.dev-access-table{width:100%;border-collapse:collapse;font-size:13px}
+.dev-access-table th{background:#f8fafc;font-weight:600;color:#6b7280;text-align:left;padding:9px 12px;border-bottom:1px solid #e2e8f0}
+.dev-access-table td{padding:9px 12px;border-bottom:1px solid #f1f5f9;vertical-align:middle}
+.dev-status-pending{color:#d97706;font-weight:600}
+.dev-status-approved{color:#16a34a;font-weight:600}
+.dev-label-input{border:1px solid #e2e8f0;border-radius:5px;padding:3px 7px;font-size:12px;width:120px}
 </style>
 </head>
 <body>
 
 <!-- LOGIN -->
+<div id="idleWarnOverlay">
+  <div id="idleWarnBox">
+    <h3>⏱ Still there?</h3>
+    <p>You'll be signed out automatically due to inactivity.</p>
+    <div id="idleCountdown">60</div>
+    <button class="btn primary" style="width:100%" onclick="resetIdleTimer()">Stay Signed In</button>
+  </div>
+</div>
 <div id="login">
   <div class="lcard">
     <div class="lmark">PSG</div>
@@ -505,6 +528,13 @@ td .help{font-size:11.5px;color:var(--muted);margin-top:1px;display:block}
         onkeydown="if(event.key==='Enter')doLogin()"></div>
     <button class="lbtn" onclick="doLogin()">OK</button>
     <div class="lerr" id="lg_err"></div>
+    <div class="dev-blocked" id="lg_devblock">
+      <b>⛔ Device Not Approved</b><br>
+      This device has not been approved by your administrator.<br>
+      Share this Device ID with your Master to get access:<br><br>
+      <span class="dev-id-code" id="lg_devid">—</span><br><br>
+      <span style="color:#6b7280;font-size:12px">Your request has been sent. Ask your admin to approve it in the Admin panel.</span>
+    </div>
     <div class="lfooter"><span>MunisMahmood</span><span class="lheart">Made by &#10084;</span></div>
   </div>
 </div>
@@ -626,6 +656,55 @@ const SIDEBAR_NAV = [
 ];
 
 let sbCollapsed = {};
+
+/* ── Device ID (localStorage fingerprint, same approach as PSG Aluminum) ── */
+function deviceId(){
+  let d=localStorage.getItem('psgcrm_device_id');
+  if(!d){
+    d='DEV-'+Math.random().toString(36).slice(2,10).toUpperCase()+'-'+Date.now().toString(36).slice(-4).toUpperCase();
+    localStorage.setItem('psgcrm_device_id',d);
+  }
+  return d;
+}
+
+/* ── Idle / auto-logout ── */
+const IDLE_TIMEOUT_MS = 30*60*1000;   // 30 min → auto logout
+const IDLE_WARN_MS    = 25*60*1000;   // 25 min → show warning
+let __idleTimer=null, __idleWarnTimer=null, __idleCountTimer=null;
+function _clearIdleTimers(){
+  if(__idleTimer)      { clearTimeout(__idleTimer);      __idleTimer=null;      }
+  if(__idleWarnTimer)  { clearTimeout(__idleWarnTimer);  __idleWarnTimer=null;  }
+  if(__idleCountTimer) { clearInterval(__idleCountTimer);__idleCountTimer=null; }
+  const ov=document.getElementById('idleWarnOverlay');
+  if(ov) ov.classList.remove('show');
+}
+function _showIdleWarning(){
+  const ov=document.getElementById('idleWarnOverlay');
+  const cd=document.getElementById('idleCountdown');
+  if(!ov||!cd) return;
+  let secs=60;
+  cd.textContent=secs;
+  ov.classList.add('show');
+  __idleCountTimer=setInterval(()=>{
+    secs--;
+    cd.textContent=secs;
+    if(secs<=0){ clearInterval(__idleCountTimer); __idleCountTimer=null; logout(); }
+  },1000);
+}
+function startIdleTimer(){
+  _clearIdleTimers();
+  __idleWarnTimer=setTimeout(_showIdleWarning, IDLE_WARN_MS);
+  __idleTimer=setTimeout(()=>{ _clearIdleTimers(); logout(); }, IDLE_TIMEOUT_MS);
+}
+function resetIdleTimer(){
+  if(!session) return;
+  _clearIdleTimers();
+  startIdleTimer();
+}
+function stopIdleTimer(){ _clearIdleTimers(); }
+['click','keydown','mousemove','touchstart','scroll'].forEach(ev=>
+  document.addEventListener(ev,()=>{ if(session) resetIdleTimer(); },{passive:true})
+);
 
 const PERM_MODULES = [
   { section:"CRM", modules:[
@@ -1067,11 +1146,26 @@ async function doLogin(){
   } finally {
     if(btn) btn.disabled=false;
   }
+  /* ── Device check (skip for admins) ── */
+  if(session.role!=='admin' && sb){
+    const did=deviceId();
+    const {data:devRows}=await sb.from('crm_devices').select('device_id,approved_at').eq('device_id',did).eq('username',session.username).maybeSingle();
+    if(!devRows || !devRows.approved_at){
+      /* Log pending request (upsert so duplicate taps don't create extra rows) */
+      await sb.from('crm_devices').upsert({device_id:did,username:session.username,label:'',approved_by:null,approved_at:null},{onConflict:'device_id'});
+      session=null;
+      document.getElementById('lg_devid').textContent=did;
+      document.getElementById('lg_devblock').classList.add('show');
+      errEl.textContent='';
+      return;
+    }
+  }
+  document.getElementById('lg_devblock').classList.remove('show');
   sessionStorage.setItem("psgcrm_session", JSON.stringify(session));
   startApp();
   startAutoRefresh();
 }
-function logout(){ sessionStorage.removeItem("psgcrm_session"); session=null; if(__pollTimer){ clearInterval(__pollTimer); __pollTimer=null; } stopRealtime(); location.reload(); }
+function logout(){ stopIdleTimer(); sessionStorage.removeItem("psgcrm_session"); session=null; if(__pollTimer){ clearInterval(__pollTimer); __pollTimer=null; } stopRealtime(); location.reload(); }
 function isAdmin(){ return session && session.role==="admin"; }
 function myRep(){ return isAdmin()? null : session.repName; }
 
@@ -1147,7 +1241,7 @@ const TABS = [
   {id:"performance",label:"🏆 Performance", admin:true},
   {id:"admin",     label:"⚙️ Admin",     admin:true},
 ];
-function startApp(){
+function startApp(){ startIdleTimer();
   document.getElementById("login").classList.add("hidden");
   document.getElementById("app").classList.remove("hidden");
   document.getElementById("who").textContent=session.username;
@@ -3862,7 +3956,9 @@ function renderAdmin(v){
    ${waAdminCard()}
    <div class="card" style="margin-top:16px"><h3>👤 Users & access</h3><div class="tablewrap"><table><thead><tr><th>Username</th><th>Role</th><th>Rep</th><th>Password</th><th></th></tr></thead><tbody>${users}</tbody></table></div>
       <div style="padding:14px"><button class="btn primary" onclick="addUser()">＋ Add User</button></div></div>
-   <div class="card" style="margin-top:16px"><h3>🔐 Module Permissions</h3><div class="help" style="padding:12px 16px 0;color:#666;font-size:12.5px">Set per-module access for each employee. Masters always have full access.</div>${renderPermMatrix()}</div>`;
+   <div class="card" style="margin-top:16px"><h3>🔐 Module Permissions</h3><div class="help" style="padding:12px 16px 0;color:#666;font-size:12.5px">Set per-module access for each employee. Masters always have full access.</div>${renderPermMatrix()}</div>
+   <div class="card" id="devAccessCard" style="margin-top:16px"><h3>🖥️ Device Access</h3><div class="help" style="padding:12px 16px 0;color:#666;font-size:12.5px">Approve employee devices. Each employee must use an approved device to sign in. Masters are never blocked.</div><div id="devAccessBody" style="padding:16px"><i style="color:#aaa">Loading…</i></div><div style="padding:0 16px 14px"><button class="btn ghost" onclick="loadDeviceAccess()">↺ Refresh</button></div></div>`;
+  setTimeout(loadDeviceAccess, 0);
 }
 
 async function normalizeAllPhones(){
@@ -3983,6 +4079,57 @@ async function saveUserPermissions(username,perms){
   if(!sb){ return; }
   try{ await sb.from('crm_users').update({permissions:perms}).eq('username',username); toast('Permissions saved'); }
   catch(e){ toast('Permission save failed: '+e.message); }
+}
+
+/* ── Device Access management ── */
+async function loadDeviceAccess(){
+  const el=document.getElementById('devAccessBody');
+  if(!el||!sb) return;
+  el.innerHTML='<i style="color:#aaa">Loading…</i>';
+  try{
+    const {data,error}=await sb.from('crm_devices').select('*').order('created_at',{ascending:false});
+    if(error) throw error;
+    if(!data||!data.length){ el.innerHTML='<p style="color:#aaa;padding:8px 0">No devices have requested access yet.</p>'; return; }
+    const rows=data.map(d=>{
+      const isPending=!d.approved_at;
+      const statusHtml=isPending
+        ?'<span class="dev-status-pending">⏳ Pending</span>'
+        :`<span class="dev-status-approved">✅ Approved</span>`;
+      const approveBtn=isPending
+        ?`<button class="btn sm primary" onclick="approveDevice('${esc(d.device_id)}','${esc(d.username)}')">Approve</button>`
+        :`<button class="btn sm ghost danger" onclick="revokeDevice('${esc(d.device_id)}')">Revoke</button>`;
+      return `<tr>
+        <td><code style="font-size:12px">${esc(d.device_id)}</code></td>
+        <td>${esc(d.username||'—')}</td>
+        <td><input class="dev-label-input" value="${esc(d.label||'')}" placeholder="e.g. Office PC" onblur="saveDLabel('${esc(d.device_id)}',this.value)"></td>
+        <td>${statusHtml}</td>
+        <td>${esc(d.approved_by||'—')}</td>
+        <td><div class="rowbtns">${approveBtn}</div></td>
+      </tr>`;
+    }).join('');
+    el.innerHTML=`<table class="dev-access-table"><thead><tr><th>Device ID</th><th>User</th><th>Label</th><th>Status</th><th>Approved by</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+  }catch(e){ el.innerHTML=`<p style="color:#dc2626">Error: ${esc(e.message)}</p>`; }
+}
+async function approveDevice(did,username){
+  if(!sb) return;
+  try{
+    await sb.from('crm_devices').update({approved_by:session.username,approved_at:new Date().toISOString()}).eq('device_id',did);
+    toast('Device approved ✅');
+    loadDeviceAccess();
+  }catch(e){ toast('Error: '+e.message); }
+}
+async function revokeDevice(did){
+  if(!sb) return;
+  try{
+    await sb.from('crm_devices').update({approved_by:null,approved_at:null}).eq('device_id',did);
+    toast('Device revoked');
+    loadDeviceAccess();
+  }catch(e){ toast('Error: '+e.message); }
+}
+async function saveDLabel(did,label){
+  if(!sb) return;
+  try{ await sb.from('crm_devices').update({label}).eq('device_id',did); }
+  catch(e){ console.warn('label save failed',e.message); }
 }
 
 /* ======================================================================
