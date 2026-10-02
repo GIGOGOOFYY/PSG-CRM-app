@@ -704,7 +704,7 @@ function resetIdleTimer(){
 }
 function stopIdleTimer(){ _clearIdleTimers(); }
 function setIdleTimeout(mins){ cfg.idleMinutes=parseInt(mins,10)||30; saveCfg(); const _ii=document.getElementById('idleIndicator'); if(_ii){ const _m=cfg.idleMinutes; _ii.textContent='🔒 '+(_m<60?_m+' min':(_m/60)+'h'); _ii.title='Auto sign-out after '+_m+' minutes of inactivity'; } if(session) resetIdleTimer(); toast('Auto sign-out set to '+(cfg.idleMinutes<60?cfg.idleMinutes+' min':cfg.idleMinutes/60+'h')); }
-['click','keydown','mousemove','touchstart','scroll'].forEach(ev=>
+['click','keydown','touchstart','scroll'].forEach(ev=>
   document.addEventListener(ev,()=>{ if(session) resetIdleTimer(); },{passive:true})
 );
 
