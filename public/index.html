@@ -1127,6 +1127,7 @@ async function upsert(kind, obj){
   renderConn();
 }
 async function remove(kind, id){
+  const _pk=MAP[kind].pk||'id'; pendingWrites=pendingWrites.filter(p=>!(p.kind===kind&&p.obj[_pk]===id)); savePendingWrites();
   try{ saveLocal(); }catch(e){ console.warn('[saveLocal]',e.message); }
   if(sb){ try{ const {error}=await sb.from(MAP[kind].table).delete().eq(MAP[kind].pk, id); if(error) throw error; cloudOK=true; }
           catch(e){ cloudOK=false; toast("Deleted locally — cloud sync failed"); } }
