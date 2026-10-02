@@ -932,8 +932,8 @@ function loadLocalOrSeed(){
 /* ----- Supabase field mapping (snake_case DB <-> camelCase app) ----- */
 const MAP = {
   clients:{table:"crm_clients", pk:"id",
-    to:c=>({id:c.id,company:c.company,contact:c.contact,designation:c.designation,phone:c.phone,email:c.email,city:c.city,area:c.area||null,industry:c.industry,lead_source:c.leadSource,priority:c.priority,assigned_to:c.assignedTo,first_contact:c.firstContact||null,last_contact:c.lastContact||null,status:c.status,notes:c.notes,revenue_potential:num(c.revenuePotential),record_type:c.recordType,active:!!c.active,account_type:c.accountType||'Client'}),
-    from:r=>({id:r.id,company:r.company,contact:r.contact,designation:r.designation,phone:r.phone,email:r.email,city:r.city,area:r.area||"",industry:r.industry,leadSource:r.lead_source,priority:r.priority,assignedTo:r.assigned_to,firstContact:r.first_contact||"",lastContact:r.last_contact||"",status:r.status,notes:r.notes,revenuePotential:r.revenue_potential,recordType:normalizeRecordType(r.record_type),active:r.active,accountType:r.account_type||'Client'}) },
+    to:c=>({id:c.id,company:c.company,contact:c.contact,designation:c.designation,phone:c.phone,email:c.email,city:c.city,area:c.area||null,address:c.address||null,industry:c.industry,lead_source:c.leadSource,priority:c.priority,assigned_to:c.assignedTo,first_contact:c.firstContact||null,last_contact:c.lastContact||null,status:c.status,notes:c.notes,revenue_potential:num(c.revenuePotential),record_type:c.recordType,active:!!c.active,account_type:c.accountType||'Client'}),
+    from:r=>({id:r.id,company:r.company,contact:r.contact,designation:r.designation,phone:r.phone,email:r.email,city:r.city,area:r.area||"",address:r.address||"",industry:r.industry,leadSource:r.lead_source,priority:r.priority,assignedTo:r.assigned_to,firstContact:r.first_contact||"",lastContact:r.last_contact||"",status:r.status,notes:r.notes,revenuePotential:r.revenue_potential,recordType:normalizeRecordType(r.record_type),active:r.active,accountType:r.account_type||'Client'}) },
   calls:{table:"crm_calls", pk:"id",
     to:c=>({id:c.id,call_date:c.date||null,rep:c.rep,client_id:c.clientId,company:c.company,contact:c.contact,duration:num(c.duration),result:c.result,interest:num(c.interest),next_action:c.nextAction,follow_up:c.followUp||null,follow_up_time:c.followUpTime||null,notes:c.notes,converted:c.converted}),
     from:r=>({id:r.id,date:r.call_date||"",rep:r.rep,clientId:r.client_id,company:r.company,contact:r.contact,duration:r.duration,result:r.result,interest:r.interest,nextAction:r.next_action,followUp:r.follow_up||"",followUpTime:r.follow_up_time||"",notes:r.notes,converted:r.converted}) },
@@ -990,8 +990,8 @@ const MAP = {
     to:a=>({id:a.id,name:a.name,industry:a.industry||null,city:a.city||null,area:a.area||null,account_type:a.accountType||"Prospect",assigned_to:a.assignedTo||null,ntn:a.ntn||null,gst:a.gst||null,notes:a.notes||null,active:a.active!==false}),
     from:r=>({id:r.id,name:r.name,industry:r.industry||"",city:r.city||"",area:r.area||"",accountType:r.account_type||"Prospect",assignedTo:r.assigned_to||"",ntn:r.ntn||"",gst:r.gst||"",notes:r.notes||"",active:r.active!==false}) },
   contacts:{table:"crm_contacts", pk:"id",
-    to:c=>({id:c.id,account_id:c.accountId||null,name:c.name,phone:c.phone||null,email:c.email||null,designation:c.designation||null,whatsapp_verified:!!c.whatsappVerified,city:c.city||null,area:c.area||null,address:c.address||null,notes:c.notes||null,active:c.active!==false}),
-    from:r=>({id:r.id,accountId:r.account_id||"",name:r.name,phone:r.phone||"",email:r.email||"",designation:r.designation||"",whatsappVerified:!!r.whatsapp_verified,city:r.city||"",area:r.area||"",address:r.address||"",notes:r.notes||"",active:r.active!==false}) },
+    to:c=>({id:c.id,account_id:c.accountId||null,name:c.name,phone:c.phone||null,email:c.email||null,designation:c.designation||null,whatsapp_verified:!!c.whatsappVerified,city:c.city||null,area:c.area||null,notes:c.notes||null,active:c.active!==false}),
+    from:r=>({id:r.id,accountId:r.account_id||"",name:r.name,phone:r.phone||"",email:r.email||"",designation:r.designation||"",whatsappVerified:!!r.whatsapp_verified,city:r.city||"",area:r.area||"",notes:r.notes||"",active:r.active!==false}) },
   pipelineDeals:{table:"crm_deals", pk:"id",
     to:d=>({id:d.id,account_id:d.accountId||null,contact_id:d.contactId||null,stage:d.stage||"New Lead",title:d.title||null,assigned_to:d.assignedTo||null,lead_source:d.leadSource||null,priority:d.priority||"Medium",revenue_potential:d.revenuePotential||null,first_contact:d.firstContact||null,last_contact:d.lastContact||null,status:d.status||"active",notes:d.notes||null,updated_at:new Date().toISOString()}),
     from:r=>({id:r.id,accountId:r.account_id||"",contactId:r.contact_id||"",stage:r.stage||"New Lead",title:r.title||"",assignedTo:r.assigned_to||"",leadSource:r.lead_source||"",priority:r.priority||"Medium",revenuePotential:r.revenue_potential||null,firstContact:r.first_contact||"",lastContact:r.last_contact||"",status:r.status||"active",notes:r.notes||"",createdAt:r.created_at||""}) },
@@ -1676,7 +1676,7 @@ function clientForm(c){
   return `<div class="formgrid">
     <div class="field"><label>Company Name</label><input id="f_company" value="${esc(c.company||"")}"></div>
     <div class="field"><label>Record Type</label><select id="f_recordType">${STAGE_ORDER.concat([STAGE_LOST]).map(s=>`<option ${c.recordType===s?"selected":""}>${esc(s)}</option>`).join("")}</select></div>
-    <div class="field"><label>Contact Person</label><input id="f_contact" value="${esc(c.contact||"")}"></div>
+    <div class="field"><label>Contact Person</label><select id="f_contact"><option value="">— Select —</option>${(c.clientId?(state.contacts||[]).filter(ct=>ct.accountId===c.clientId):[]).map(ct=>`<option value="${esc(ct.name)}" ${ct.name===c.contact?"selected":""}>${esc(ct.name)}${ct.designation?' ('+esc(ct.designation)+')':''}</option>`).join('')}</select></div>
     <div class="field"><label>Designation</label><input id="f_designation" value="${esc(c.designation||"")}"></div>
     <div class="field"><label>Phone</label><input id="f_phone" value="${esc(c.phone||"")}"></div>
     <div class="field"><label>Email</label><input id="f_email" value="${esc(c.email||"")}"></div>
@@ -1692,6 +1692,7 @@ function clientForm(c){
     <div class="field"><label>Annual Revenue Potential (PKR)</label><input id="f_revenuePotential" type="number" value="${esc(c.revenuePotential||"")}"></div>
     <div class="field"><label>Active?</label><select id="f_active"><option ${c.active!==false?"selected":""}>Yes</option><option ${c.active===false?"selected":""}>No</option></select></div>
     <div class="field"><label>Account Type</label><select id="f_accountType">${["Client","Vendor","Supplier"].map(t=>`<option ${((c.accountType||"Client")===t)?"selected":""}>${t}</option>`).join("")}</select><div class="help">Client = a customer (any pipeline stage, from first inquiry to repeat orders). Vendor / Supplier = not a customer.</div></div>
+    <div class="field full"><label>Address</label><input id="f_address" value="${esc(c.address||'')}"></div>
     <div class="field full"><label>Notes</label><textarea id="f_notes">${esc(c.notes||"")}</textarea></div>
   </div>`;
 }
@@ -1700,7 +1701,7 @@ function readClient(existing){
   const rep=myRep();
   return Object.assign({}, existing||{}, {
     company:g("company"),recordType:g("recordType"),contact:g("contact"),designation:g("designation"),
-    phone:normalizePhone(g("phone")),email:g("email"),city:g("city"),area:g("area"),industry:g("industry"),leadSource:g("leadSource"),
+    phone:normalizePhone(g("phone")),email:g("email"),city:g("city"),area:g("area"),address:g("address"),industry:g("industry"),leadSource:g("leadSource"),
     priority:g("priority"),assignedTo: rep? rep : g("reps"),status:g("clientStatus"),
     firstContact:g("firstContact"),lastContact:g("lastContact"),revenuePotential:num(g("revenuePotential")),
     active:g("active")==="Yes",notes:g("notes"),accountType:g("accountType")||"Client"
@@ -2039,10 +2040,10 @@ function callForm(c){
     <div class="field full"><label>Notes</label><textarea id="f_notes">${esc(c.notes||"")}</textarea></div>
   </div>`;
 }
-function fillCompany(kind){ const id=document.getElementById("f_clientId").value; const c=findClientOrAccount(id); if(c){ const ct=document.getElementById("f_contact"); if(ct&&!ct.value)ct.value=c.contact||""; } }
+function fillCompany(kind){ const id=document.getElementById("f_clientId").value; if(kind==='call'){ const cts=(state.contacts||[]).filter(ct=>ct.accountId===id); const sel=document.getElementById("f_contact"); if(sel&&sel.tagName==="SELECT"){ const prev=sel.value; sel.innerHTML='<option value="">— Select —</option>'+cts.map(ct=>`<option value="${esc(ct.name)}">${esc(ct.name)}${ct.designation?' ('+esc(ct.designation)+')':''}</option>`).join(''); if(prev&&cts.find(ct=>ct.name===prev)) sel.value=prev; else if(cts.length===1) sel.value=cts[0].name; } } else { const c=findClientOrAccount(id); if(c){ const ct=document.getElementById("f_contact"); if(ct&&!ct.value)ct.value=c.contact||""; } } }
 function readCall(existing){ const g=id=>document.getElementById("f_"+id).value; const rep=myRep(); const id=g("clientId"); const cl=findClientOrAccount(id);
   return Object.assign({},existing||{},{date:g("date"),rep:rep?rep:g("reps"),clientId:id,company:cl?cl.company:"",contact:g("contact"),duration:num(g("duration")),result:g("clientStatus"),interest:num(g("interest")),followUp:g("followUp"),followUpTime:g("followUpTime"),converted:g("yesno"),nextAction:g("nextAction"),notes:g("notes")}); }
-function addCall(){ openModal("Log Call", callForm({rep:myRep()||""}), async()=>{ const c=readCall(); if(!c.clientId){toast("Pick a client");return false;} c.id=nextId("CL",c.rep); state.calls.push(c); await upsert("calls",c); closeModal(); toast("Call logged"); go("calls"); }); }
+function addCall(){ openModal("Log Call", callForm({rep:myRep()||""}), async()=>{ const c=readCall(); if(!c.clientId){toast("Pick a client");return false;} c.id=nextId("CL",c.rep); state.calls.push(c); await upsert("calls",c); if(c.converted==="Yes"){ const m={id:nextId("MT",c.rep),date:c.followUp||today(),time:c.followUpTime||"",rep:c.rep,clientId:c.clientId,company:c.company,contact:c.contact,type:"Client Visit",status:"Scheduled",sourceCall:c.id,agenda:c.nextAction||"",followNotes:""}; state.meetings.push(m); await upsert("meetings",m); closeModal(); toast("Call logged + meeting scheduled ✓"); } else { closeModal(); toast("Call logged"); } go("calls"); }); }
 function edit_call(id){ const c=state.calls.find(x=>x.id===id); if(!c)return; openModal("Edit Call", callForm(c), async()=>{ Object.assign(c,readCall(c)); await upsert("calls",c); closeModal(); toast("Call updated"); go("calls"); }); }
 function del_call(id){ confirmDel("Delete this call log?", async()=>{ state.calls=state.calls.filter(x=>x.id!==id); await remove("calls",id); toast("Deleted"); go("calls"); }); }
 
@@ -2635,12 +2636,11 @@ function ctForm(c){c=c||{};
     <div class="field"><label>WhatsApp Verified?</label><select id="fc_wa"><option value="false" ${!c.waVerified?'selected':''}>No</option><option value="true" ${c.waVerified?'selected':''}>Yes</option></select></div>
     <div class="field"><label>City</label><input id="fc_city" value="${esc(c.city||'')}"></div>
     <div class="field"><label>Area</label><input id="fc_area" value="${esc(c.area||'')}"></div>
-    <div class="field full"><label>Address</label><input id="fc_address" value="${esc(c.address||'')}"></div>
     <div class="field full"><label>Notes</label><textarea id="fc_notes">${esc(c.notes||'')}</textarea></div>
   </div>`;
 }
 function readCt(){const g=id=>document.getElementById('fc_'+id)?.value||'';
-  return{name:g('name').trim(),accountId:g('accountId'),phone:g('phone').trim(),email:g('email').trim(),designation:g('designation').trim(),whatsappVerified:g('wa')==='true',city:g('city').trim(),area:g('area').trim(),address:g('address').trim(),notes:g('notes')};}
+  return{name:g('name').trim(),accountId:g('accountId'),phone:g('phone').trim(),email:g('email').trim(),designation:g('designation').trim(),whatsappVerified:g('wa')==='true',city:g('city').trim(),area:g('area').trim(),notes:g('notes')};}
 /* ── Phase 4-C: contact dedup ── */
 function findDupContact(candidate, excludeId){
   const pd=phoneDigits(candidate.phone);
