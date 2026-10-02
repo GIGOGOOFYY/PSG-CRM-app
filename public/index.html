@@ -668,14 +668,16 @@ function deviceId(){
   return d;
 }
 
-/* ── Idle / auto-logout ── */
+/* ── Idle / auto-logout (polling-based — mousemove safe) ── */
 function idleTimeoutMs(){ return ((cfg.idleMinutes&&cfg.idleMinutes>0?cfg.idleMinutes:30))*60*1000; }
 function idleWarnMs(){    return Math.max(idleTimeoutMs()-5*60*1000, 60*1000); }
-let __idleTimer=null, __idleWarnTimer=null, __idleCountTimer=null;
+let __idleTimer=null, __idleWarnTimer=null, __idleCountTimer=null, __idlePollTimer=null;
+let _lastActivity=Date.now(), __idleWarnShown=false;
 function _clearIdleTimers(){
   if(__idleTimer)      { clearTimeout(__idleTimer);      __idleTimer=null;      }
   if(__idleWarnTimer)  { clearTimeout(__idleWarnTimer);  __idleWarnTimer=null;  }
   if(__idleCountTimer) { clearInterval(__idleCountTimer);__idleCountTimer=null; }
+  if(__idlePollTimer)  { clearInterval(__idlePollTimer); __idlePollTimer=null;  }
   const ov=document.getElementById('idleWarnOverlay');
   if(ov) ov.classList.remove('show');
 }
@@ -694,18 +696,29 @@ function _showIdleWarning(){
 }
 function startIdleTimer(){
   _clearIdleTimers();
-  __idleWarnTimer=setTimeout(_showIdleWarning, idleWarnMs());
-  __idleTimer=setTimeout(()=>{ _clearIdleTimers(); logout(); }, idleTimeoutMs());
+  if(!(cfg.idleMinutes>0)) return;
+  _lastActivity=Date.now();
+  __idleWarnShown=false;
+  const ms=idleTimeoutMs(), warnMs=idleWarnMs();
+  __idlePollTimer=setInterval(()=>{
+    if(!session){ _clearIdleTimers(); return; }
+    const elapsed=Date.now()-_lastActivity;
+    if(elapsed>=ms){ _clearIdleTimers(); logout(); return; }
+    if(elapsed>=warnMs && !__idleWarnShown){ __idleWarnShown=true; _showIdleWarning(); }
+  }, 15000);
 }
 function resetIdleTimer(){
   if(!session) return;
-  _clearIdleTimers();
-  startIdleTimer();
+  _lastActivity=Date.now();
+  __idleWarnShown=false;
+  if(__idleCountTimer){ clearInterval(__idleCountTimer); __idleCountTimer=null; }
+  const ov=document.getElementById('idleWarnOverlay');
+  if(ov) ov.classList.remove('show');
 }
 function stopIdleTimer(){ _clearIdleTimers(); }
-function setIdleTimeout(mins){ cfg.idleMinutes=parseInt(mins,10)||30; saveCfg(); const _ii=document.getElementById('idleIndicator'); if(_ii){ const _m=cfg.idleMinutes; _ii.textContent='🔒 '+(_m<60?_m+' min':(_m/60)+'h'); _ii.title='Auto sign-out after '+_m+' minutes of inactivity'; } if(session) resetIdleTimer(); toast('Auto sign-out set to '+(cfg.idleMinutes<60?cfg.idleMinutes+' min':cfg.idleMinutes/60+'h')); }
-['click','keydown','touchstart','scroll'].forEach(ev=>
-  document.addEventListener(ev,()=>{ if(session) resetIdleTimer(); },{passive:true})
+function setIdleTimeout(mins){ cfg.idleMinutes=parseInt(mins,10)||30; saveCfg(); const _ii=document.getElementById('idleIndicator'); if(_ii){ const _m=cfg.idleMinutes; _ii.textContent='🔒 '+(_m<60?_m+' min':(_m/60)+'h'); _ii.title='Auto sign-out after '+_m+' minutes of inactivity'; } if(session) startIdleTimer(); toast('Auto sign-out set to '+(cfg.idleMinutes<60?cfg.idleMinutes+' min':cfg.idleMinutes/60+'h')); }
+['click','keydown','mousemove','touchstart','scroll'].forEach(ev=>
+  document.addEventListener(ev,()=>{ if(session) _lastActivity=Date.now(); },{passive:true})
 );
 
 const PERM_MODULES = [
