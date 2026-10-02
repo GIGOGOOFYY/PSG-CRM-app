@@ -588,6 +588,7 @@ td .help{font-size:11.5px;color:var(--muted);margin-top:1px;display:block}
         <div class="conn-badge"><div class="cdot" id="connDot2"></div><span id="connTxt2">Checking…</span></div>
         <span id="who"></span>
         <span id="roleChip" class="role"></span>
+        <span id="idleIndicator" title="Auto sign-out after 30 min inactivity" style="display:none;font-size:11px;color:#9ca3af;background:#f3f4f6;border:1px solid #e5e7eb;padding:2px 9px;border-radius:10px;cursor:default;margin-left:2px">🔒 30 min</span>
       </div>
     </div>
     <div id="offlineBanner" class="offline-banner hidden">⚠ Working offline — changes are saved locally and will sync when the connection is back.</div>
@@ -1103,6 +1104,13 @@ function startAutoRefresh(){
     if(!session) return;
     if(!sb){ initSupabase(); } // recover if Supabase CDN loaded after boot
     if(!sb) return;
+    /* check device still approved */
+    if(session.role!=='admin'){
+      try{
+        const {data:_dr,error:_de}=await sb.from('crm_devices').select('approved_at').eq('device_id',deviceId()).eq('username',session.username).maybeSingle();
+        if(!_de && (!_dr || !_dr.approved_at)){ toast('⚠ Your device access was revoked. Signing out…'); setTimeout(logout,2000); return; }
+      }catch(_){}
+    }
     const modalOpen = document.getElementById("modalMount") && document.getElementById("modalMount").innerHTML.trim().length>0;
     const ok = await cloudPull();
     if(ok){ renderConn(); if(!modalOpen){ renderRoute(); } }
@@ -1152,7 +1160,7 @@ async function doLogin(){
     const {data:devRows}=await sb.from('crm_devices').select('device_id,approved_at').eq('device_id',did).eq('username',session.username).maybeSingle();
     if(!devRows || !devRows.approved_at){
       /* Log pending request (upsert so duplicate taps don't create extra rows) */
-      await sb.from('crm_devices').upsert({device_id:did,username:session.username,label:'',approved_by:null,approved_at:null},{onConflict:'device_id'});
+      await sb.from('crm_devices').upsert({device_id:did,username:session.username,label:'',approved_by:null,approved_at:null},{onConflict:'device_id,username'});
       session=null;
       document.getElementById('lg_devid').textContent=did;
       document.getElementById('lg_devblock').classList.add('show');
@@ -1165,7 +1173,7 @@ async function doLogin(){
   startApp();
   startAutoRefresh();
 }
-function logout(){ stopIdleTimer(); sessionStorage.removeItem("psgcrm_session"); session=null; if(__pollTimer){ clearInterval(__pollTimer); __pollTimer=null; } stopRealtime(); location.reload(); }
+function logout(){ stopIdleTimer(); const _ii=document.getElementById('idleIndicator'); if(_ii) _ii.style.display='none'; sessionStorage.removeItem("psgcrm_session"); session=null; if(__pollTimer){ clearInterval(__pollTimer); __pollTimer=null; } stopRealtime(); location.reload(); }
 function isAdmin(){ return session && session.role==="admin"; }
 function myRep(){ return isAdmin()? null : session.repName; }
 
@@ -1242,6 +1250,7 @@ const TABS = [
   {id:"admin",     label:"⚙️ Admin",     admin:true},
 ];
 function startApp(){ startIdleTimer();
+  const _ii=document.getElementById('idleIndicator'); if(_ii) _ii.style.display='';
   document.getElementById("login").classList.add("hidden");
   document.getElementById("app").classList.remove("hidden");
   document.getElementById("who").textContent=session.username;
@@ -4097,14 +4106,14 @@ async function loadDeviceAccess(){
         :`<span class="dev-status-approved">✅ Approved</span>`;
       const approveBtn=isPending
         ?`<button class="btn sm primary" onclick="approveDevice('${esc(d.device_id)}','${esc(d.username)}')">Approve</button>`
-        :`<button class="btn sm ghost danger" onclick="revokeDevice('${esc(d.device_id)}')">Revoke</button>`;
+        :`<button class="btn sm ghost danger" onclick="revokeDevice('${esc(d.device_id)}','${esc(d.username)}')">Revoke</button>`;
       return `<tr>
         <td><code style="font-size:12px">${esc(d.device_id)}</code></td>
         <td>${esc(d.username||'—')}</td>
-        <td><input class="dev-label-input" value="${esc(d.label||'')}" placeholder="e.g. Office PC" onblur="saveDLabel('${esc(d.device_id)}',this.value)"></td>
+        <td><input class="dev-label-input" value="${esc(d.label||'')}" placeholder="e.g. Office PC" onblur="saveDLabel('${esc(d.device_id)}','${esc(d.username)}',this.value)"></td>
         <td>${statusHtml}</td>
         <td>${esc(d.approved_by||'—')}</td>
-        <td><div class="rowbtns">${approveBtn}</div></td>
+        <td><div class="rowbtns">${approveBtn}<button class="btn sm ghost danger" style="margin-left:6px;padding:3px 8px" onclick="deleteDevice('${esc(d.device_id)}','${esc(d.username)}')">✕</button></div></td>
       </tr>`;
     }).join('');
     el.innerHTML=`<table class="dev-access-table"><thead><tr><th>Device ID</th><th>User</th><th>Label</th><th>Status</th><th>Approved by</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
@@ -4113,22 +4122,31 @@ async function loadDeviceAccess(){
 async function approveDevice(did,username){
   if(!sb) return;
   try{
-    await sb.from('crm_devices').update({approved_by:session.username,approved_at:new Date().toISOString()}).eq('device_id',did);
+    await sb.from('crm_devices').update({approved_by:session.username,approved_at:new Date().toISOString()}).eq('device_id',did).eq('username',username);
     toast('Device approved ✅');
     loadDeviceAccess();
   }catch(e){ toast('Error: '+e.message); }
 }
-async function revokeDevice(did){
+async function revokeDevice(did,username){
   if(!sb) return;
   try{
-    await sb.from('crm_devices').update({approved_by:null,approved_at:null}).eq('device_id',did);
-    toast('Device revoked');
+    await sb.from('crm_devices').update({approved_by:null,approved_at:null}).eq('device_id',did).eq('username',username);
+    toast('Device revoked — '+username+' will be signed out shortly');
     loadDeviceAccess();
   }catch(e){ toast('Error: '+e.message); }
 }
-async function saveDLabel(did,label){
+async function deleteDevice(did,username){
   if(!sb) return;
-  try{ await sb.from('crm_devices').update({label}).eq('device_id',did); }
+  if(!confirm('Delete device record for '+username+'?\nThey will need to request access again.')) return;
+  try{
+    await sb.from('crm_devices').delete().eq('device_id',did).eq('username',username);
+    toast('Device record deleted');
+    loadDeviceAccess();
+  }catch(e){ toast('Error: '+e.message); }
+}
+async function saveDLabel(did,username,label){
+  if(!sb) return;
+  try{ await sb.from('crm_devices').update({label}).eq('device_id',did).eq('username',username); }
   catch(e){ console.warn('label save failed',e.message); }
 }
 
