@@ -1032,8 +1032,8 @@ const MAP = {
     to:c=>({id:c.id,account_id:c.accountId||null,name:c.name,phone:c.phone||null,email:c.email||null,designation:c.designation||null,whatsapp_verified:!!c.whatsappVerified,city:c.city||null,area:c.area||null,notes:c.notes||null,active:c.active!==false}),
     from:r=>({id:r.id,accountId:r.account_id||"",name:r.name,phone:r.phone||"",email:r.email||"",designation:r.designation||"",whatsappVerified:!!r.whatsapp_verified,city:r.city||"",area:r.area||"",notes:r.notes||"",active:r.active!==false}) },
   pipelineDeals:{table:"crm_deals", pk:"id",
-    to:d=>({id:d.id,account_id:d.accountId||null,contact_id:d.contactId||null,stage:d.stage||"New Lead",title:d.title||null,assigned_to:d.assignedTo||null,lead_source:d.leadSource||null,priority:d.priority||"Medium",revenue_potential:d.revenuePotential||null,first_contact:d.firstContact||null,last_contact:d.lastContact||null,status:d.status||"active",archived:!!d.archived,notes:d.notes||null,updated_at:new Date().toISOString()}),
-    from:r=>({id:r.id,accountId:r.account_id||"",contactId:r.contact_id||"",stage:r.stage||"New Lead",title:r.title||"",assignedTo:r.assigned_to||"",leadSource:r.lead_source||"",priority:r.priority||"Medium",revenuePotential:r.revenue_potential||null,firstContact:r.first_contact||"",lastContact:r.last_contact||"",status:r.status||"active",archived:!!r.archived,notes:r.notes||"",createdAt:r.created_at||""}) },
+    to:d=>({id:d.id,account_id:d.accountId||null,contact_id:d.contactId||null,stage:d.stage||"New Lead",title:d.title||null,assigned_to:d.assignedTo||null,lead_source:d.leadSource||null,priority:d.priority||"Medium",revenue_potential:d.revenuePotential||null,first_contact:d.firstContact||null,last_contact:d.lastContact||null,status:d.status||"active",archived:!!d.archived,notes:d.notes||null,po_number:d.poNumber||null,po_generated_at:d.poGeneratedAt||null,updated_at:new Date().toISOString()}),
+    from:r=>({id:r.id,accountId:r.account_id||"",contactId:r.contact_id||"",stage:r.stage||"New Lead",title:r.title||"",assignedTo:r.assigned_to||"",leadSource:r.lead_source||"",priority:r.priority||"Medium",revenuePotential:r.revenue_potential||null,firstContact:r.first_contact||"",lastContact:r.last_contact||"",status:r.status||"active",archived:!!r.archived,notes:r.notes||"",poNumber:r.po_number||"",poGeneratedAt:r.po_generated_at||"",createdAt:r.created_at||""}) },
   scales:{table:"crm_scales", pk:"id",
     to:s=>({id:s.id,name:s.name,product:s.product||null,notes:s.notes||null,tiers:s.tiers||[],active:s.active!==false}),
     from:r=>({id:r.id,name:r.name,product:r.product||"",notes:r.notes||"",tiers:r.tiers||[],active:r.active!==false}) },
@@ -2746,6 +2746,7 @@ function renderPipeline(v){
         ${d.priority?`<span class="pill ${PRI_CLR[d.priority]||''} sm">${esc(d.priority)}</span>`:''}
         <button class="btn sm ghost" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();waPipelineDeal('${esc(d.id)}')" style="padding:2px 6px;font-size:11px;line-height:1;background:#25d366;color:#fff;border:none;border-radius:4px">💬 WA</button>
         ${chatBtn(esc(d.id))}
+        ${d.stage==='Won – Order Confirmed'?(d.poNumber?`<span class="pill sm" title="PO generated ${esc(d.poGeneratedAt||'')}">📄 ${esc(d.poNumber)}</span>`:`<button class="btn sm ghost" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();generatePO('${esc(d.id)}')" style="padding:2px 6px;font-size:11px;line-height:1">📄 Generate PO</button>`):''}
         ${isAdmin()?`<button class="btn sm ghost danger kcard-del" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();del_pipelineDeal('${esc(d.id)}')">✕</button>`:''}
       </div>
     </div>`).join('');
@@ -3000,6 +3001,51 @@ function del_pipelineDeal(id){
     await upsert('pipelineDeals',d);
     toast('Deal archived');go('pipeline');
   });
+}
+
+/* ── Phase 8: Outbound CRM -> WhatsApp — PSG generates the PO number ──────
+   Reuses the existing Handoff Chat send path (/wa-send on the bot Worker,
+   authenticated with cfg.waApiKey) so no WhatsApp credential ever lives in
+   this webapp -- the bot Worker is the only thing that holds ACCESS_TOKEN /
+   PHONE_NUMBER_ID. Numbering comes from the crm_next_po_number() Supabase
+   RPC so two reps generating a PO at the same moment can never collide,
+   even though the rest of this app is local-first / offline-capable. */
+async function generatePO(id){
+  const d=state.pipelineDeals.find(x=>x.id===id);if(!d)return;
+  if(d.poNumber){toast('PO already generated: '+d.poNumber);return;}
+  if(!sb){toast('PO numbers require an online connection (Supabase not configured)');return;}
+  let poNumber;
+  try{
+    const {data,error}=await sb.rpc('crm_next_po_number');
+    if(error)throw error;
+    poNumber=data;
+  }catch(e){toast('Failed to generate PO number: '+e.message);return;}
+
+  d.poNumber=poNumber;d.poGeneratedAt=new Date().toISOString();
+  await upsert('pipelineDeals',d);
+  toast('PO generated: '+poNumber);
+  go('pipeline');
+
+  // Best-effort: tell the customer. Never block/alter the PO itself if this fails.
+  const contact=state.contacts&&state.contacts.find(c=>c.id===d.contactId);
+  const phone=contact&&contact.phone&&contact.phone.replace(/\D/g,'');
+  if(!phone){toast('PO saved, but no phone on file to notify the customer');return;}
+  if(!cfg.waWorkerUrl||!cfg.waApiKey){toast('PO saved — configure Bot Worker URL/Key in Admin to notify the customer automatically');return;}
+  const acct=state.accounts&&state.accounts.find(a=>a.id===d.accountId);
+  const who=(contact.name||'').split(' (')[0]||'';
+  const msg='Hi'+(who?' '+who:'')+', this is Pakistan Safety Glass (PSG).\n\n'+
+    'Your order'+(acct&&acct.name?' for '+acct.name:'')+' has been confirmed. '+
+    'Purchase Order Number: '+poNumber+'\n\n'+
+    'Please keep this for your records. We will update you as production progresses.';
+  try{
+    const r=await fetch(cfg.waWorkerUrl+'/wa-send',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-API-Key':cfg.waApiKey},
+      body:JSON.stringify({phone,message:msg,repName:(session&&session.repName)||myRep()||''})
+    });
+    if(r.ok)toast('PO '+poNumber+' sent to customer via WhatsApp ✓');
+    else{const t=await r.text();toast('PO saved, but WhatsApp send failed: '+t);}
+  }catch(e){toast('PO saved, but WhatsApp send failed: '+e.message);}
 }
 
 
