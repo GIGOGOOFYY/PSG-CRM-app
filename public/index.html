@@ -1130,6 +1130,20 @@ function startAutoRefresh(){
     if(ok){ renderConn(); if(!modalOpen){ renderRoute(); } }
   }, 60000); // reduced from 20s — Realtime handles hot tables
   startRealtime();
+  // Pull fresh data immediately when the tab regains focus/visibility, instead of
+  // waiting for the next (possibly throttled, if the tab was backgrounded) poll tick.
+  // Fixes stale cards lingering after switching back to an idle tab.
+  if(!window.__psgFocusPullBound){
+    window.__psgFocusPullBound = true;
+    const focusPull = async()=>{
+      if(document.hidden || !session || !sb) return;
+      const modalOpen = document.getElementById("modalMount") && document.getElementById("modalMount").innerHTML.trim().length>0;
+      const ok = await cloudPull();
+      if(ok){ renderConn(); if(!modalOpen){ renderRoute(); } }
+    };
+    document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) focusPull(); });
+    window.addEventListener("focus", focusPull);
+  }
 }
 async function upsert(kind, obj){
   try{ saveLocal(); }catch(e){ console.warn('[saveLocal]',e.message); }
