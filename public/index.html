@@ -885,6 +885,32 @@ function loadCfg(){
   return {url:DEFAULT_SB_URL, key:DEFAULT_SB_KEY, waWorkerUrl:'', waApiKey:''};
 }
 function saveCfg(){ localStorage.setItem("psgcrm_cfg", JSON.stringify(cfg)); }
+/* ── WhatsApp Bot settings (Worker URL / API key / templates) synced via Supabase ──
+   Previously local-only (localStorage), so a browser that never had Admin > WhatsApp
+   settings entered in IT never showed the Chat button even though another browser did.
+   Stored as one row in crm_app_settings (key='wa_config'), pulled on every cloudPull()
+   so all browsers converge on whichever device saved last. Falls back silently to
+   local-only cfg if the table doesn't exist yet or the pull fails (e.g. offline). */
+async function pullWaConfig(){
+  if(!sb) return;
+  try{
+    const {data,error}=await sb.from('crm_app_settings').select('value').eq('key','wa_config').maybeSingle();
+    if(error||!data||!data.value) return;
+    const v=data.value;
+    if(v.waWorkerUrl!==undefined) cfg.waWorkerUrl=v.waWorkerUrl;
+    if(v.waApiKey!==undefined) cfg.waApiKey=v.waApiKey;
+    if(v.waCountry!==undefined) cfg.waCountry=v.waCountry;
+    if(v.waMode!==undefined) cfg.waMode=v.waMode;
+    if(v.waTemplates!==undefined) cfg.waTemplates=v.waTemplates;
+    saveCfg();
+  }catch(e){ console.warn('[pullWaConfig]',e.message); }
+}
+async function pushWaConfig(){
+  if(!sb) return;
+  try{
+    await sb.from('crm_app_settings').upsert({key:'wa_config',value:{waWorkerUrl:cfg.waWorkerUrl||'',waApiKey:cfg.waApiKey||'',waCountry:cfg.waCountry||'92',waMode:cfg.waMode||'',waTemplates:cfg.waTemplates||[]},updated_at:new Date().toISOString()});
+  }catch(e){ console.warn('[pushWaConfig]',e.message); toast('Saved locally, but could not sync WhatsApp settings to cloud: '+e.message); }
+}
 
 /* ---------- default users (admins from workbook + one login per rep) ---------- */
 function seedUsers(){
@@ -1061,6 +1087,7 @@ async function cloudPull(){
     }
     savePendingWrites(); // persist updated queue after flush
   }
+  await pullWaConfig();
   cloudOK=anyOK; return anyOK;
 }
 async function backfillQuoteSerials(){
@@ -4431,7 +4458,7 @@ function waAdminCard(){
   </div></div>`;
 }
 function waFromDom(){ const t=[]; let i=0; while(document.getElementById("wat_n_"+i)){ t.push({name:document.getElementById("wat_n_"+i).value,body:document.getElementById("wat_b_"+i).value}); i++; } return t; }
-function waSaveTpls(){ cfg.waCountry=(document.getElementById("wa_cc").value.replace(/[^0-9]/g,""))||"92"; const md=document.getElementById("wa_mode"); if(md)cfg.waMode=md.value; const wk=document.getElementById("wa_worker_url");if(wk)cfg.waWorkerUrl=wk.value.trim(); const ak=document.getElementById("wa_api_key");if(ak)cfg.waApiKey=ak.value.trim(); cfg.waTemplates=waFromDom().filter(t=>t.name.trim()); saveCfg(); toast("WhatsApp settings saved"); go("admin"); }
+function waSaveTpls(){ cfg.waCountry=(document.getElementById("wa_cc").value.replace(/[^0-9]/g,""))||"92"; const md=document.getElementById("wa_mode"); if(md)cfg.waMode=md.value; const wk=document.getElementById("wa_worker_url");if(wk)cfg.waWorkerUrl=wk.value.trim(); const ak=document.getElementById("wa_api_key");if(ak)cfg.waApiKey=ak.value.trim(); cfg.waTemplates=waFromDom().filter(t=>t.name.trim()); saveCfg(); pushWaConfig().then(()=>{ renderRoute(); }); toast("WhatsApp settings saved — syncing to all browsers"); go("admin"); }
 function waAddTpl(){ cfg.waTemplates=waFromDom(); cfg.waTemplates.push({name:"New template",body:"Dear {contact}, "}); saveCfg(); go("admin"); }
 function waDelTpl(i){ const t=waFromDom(); t.splice(i,1); cfg.waTemplates=t; saveCfg(); go("admin"); }
 
