@@ -1006,8 +1006,8 @@ const MAP = {
     to:c=>({id:c.id,account_id:c.accountId||null,name:c.name,phone:c.phone||null,email:c.email||null,designation:c.designation||null,whatsapp_verified:!!c.whatsappVerified,city:c.city||null,area:c.area||null,notes:c.notes||null,active:c.active!==false}),
     from:r=>({id:r.id,accountId:r.account_id||"",name:r.name,phone:r.phone||"",email:r.email||"",designation:r.designation||"",whatsappVerified:!!r.whatsapp_verified,city:r.city||"",area:r.area||"",notes:r.notes||"",active:r.active!==false}) },
   pipelineDeals:{table:"crm_deals", pk:"id",
-    to:d=>({id:d.id,account_id:d.accountId||null,contact_id:d.contactId||null,stage:d.stage||"New Lead",title:d.title||null,assigned_to:d.assignedTo||null,lead_source:d.leadSource||null,priority:d.priority||"Medium",revenue_potential:d.revenuePotential||null,first_contact:d.firstContact||null,last_contact:d.lastContact||null,status:d.status||"active",notes:d.notes||null,updated_at:new Date().toISOString()}),
-    from:r=>({id:r.id,accountId:r.account_id||"",contactId:r.contact_id||"",stage:r.stage||"New Lead",title:r.title||"",assignedTo:r.assigned_to||"",leadSource:r.lead_source||"",priority:r.priority||"Medium",revenuePotential:r.revenue_potential||null,firstContact:r.first_contact||"",lastContact:r.last_contact||"",status:r.status||"active",notes:r.notes||"",createdAt:r.created_at||""}) },
+    to:d=>({id:d.id,account_id:d.accountId||null,contact_id:d.contactId||null,stage:d.stage||"New Lead",title:d.title||null,assigned_to:d.assignedTo||null,lead_source:d.leadSource||null,priority:d.priority||"Medium",revenue_potential:d.revenuePotential||null,first_contact:d.firstContact||null,last_contact:d.lastContact||null,status:d.status||"active",archived:!!d.archived,notes:d.notes||null,updated_at:new Date().toISOString()}),
+    from:r=>({id:r.id,accountId:r.account_id||"",contactId:r.contact_id||"",stage:r.stage||"New Lead",title:r.title||"",assignedTo:r.assigned_to||"",leadSource:r.lead_source||"",priority:r.priority||"Medium",revenuePotential:r.revenue_potential||null,firstContact:r.first_contact||"",lastContact:r.last_contact||"",status:r.status||"active",archived:!!r.archived,notes:r.notes||"",createdAt:r.created_at||""}) },
   scales:{table:"crm_scales", pk:"id",
     to:s=>({id:s.id,name:s.name,product:s.product||null,notes:s.notes||null,tiers:s.tiers||[],active:s.active!==false}),
     from:r=>({id:r.id,name:r.name,product:r.product||"",notes:r.notes||"",tiers:r.tiers||[],active:r.active!==false}) },
@@ -2487,7 +2487,7 @@ function renderAccounts(v){
   const rows=state.accounts.filter(matchSearch).slice().sort((a,b)=>String(a.id).localeCompare(String(b.id)));
   const body=rows.length?rows.map(a=>{
     const cts=state.contacts.filter(c=>c.accountId===a.id).length;
-    const dls=state.pipelineDeals.filter(d=>d.accountId===a.id&&d.status!=='inactive').length;
+    const dls=state.pipelineDeals.filter(d=>d.accountId===a.id&&!d.archived).length;
     const tc=a.accountType==='Client'?'green':a.accountType==='Lead'?'blue':'amber';
     return `<tr>
       <td class="mono">${esc(a.id)}</td>
@@ -2554,7 +2554,7 @@ function viewAccount(id){
   const a=state.accounts.find(x=>x.id===id);if(!a)return;
   const cts=state.contacts.filter(c=>c.accountId===id);
   const allDls=state.pipelineDeals.filter(d=>d.accountId===id);
-  const activeDls=allDls.filter(d=>d.status!=='inactive');
+  const activeDls=allDls.filter(d=>!d.archived);
   const ctRows=cts.length?cts.map(c=>`<tr><td class="mono">${esc(c.id)}</td><td>${esc(c.name)}</td><td>${esc(c.designation||'')}</td><td>${esc(c.phone||'')}</td><td>${esc(c.email||'')}</td></tr>`).join(''):`<tr><td colspan="5"><div class="empty">No contacts yet.</div></td></tr>`;
   const dlRows=activeDls.length?activeDls.map(d=>`<tr><td class="mono">${esc(d.id)}</td><td>${esc(d.title)}</td><td><span class="${STAGE_CLR[d.stage]||''}">${esc(d.stage)}</span></td><td>${esc(d.assignedTo||'')}</td></tr>`).join(''):`<tr><td colspan="4"><div class="empty">No active deals.</div></td></tr>`;
 
@@ -2570,7 +2570,7 @@ function viewAccount(id){
   const evts=[];
   allDls.forEach(d=>{
     const stLbl=d.stage||'New Lead';
-    const sta=d.status==='inactive'?'Archived':'Active';
+    const sta=d.archived?'Archived':'Active';
     evts.push({date:d.lastContact||d.firstContact||'',sort:d.lastContact||d.firstContact||'',type:'deal',icon:'💼',title:`Deal: ${d.title}`,detail:`Stage: ${stLbl} • Rep: ${d.assignedTo||'—'} • ${sta}`,tag:stLbl,tagCls:STAGE_CLR[stLbl]||''});
   });
   qts.forEach(q=>{
@@ -2691,7 +2691,7 @@ function del_contact(id){
 
 // ── PIPELINE KANBAN ──────────────────────────────────────────────────
 function renderPipeline(v){
-  const deals=vPipelineDeals().filter(d=>d.status!=='inactive'&&matchSearch(d));
+  const deals=vPipelineDeals().filter(d=>!d.archived&&matchSearch(d));
   const acctMap=Object.fromEntries(state.accounts.map(a=>[a.id,a.name]));
   const cols=PIPELINE_STAGES.map(stage=>{
     const stageDls=deals.filter(d=>d.stage===stage);
@@ -2955,7 +2955,7 @@ function editPipelineDeal(id){
 function del_pipelineDeal(id){
   confirmDel('Archive this deal? It will be removed from the pipeline.',async()=>{
     const d=state.pipelineDeals.find(x=>x.id===id);if(!d)return;
-    d.status='inactive';
+    d.archived=true;
     await upsert('pipelineDeals',d);
     toast('Deal archived');go('pipeline');
   });
@@ -3754,7 +3754,7 @@ function waQuote(id){
   // Mark quote as Sent (if still Draft) so status reflects what was actually done
   if(q.status==="Draft"){q.status="Sent";upsert("quotes",q);}
   // Advance the linked pipeline deal to "Quotation Sent" if it hasn't reached that stage yet
-  const deal=state.pipelineDeals.find(d=>d.accountId===q.clientId&&d.status!=='inactive');
+  const deal=state.pipelineDeals.find(d=>d.accountId===q.clientId&&!d.archived);
   if(deal){
     const curIdx=PIPELINE_STAGES.indexOf(deal.stage||'New Lead');
     const tgtIdx=PIPELINE_STAGES.indexOf('Quotation Sent');
@@ -4558,7 +4558,7 @@ window.renderDashboard=function(v){
   const myM=admin?me:me.filter(m=>m.rep===rep);
   const fmt=n=>"PKR "+Number(n||0).toLocaleString();
   const fd=d=>d?new Date(d).toLocaleDateString("en-GB",{day:"2-digit",month:"short"}):"—";
-  const openDeals=vPipelineDeals().filter(d=>d.status!=='inactive'&&d.stage!=='Won – Order Confirmed'&&d.stage!=='Customer Feedback'&&d.stage!=='Lost');
+  const openDeals=vPipelineDeals().filter(d=>!d.archived&&d.stage!=='Won – Order Confirmed'&&d.stage!=='Customer Feedback'&&d.stage!=='Lost');
   const todayCalls=myCl.filter(c=>(c.date||"").slice(0,10)===todayStr);
   const revenue=myD.filter(d=>d.collectStatus==="Received").reduce((s,d)=>s+(parseFloat(d.qty||0)*parseFloat(d.unitPrice||0)),0);
   const overdue=myC.filter(c=>{const f=c.followDate||c.followUpDate||"";return f&&f<todayStr&&c.status!=="Closed";}).slice(0,5);
@@ -4576,7 +4576,7 @@ window.renderDashboard=function(v){
 
   // Phase 3: pipeline from crm_deals (7-stage) instead of crm_clients
   const PIPE_SHORT_CRM={'New Lead':'New Lead','Contacted':'Contacted','Qualified':'Qualified','Requirement Received':'Req Recv','Quotation Sent':'Quotation','Negotiation':'Negotiation','Won – Order Confirmed':'Won','Customer Feedback':'Feedback','Lost':'Lost'};
-  const pipeSC=PIPELINE_STAGES.map(s=>vPipelineDeals().filter(d=>d.stage===s&&d.status!=='inactive').length);
+  const pipeSC=PIPELINE_STAGES.map(s=>vPipelineDeals().filter(d=>d.stage===s&&!d.archived).length);
   const pipeMX=Math.max(...pipeSC,1);
   const pipeHtml=`<div class="hcard">
     <div class="hcard-hd"><h3>CRM Pipeline</h3></div>
