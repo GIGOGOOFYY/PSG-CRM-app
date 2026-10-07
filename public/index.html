@@ -649,6 +649,8 @@ const SIDEBAR_NAV = [
     { id:"_rv",       icon:"check-circle",   label:"Receivings",            route:"receivings" },
     { id:"_inv",      icon:"receipt",        label:"Invoices",        route:"invoices" },
     { id:"_vend",     icon:"store",          label:"Vendors",         route:"vendors" },
+    { id:"_catalog",  icon:"package",        label:"Bot Catalog",     route:"catalog",    adminOnly:true },
+    { id:"_repRoute", icon:"users",          label:"Rep Routing",     route:"repRouting", adminOnly:true },
   ]},
 
   { section:"System", adminSection:true, items:[
@@ -866,7 +868,7 @@ function activeRepNames(){ const emp=(state.users||[]).filter(u=>u.role==="emplo
 function vocab(key, extra){ const base = key==="reps" ? activeRepNames() : DD[key]; const s=[...base]; (extra||[]).forEach(v=>{ if(v && !s.includes(v)) s.push(v); }); return s; }
 
 /* ---------- state ---------- */
-let state = { users:[], clients:[], calls:[], meetings:[], deals:[], tasks:[], repTargets:[], quotes:[], salesOrders:[], invoices:[], purchaseOrders:[], products:[], campaigns:[], priceBooks:[], documents:[], deliveryChallans:[], materialRequisitions:[], receivings:[], accounts:[], contacts:[], pipelineDeals:[] };
+let state = { users:[], clients:[], calls:[], meetings:[], deals:[], tasks:[], repTargets:[], quotes:[], salesOrders:[], invoices:[], purchaseOrders:[], products:[], campaigns:[], priceBooks:[], documents:[], deliveryChallans:[], materialRequisitions:[], receivings:[], accounts:[], contacts:[], pipelineDeals:[], productNodes:[], repAssignmentRules:[], talkToSalesPool:[] };
 let session = null;          // {username, role, repName}
 const DEFAULT_SB_URL="https://qeyeonucnlsmbeomrrwt.supabase.co";
 const DEFAULT_SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFleWVvbnVjbmxzbWJlb21ycnd0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQxODk0OTksImV4cCI6MjA5OTc2NTQ5OX0.SmacOxNWOR4HLCOQf_gkHYHFTqBWMDNWrpFAKHP5nns";
@@ -1032,8 +1034,18 @@ const MAP = {
     to:c=>({id:c.id,account_id:c.accountId||null,name:c.name,phone:c.phone||null,email:c.email||null,designation:c.designation||null,whatsapp_verified:!!c.whatsappVerified,city:c.city||null,area:c.area||null,notes:c.notes||null,active:c.active!==false}),
     from:r=>({id:r.id,accountId:r.account_id||"",name:r.name,phone:r.phone||"",email:r.email||"",designation:r.designation||"",whatsappVerified:!!r.whatsapp_verified,city:r.city||"",area:r.area||"",notes:r.notes||"",active:r.active!==false}) },
   pipelineDeals:{table:"crm_deals", pk:"id",
-    to:d=>({id:d.id,account_id:d.accountId||null,contact_id:d.contactId||null,stage:d.stage||"New Lead",title:d.title||null,assigned_to:d.assignedTo||null,lead_source:d.leadSource||null,priority:d.priority||"Medium",revenue_potential:d.revenuePotential||null,first_contact:d.firstContact||null,last_contact:d.lastContact||null,status:d.status||"active",archived:!!d.archived,notes:d.notes||null,po_number:d.poNumber||null,po_generated_at:d.poGeneratedAt||null,updated_at:new Date().toISOString()}),
-    from:r=>({id:r.id,accountId:r.account_id||"",contactId:r.contact_id||"",stage:r.stage||"New Lead",title:r.title||"",assignedTo:r.assigned_to||"",leadSource:r.lead_source||"",priority:r.priority||"Medium",revenuePotential:r.revenue_potential||null,firstContact:r.first_contact||"",lastContact:r.last_contact||"",status:r.status||"active",archived:!!r.archived,notes:r.notes||"",poNumber:r.po_number||"",poGeneratedAt:r.po_generated_at||"",createdAt:r.created_at||""}) },
+    to:d=>({id:d.id,account_id:d.accountId||null,contact_id:d.contactId||null,stage:d.stage||"New Lead",title:d.title||null,assigned_to:d.assignedTo||null,lead_source:d.leadSource||null,priority:d.priority||"Medium",revenue_potential:d.revenuePotential||null,first_contact:d.firstContact||null,last_contact:d.lastContact||null,status:d.status||"active",archived:!!d.archived,notes:d.notes||null,po_number:d.poNumber||null,po_generated_at:d.poGeneratedAt||null,product_path:d.productPath||null,updated_at:new Date().toISOString()}),
+    from:r=>({id:r.id,accountId:r.account_id||"",contactId:r.contact_id||"",stage:r.stage||"New Lead",title:r.title||"",assignedTo:r.assigned_to||"",leadSource:r.lead_source||"",priority:r.priority||"Medium",revenuePotential:r.revenue_potential||null,firstContact:r.first_contact||"",lastContact:r.last_contact||"",status:r.status||"active",archived:!!r.archived,notes:r.notes||"",poNumber:r.po_number||"",poGeneratedAt:r.po_generated_at||"",productPath:r.product_path||"",createdAt:r.created_at||""}) },
+  /* ── Phase 12: bot product-category tree + admin-editable rep routing + Talk-to-Sales claim queue ── */
+  productNodes:{table:"product_nodes", pk:"id",
+    to:n=>({id:n.id,parent_id:n.parentId||null,label:n.label,depth:num(n.depth)||0,is_leaf:!!n.isLeaf,sort_order:num(n.sortOrder)||0,active:n.active!==false,rep_category:n.repCategory||null}),
+    from:r=>({id:r.id,parentId:r.parent_id||"",label:r.label,depth:r.depth||0,isLeaf:!!r.is_leaf,sortOrder:r.sort_order||0,active:r.active!==false,repCategory:r.rep_category||""}) },
+  repAssignmentRules:{table:"rep_assignment_rules", pk:"id",
+    to:x=>({id:x.id,rep_category:x.repCategory,rep_username:x.repUsername,active:x.active!==false}),
+    from:r=>({id:r.id,repCategory:r.rep_category||"",repUsername:r.rep_username||"",active:r.active!==false}) },
+  talkToSalesPool:{table:"talk_to_sales_pool", pk:"id",
+    to:t=>({id:t.id,contact_id:t.contactId||null,deal_id:t.dealId||null,claimed_by:t.claimedBy||null,claimed_at:t.claimedAt||null}),
+    from:r=>({id:r.id,contactId:r.contact_id||"",dealId:r.deal_id||"",claimedBy:r.claimed_by||"",claimedAt:r.claimed_at||"",createdAt:r.created_at||""}) },
   scales:{table:"crm_scales", pk:"id",
     to:s=>({id:s.id,name:s.name,product:s.product||null,notes:s.notes||null,tiers:s.tiers||[],active:s.active!==false}),
     from:r=>({id:r.id,name:r.name,product:r.product||"",notes:r.notes||"",tiers:r.tiers||[],active:r.active!==false}) },
@@ -1051,7 +1063,7 @@ function initSupabase(){
 async function cloudPull(){
   if(!sb) return false;
   let anyOK=false;
-  for(const k of ["users","clients","calls","meetings","deals","tasks","repTargets","quotes","salesOrders","invoices","purchaseOrders","products","campaigns","priceBooks","documents","deliveryChallans","materialRequisitions","receivings","accounts","contacts","pipelineDeals","scales","configurations"]){
+  for(const k of ["users","clients","calls","meetings","deals","tasks","repTargets","quotes","salesOrders","invoices","purchaseOrders","products","campaigns","priceBooks","documents","deliveryChallans","materialRequisitions","receivings","accounts","contacts","pipelineDeals","scales","configurations","productNodes","repAssignmentRules","talkToSalesPool"]){
     try{
       const PAGE=1000; let all=[]; let offset=0;
       while(true){
@@ -1333,7 +1345,7 @@ function go(r){ route=r; searchTerm=""; renderSidebar(); renderRoute(); window.s
 function renderRoute(){
   const v=document.getElementById("view");
   if(!isAdmin()&&typeof canView==='function'&&ROUTE_PERM&&ROUTE_PERM[route]&&!canView(route)){route='dashboard';renderSidebar();renderDashboard(v);return;}
-  ({dashboard:renderDashboard,analytics:renderAnalytics,clients:renderClients,leads:renderLeadsOnly,clientsOnly:renderClientsOnly,prospects:renderProspectsOnly,tasks:renderTasks,calls:renderCalls,meetings:renderMeetings,deals:renderDeals,quotes:renderQuotes,quoteView:renderQuoteView,performance:renderPerformance,admin:renderAdmin,salesOrders:renderSalesOrders,invoices:renderInvoices,accounts:renderAccounts,contacts:renderContacts,pipeline:renderPipeline,purchaseOrders:renderPurchaseOrders,deliveryChallans:renderDeliveryChallans,materialRequisitions:renderMaterialRequisitions,receivings:renderReceivings,vendors:renderVendors,products:renderProducts,campaigns:renderCampaigns,priceBooks:renderPriceBooks,documents:renderDocuments}[route]||renderDashboard)(v);
+  ({dashboard:renderDashboard,analytics:renderAnalytics,clients:renderClients,leads:renderLeadsOnly,clientsOnly:renderClientsOnly,prospects:renderProspectsOnly,tasks:renderTasks,calls:renderCalls,meetings:renderMeetings,deals:renderDeals,quotes:renderQuotes,quoteView:renderQuoteView,performance:renderPerformance,admin:renderAdmin,salesOrders:renderSalesOrders,invoices:renderInvoices,accounts:renderAccounts,contacts:renderContacts,pipeline:renderPipeline,purchaseOrders:renderPurchaseOrders,deliveryChallans:renderDeliveryChallans,materialRequisitions:renderMaterialRequisitions,receivings:renderReceivings,vendors:renderVendors,products:renderProducts,campaigns:renderCampaigns,priceBooks:renderPriceBooks,documents:renderDocuments,catalog:renderCatalog,repRouting:renderRepRouting}[route]||renderDashboard)(v);
 }
 
 /* ======================================================================
@@ -2737,19 +2749,23 @@ function renderPipeline(v){
   const cols=PIPELINE_STAGES.map(stage=>{
     const stageDls=deals.filter(d=>d.stage===stage);
     const clr=STAGE_CLR[stage]||'';
-    const cards=stageDls.map(d=>`<div class="kcard" data-id="${esc(d.id)}"
+    const cards=stageDls.map(d=>{
+      const poolRow=(state.talkToSalesPool||[]).find(t=>t.dealId===d.id && !t.claimedBy);
+      return `<div class="kcard" data-id="${esc(d.id)}"
         onpointerdown="kcardDown(event,'${esc(d.id)}')" style="touch-action:none;user-select:none">
       <div class="kcard-title">${esc(d.title)}</div>
       ${acctMap[d.accountId]?`<div class="kcard-acct">${esc(acctMap[d.accountId])}</div>`:''}
+      ${d.productPath?`<div class="help" style="font-size:11px;margin-top:2px" title="${esc(d.productPath)}">🗂 ${esc(d.productPath)}</div>`:''}
       <div class="kcard-foot">
         <span class="kcard-id">${esc(d.id)}</span>
         ${d.priority?`<span class="pill ${PRI_CLR[d.priority]||''} sm">${esc(d.priority)}</span>`:''}
         <button class="btn sm ghost" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();waPipelineDeal('${esc(d.id)}')" style="padding:2px 6px;font-size:11px;line-height:1;background:#25d366;color:#fff;border:none;border-radius:4px">💬 WA</button>
         ${chatBtn(esc(d.id))}
+        ${poolRow?`<button class="btn sm ghost" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();claimTalkToSales('${esc(poolRow.id)}','${esc(d.id)}')" style="padding:2px 6px;font-size:11px;line-height:1;background:#f39c12;color:#fff;border:none;border-radius:4px">🙋 Claim</button>`:''}
         ${d.stage==='Won – Order Confirmed'?(d.poNumber?`<span class="pill sm" title="PO generated ${esc(d.poGeneratedAt||'')}">📄 ${esc(d.poNumber)}</span>`:`<button class="btn sm ghost" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();generatePO('${esc(d.id)}')" style="padding:2px 6px;font-size:11px;line-height:1">📄 Generate PO</button>`):''}
         ${isAdmin()?`<button class="btn sm ghost danger kcard-del" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();del_pipelineDeal('${esc(d.id)}')">✕</button>`:''}
       </div>
-    </div>`).join('');
+    </div>`;}).join('');
     return `<div class="kanban-col" data-stage="${esc(stage)}">
       <div class="kanban-col-head ${clr}"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1" title="${esc(stage)}">${esc(stage)}</span><span class="kcnt">${stageDls.length}</span></div>
       <div class="kcard-list" style="padding:8px;min-height:50px">${cards||`<div class="kcard-empty">No deals</div>`}</div>
@@ -3195,6 +3211,132 @@ function addProduct(){ openModal("New Product", productForm({active:true}), asyn
 function edit_product(id){ const p=state.products.find(x=>x.id===id); if(!p)return;
   openModal("Edit Product", productForm(p), async()=>{ Object.assign(p,readProduct(p)); await upsert("products",p); closeModal(); toast("Product updated"); go("products"); }); }
 function del_product(id){ confirmDel("Delete this product?", async()=>{ state.products=state.products.filter(x=>x.id!==id); await remove("products",id); toast("Deleted"); go("products"); }); }
+
+/* ======================================================================
+   PHASE 12 — BOT CATALOG (product_nodes tree) & REP ROUTING
+   product_nodes is the WhatsApp bot's own conversational category tree
+   (5 top-level branches, up to 5 levels deep) — unrelated to the
+   `products` catalog above, which is a flat, priced SKU list used by
+   Quotes/Price Books. Editing this tree changes what customers see in
+   the bot's "Select Product" menus; the bot reads it live (no redeploy
+   needed), but WhatsApp interactive lists cap out at 10 rows per menu
+   and ~24-char row titles — kept as soft guardrails here, not hard
+   blocks, since this editor doesn't know every WhatsApp-side limit.
+   ====================================================================== */
+function nextProductNodeId(){ return "pn_"+Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4); }
+function catalogChildren(parentId){
+  return (state.productNodes||[]).filter(n=>(n.parentId||"")===(parentId||""))
+    .sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0) || (a.label||"").localeCompare(b.label||""));
+}
+function catalogNodeRow(n){
+  const kids=catalogChildren(n.id);
+  const overCap = kids.length>10;
+  const longLabel = (n.label||"").length>24;
+  return `<div class="card" style="margin:6px 0 6px ${n.depth*18}px;padding:8px 10px">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <span style="flex:1;min-width:120px">${n.active===false?'<span class="pill gray sm">off</span> ':''}${longLabel?'⚠️ ':''}<b>${esc(n.label)}</b>
+        <span class="help" style="margin-left:6px">depth ${n.depth}${n.isLeaf?' · leaf':''}${n.repCategory?' · routes as "'+esc(n.repCategory)+'"':''}</span></span>
+      <button class="btn sm ghost" onclick="addProductNode('${esc(n.id)}',${n.depth+1})">＋ Child</button>
+      <button class="btn sm ghost" onclick="edit_productNode('${esc(n.id)}')">Edit</button>
+      <button class="btn sm ghost danger" onclick="del_productNode('${esc(n.id)}')">✕</button>
+    </div>
+    ${overCap?`<div class="help" style="color:#c0392b;margin-top:4px">⚠️ ${kids.length} children — WhatsApp lists cap at 10 per menu</div>`:''}
+    ${kids.map(catalogNodeRow).join('')}
+  </div>`;
+}
+function renderCatalog(v){
+  const roots=catalogChildren("");
+  v.innerHTML=pagehead("Bot Catalog","WhatsApp bot's product menu tree — "+(state.productNodes||[]).length+" nodes · changes apply live, no redeploy","Add Top-Level Category","addProductNode('',0)",false)+
+   `<div>${roots.length?roots.map(catalogNodeRow).join(''):'<div class="empty">No categories yet.</div>'}</div>`;
+}
+function productNodeForm(n){ n=n||{};
+  const parents=(state.productNodes||[]).filter(p=>p.id!==n.id)
+    .sort((a,b)=>(a.label||"").localeCompare(b.label||""))
+    .map(p=>`<option value="${esc(p.id)}" ${p.id===n.parentId?"selected":""}>${"— ".repeat(p.depth)}${esc(p.label)}</option>`).join("");
+  return `<div class="formgrid">
+    <div class="field full"><label>Label (shown to customer — keep under 24 characters)</label><input id="f_label" maxlength="60" value="${esc(n.label||"")}"></div>
+    <div class="field full"><label>Parent category</label><select id="f_parentId"><option value="">— Top level —</option>${parents}</select></div>
+    <div class="field"><label>Leaf (no further sub-menu)?</label><select id="f_isLeaf"><option value="false" ${!n.isLeaf?"selected":""}>No — has children</option><option value="true" ${n.isLeaf?"selected":""}>Yes — final option</option></select></div>
+    <div class="field"><label>Sort order</label><input id="f_sortOrder" type="number" value="${n.sortOrder||0}"></div>
+    <div class="field"><label>Status</label><select id="f_active"><option value="true" ${n.active!==false?"selected":""}>Active</option><option value="false" ${n.active===false?"selected":""}>Inactive (hidden from bot)</option></select></div>
+    <div class="field"><label>Rep-routing category (optional)</label><input id="f_repCategory" value="${esc(n.repCategory||"")}" placeholder="e.g. Automotive"></div>
+  </div>`;
+}
+function readProductNode(existing){ const g=id=>document.getElementById("f_"+id).value;
+  return Object.assign({},existing||{},{label:g("label"),parentId:g("parentId")||"",isLeaf:g("isLeaf")==="true",sortOrder:num(g("sortOrder")),active:g("active")!=="false",repCategory:g("repCategory")}); }
+function addProductNode(parentId, depth){
+  openModal("New Category", productNodeForm({parentId:parentId||"",active:true}), async()=>{
+    const n=readProductNode(); if(!n.label){toast("Label is required");return false;}
+    if((n.label||"").length>24) toast("⚠️ Saved — but over 24 characters, will be truncated in WhatsApp");
+    const siblingCount=catalogChildren(n.parentId).length;
+    if(siblingCount>=10) toast("⚠️ Saved — but this parent now has "+(siblingCount+1)+" children (WhatsApp caps menus at 10)");
+    n.id=nextProductNodeId(); n.depth=typeof depth==="number"?depth:(n.parentId?((state.productNodes.find(x=>x.id===n.parentId)||{}).depth||0)+1:0);
+    state.productNodes.push(n); await upsert("productNodes",n); closeModal(); toast("Category added"); go("catalog");
+  });
+}
+function edit_productNode(id){ const n=state.productNodes.find(x=>x.id===id); if(!n)return;
+  openModal("Edit Category", productNodeForm(n), async()=>{
+    const upd=readProductNode(n);
+    if(upd.parentId===id){ toast("A category can't be its own parent"); return false; }
+    upd.depth=upd.parentId? ((state.productNodes.find(x=>x.id===upd.parentId)||{}).depth||0)+1 : 0;
+    Object.assign(n,upd); await upsert("productNodes",n); closeModal(); toast("Category updated"); go("catalog");
+  });
+}
+function del_productNode(id){
+  const kids=catalogChildren(id);
+  if(kids.length){ toast("Delete or move its "+kids.length+" sub-item(s) first"); return; }
+  confirmDel("Delete this category? Customers will no longer see it in the bot menu.", async()=>{
+    state.productNodes=state.productNodes.filter(x=>x.id!==id); await remove("productNodes",id); toast("Deleted"); go("catalog");
+  });
+}
+
+/* ── Rep Routing — which rep a `rep_category` (set on a leaf category above)
+   round-robins to. Read by the bot's nextAssignedRep(); this table is the
+   admin-editable source of truth for that, separate from the legacy
+   autoAssignRep()/pdAutoAssignRep() regex further down, which only prefills
+   the manual "+New Deal" form and is not wired to this table. ── */
+function nextRepRuleId(){ return "rr_"+Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4); }
+function renderRepRouting(v){
+  const rows=(state.repAssignmentRules||[]).slice().sort((a,b)=>(a.repCategory||"").localeCompare(b.repCategory||""));
+  const body=rows.length?rows.map(r=>`<tr>
+    <td><b>${esc(r.repCategory)}</b></td>
+    <td>${esc(r.repUsername)}</td>
+    <td><span class="pill ${r.active!==false?"green":"gray"}">${r.active!==false?"Active":"Inactive"}</span></td>
+    <td class="no-print"><div class="rowbtns"><button class="btn sm ghost" onclick="edit_repRule('${esc(r.id)}')">Edit</button><button class="btn sm ghost danger" onclick="del_repRule('${esc(r.id)}')">✕</button></div></td></tr>`).join("")
+    :`<tr><td colspan="4"><div class="empty">No routing rules yet — leads with no matching rule fall back to the bot's default round-robin.</div></td></tr>`;
+  v.innerHTML=pagehead("Rep Routing","Which rep a bot category routes new leads to — "+rows.length+" rule"+(rows.length===1?"":"s"),"Add Rule","addRepRule()",false)+
+   `<div class="card tablewrap"><table><thead><tr><th>Rep Category</th><th>Rep (username)</th><th>Status</th><th></th></tr></thead><tbody>${body}</tbody></table></div>`;
+}
+function repRuleForm(r){ r=r||{};
+  const repOpts=(state.users||[]).filter(u=>u.role==="employee").sort((a,b)=>a.username.localeCompare(b.username))
+    .map(u=>`<option value="${esc(u.username)}" ${u.username===r.repUsername?"selected":""}>${esc(u.repName||u.username)}</option>`).join("");
+  const catOpts=[...new Set((state.productNodes||[]).map(n=>n.repCategory).filter(Boolean))]
+    .map(c=>`<option value="${esc(c)}" ${c===r.repCategory?"selected":""}>${esc(c)}</option>`).join("");
+  return `<div class="formgrid">
+    <div class="field full"><label>Rep Category (must match a category's "routes as" value in the Bot Catalog)</label>
+      <input id="f_repCategory" list="repCatList" value="${esc(r.repCategory||"")}" placeholder="e.g. Automotive"><datalist id="repCatList">${catOpts}</datalist></div>
+    <div class="field full"><label>Assign to</label><select id="f_repUsername"><option value="">— Select —</option>${repOpts}</select></div>
+    <div class="field"><label>Status</label><select id="f_active"><option value="true" ${r.active!==false?"selected":""}>Active</option><option value="false" ${r.active===false?"selected":""}>Inactive</option></select></div>
+  </div>`;
+}
+function readRepRule(existing){ const g=id=>document.getElementById("f_"+id).value;
+  return Object.assign({},existing||{},{repCategory:g("repCategory"),repUsername:g("repUsername"),active:g("active")!=="false"}); }
+function addRepRule(){ openModal("New Routing Rule", repRuleForm({active:true}), async()=>{
+  const r=readRepRule(); if(!r.repCategory||!r.repUsername){toast("Category and rep are both required");return false;}
+  r.id=nextRepRuleId(); state.repAssignmentRules.push(r); await upsert("repAssignmentRules",r); closeModal(); toast("Rule added"); go("repRouting");
+}); }
+function edit_repRule(id){ const r=state.repAssignmentRules.find(x=>x.id===id); if(!r)return;
+  openModal("Edit Routing Rule", repRuleForm(r), async()=>{ Object.assign(r,readRepRule(r)); await upsert("repAssignmentRules",r); closeModal(); toast("Rule updated"); go("repRouting"); }); }
+function del_repRule(id){ confirmDel("Delete this routing rule?", async()=>{ state.repAssignmentRules=state.repAssignmentRules.filter(x=>x.id!==id); await remove("repAssignmentRules",id); toast("Deleted"); go("repRouting"); }); }
+
+/* ── Talk-to-Sales claim queue — unclaimed rows surface a "Claim" button
+   on the matching Pipeline card (see renderPipeline). Claiming sets
+   claimed_by/claimed_at; it does not itself reassign the deal. ── */
+async function claimTalkToSales(poolId, dealId){
+  const row=(state.talkToSalesPool||[]).find(x=>x.id===poolId); if(!row) return;
+  row.claimedBy=session.username; row.claimedAt=new Date().toISOString();
+  await upsert("talkToSalesPool",row); toast("Lead claimed"); go("pipeline");
+}
 
 /* ======================================================================
    PRICE BOOKS -- named pricing tiers (Retail/Dealer/Wholesale/etc) built on
