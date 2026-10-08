@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>PSG CRM — Pakistan Safety Glass</title>
+<title>CRM — Pakistan Safety Glass</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -3246,7 +3246,7 @@ function catalogNodeRow(n){
 }
 function renderCatalog(v){
   const roots=catalogChildren("");
-  v.innerHTML=pagehead("Bot Catalog","WhatsApp bot's product menu tree — "+(state.productNodes||[]).length+" nodes · changes apply live, no redeploy","Add Top-Level Category","addProductNode('',0)",false)+
+  v.innerHTML=pagehead("Bot Catalog","⚠️ Not yet connected to the bot — editing this tree does not change what customers see on WhatsApp yet. "+(state.productNodes||[]).length+" nodes staged for when that wiring is built.","Add Top-Level Category","addProductNode('',0)",false)+
    `<div>${roots.length?roots.map(catalogNodeRow).join(''):'<div class="empty">No categories yet.</div>'}</div>`;
 }
 function productNodeForm(n){ n=n||{};
@@ -3304,7 +3304,7 @@ function renderRepRouting(v){
     <td><span class="pill ${r.active!==false?"green":"gray"}">${r.active!==false?"Active":"Inactive"}</span></td>
     <td class="no-print"><div class="rowbtns"><button class="btn sm ghost" onclick="edit_repRule('${esc(r.id)}')">Edit</button><button class="btn sm ghost danger" onclick="del_repRule('${esc(r.id)}')">✕</button></div></td></tr>`).join("")
     :`<tr><td colspan="4"><div class="empty">No routing rules yet — leads with no matching rule fall back to the bot's default round-robin.</div></td></tr>`;
-  v.innerHTML=pagehead("Rep Routing","Which rep a bot category routes new leads to — "+rows.length+" rule"+(rows.length===1?"":"s"),"Add Rule","addRepRule()",false)+
+  v.innerHTML=pagehead("Rep Routing","⚠️ Not yet connected to the bot — it still does plain round-robin. "+rows.length+" rule"+(rows.length===1?"":"s")+" staged for when that wiring is built.","Add Rule","addRepRule()",false)+
    `<div class="card tablewrap"><table><thead><tr><th>Rep Category</th><th>Rep (username)</th><th>Status</th><th></th></tr></thead><tbody>${body}</tbody></table></div>`;
 }
 function repRuleForm(r){ r=r||{};
