@@ -626,10 +626,11 @@ const SIDEBAR_NAV = [
 
   { section:"Sales", items:[
 
-    { id:"deals",     icon:"dollar-sign",    label:"Deals" },
-    { id:"_forecast", icon:"bar-chart-2",    label:"Forecasts",       route:"performance" },
-    { id:"_docs",     icon:"file-text",      label:"Documents",       route:"documents" },
-    { id:"_camp",     icon:"megaphone",      label:"Campaigns",       route:"campaigns" },
+    { id:"deals",       icon:"dollar-sign",  label:"Deals" },
+    { id:"_forecast",   icon:"bar-chart-2",  label:"Forecasts",       route:"performance" },
+    { id:"_docs",       icon:"file-text",    label:"Documents",       route:"documents" },
+    { id:"_camp",       icon:"megaphone",    label:"Campaigns",       route:"campaigns" },
+    { id:"_metaAds",    icon:"trending-up",  label:"Meta Ads",        route:"metaAds" },
   ]},
 
   { section:"Activities", items:[
@@ -734,6 +735,7 @@ const PERM_MODULES = [
     { key:"forecasts", label:"Forecasts" },
     { key:"documents", label:"Documents" },
     { key:"campaigns", label:"Campaigns" },
+    { key:"metaAds",   label:"Meta Ads"  },
   ]},
   { section:"Activities", modules:[
     { key:"tasks",    label:"Tasks"    },
@@ -755,7 +757,7 @@ const PERM_MODULES = [
 ];
 const ROUTE_PERM = {
   accounts:"companies", contacts:"contacts", pipeline:"pipeline",
-  deals:"deals", performance:"forecasts", documents:"documents", campaigns:"campaigns",
+  deals:"deals", performance:"forecasts", documents:"documents", campaigns:"campaigns", metaAds:"campaigns",
   tasks:"tasks", meetings:"meetings", calls:"calls",
   products:"products", priceBooks:"priceBooks", quotes:"quotes",
   salesOrders:"salesOrders", purchaseOrders:"purchaseOrders",
@@ -1345,7 +1347,7 @@ function go(r){ route=r; searchTerm=""; renderSidebar(); renderRoute(); window.s
 function renderRoute(){
   const v=document.getElementById("view");
   if(!isAdmin()&&typeof canView==='function'&&ROUTE_PERM&&ROUTE_PERM[route]&&!canView(route)){route='dashboard';renderSidebar();renderDashboard(v);return;}
-  ({dashboard:renderDashboard,analytics:renderAnalytics,clients:renderClients,leads:renderLeadsOnly,clientsOnly:renderClientsOnly,prospects:renderProspectsOnly,tasks:renderTasks,calls:renderCalls,meetings:renderMeetings,deals:renderDeals,quotes:renderQuotes,quoteView:renderQuoteView,performance:renderPerformance,admin:renderAdmin,salesOrders:renderSalesOrders,invoices:renderInvoices,accounts:renderAccounts,contacts:renderContacts,pipeline:renderPipeline,purchaseOrders:renderPurchaseOrders,deliveryChallans:renderDeliveryChallans,materialRequisitions:renderMaterialRequisitions,receivings:renderReceivings,vendors:renderVendors,products:renderProducts,campaigns:renderCampaigns,priceBooks:renderPriceBooks,documents:renderDocuments,catalog:renderCatalog,repRouting:renderRepRouting}[route]||renderDashboard)(v);
+  ({dashboard:renderDashboard,analytics:renderAnalytics,clients:renderClients,leads:renderLeadsOnly,clientsOnly:renderClientsOnly,prospects:renderProspectsOnly,tasks:renderTasks,calls:renderCalls,meetings:renderMeetings,deals:renderDeals,quotes:renderQuotes,quoteView:renderQuoteView,performance:renderPerformance,admin:renderAdmin,salesOrders:renderSalesOrders,invoices:renderInvoices,accounts:renderAccounts,contacts:renderContacts,pipeline:renderPipeline,purchaseOrders:renderPurchaseOrders,deliveryChallans:renderDeliveryChallans,materialRequisitions:renderMaterialRequisitions,receivings:renderReceivings,vendors:renderVendors,products:renderProducts,campaigns:renderCampaigns,priceBooks:renderPriceBooks,documents:renderDocuments,catalog:renderCatalog,repRouting:renderRepRouting,metaAds:renderMetaAds}[route]||renderDashboard)(v);
 }
 
 /* ======================================================================
@@ -3467,6 +3469,177 @@ function edit_campaign(id){ const c=state.campaigns.find(x=>x.id===id); if(!c)re
 function del_campaign(id){ confirmDel("Delete this campaign?", async()=>{ state.campaigns=state.campaigns.filter(x=>x.id!==id); await remove("campaigns",id); toast("Deleted"); go("campaigns"); }); }
 
 /* ======================================================================
+   META ADS — Phase 6-B/6-C
+   Read-only dashboard pulling from meta_ad_insights (synced nightly by
+   psg-crm-backend) and crm_deals (Meta-sourced, for ROI attribution).
+   "Sync Now" calls POST /meta/sync-insights on the backend worker.
+   ====================================================================== */
+async function metaAdsSyncNow(){
+  const url=(cfg.crmBackendUrl||'').trim();
+  const key=(cfg.crmBackendKey||'').trim();
+  if(!url||!key){ toast('Configure backend URL & API key in Admin → Meta Ads Settings first'); return; }
+  const btn=document.getElementById('metaAdsSyncBtn');
+  if(btn){btn.disabled=true;btn.textContent='Syncing…';}
+  try{
+    const res=await fetch(url+'/meta/sync-insights',{method:'POST',headers:{Authorization:'Bearer '+key}});
+    const j=await res.json().catch(()=>({}));
+    if(res.ok) toast('Sync done — '+((j.result&&j.result.upserted)||0)+' rows updated');
+    else toast('Sync error '+res.status+': '+(j.error||'unknown'));
+  }catch(e){ toast('Sync failed: '+e.message); }
+  finally{ if(btn){btn.disabled=false;btn.textContent='↺ Sync Now';} }
+  go('metaAds');
+}
+
+function metaAdsAdminCard(){
+  return `<div class="card" style="margin-top:16px"><h3>📢 Meta Ads settings</h3><div style="padding:16px">
+    <div class="help" style="margin-bottom:12px">Backend worker URL and API key for the "Sync Now" button on the Meta Ads page. Never put the Meta App Secret here — it lives in Cloudflare Worker secrets only.</div>
+    <div style="display:flex;gap:14px;flex-wrap:wrap">
+      <div class="settings-row" style="max-width:380px"><label class="help">Backend Worker URL</label><input id="ma_url" placeholder="https://psg-crm-backend.&lt;account&gt;.workers.dev" value="${esc(cfg.crmBackendUrl||'')}"></div>
+      <div class="settings-row" style="max-width:300px"><label class="help">ADMIN_API_KEY</label><input id="ma_key" type="password" placeholder="•••• paste key" value="${esc(cfg.crmBackendKey||'')}"></div>
+    </div>
+    <button class="btn primary" style="margin-top:10px" onclick="metaSaveAdminSettings()">Save Meta Ads settings</button>
+  </div></div>`;
+}
+function metaSaveAdminSettings(){
+  cfg.crmBackendUrl=(document.getElementById('ma_url')||{}).value?.trim()||'';
+  cfg.crmBackendKey=(document.getElementById('ma_key')||{}).value?.trim()||'';
+  saveCfg();
+  toast('Meta Ads settings saved');
+  go('admin');
+}
+
+async function renderMetaAds(v){
+  v.innerHTML=`<div class="pagehead"><div><h2>Meta Ads</h2><div class="sub">Ad performance &amp; lead attribution</div></div><button id="metaAdsSyncBtn" class="btn ghost no-print" onclick="metaAdsSyncNow()">↺ Sync Now</button></div>
+  <div style="padding:40px;text-align:center;color:var(--muted)">Loading…</div>`;
+
+  if(!sb){ v.innerHTML+=`<div class="card"><p style="padding:16px;color:var(--muted)">Connect Supabase to view Meta Ads data.</p></div>`; return; }
+
+  // Fetch insights for last 30 days (grouped by campaign)
+  let insights=[], metaDeals=[];
+  try{
+    const cutoff=new Date(); cutoff.setDate(cutoff.getDate()-30);
+    const since=cutoff.toISOString().slice(0,10);
+    const {data:ins, error:insErr}=await sb.from('meta_ad_insights')
+      .select('meta_campaign_id,campaign_id,date,spend,impressions,clicks,leads,cpl')
+      .gte('date',since)
+      .order('date',{ascending:false});
+    if(!insErr) insights=ins||[];
+
+    const {data:dl, error:dlErr}=await sb.from('crm_deals')
+      .select('id,title,campaign_name,campaign_id,stage,status,revenue_potential,assigned_to,first_contact')
+      .eq('lead_source','Meta Lead Ads')
+      .eq('status','active')
+      .order('first_contact',{ascending:false});
+    if(!dlErr) metaDeals=dl||[];
+  }catch(e){ console.warn('[renderMetaAds]',e.message); }
+
+  // Aggregate insights by campaign
+  const campMap={};
+  for(const row of insights){
+    const k=row.meta_campaign_id||'unknown';
+    if(!campMap[k]) campMap[k]={id:k,spend:0,impressions:0,clicks:0,leads:0};
+    campMap[k].spend+=parseFloat(row.spend)||0;
+    campMap[k].impressions+=parseInt(row.impressions,10)||0;
+    campMap[k].clicks+=parseInt(row.clicks,10)||0;
+    campMap[k].leads+=parseInt(row.leads,10)||0;
+  }
+
+  // Aggregate deals by campaign_name for ROI table
+  const roiMap={};
+  for(const d of metaDeals){
+    const k=d.campaign_name||'(no campaign)';
+    if(!roiMap[k]) roiMap[k]={name:k,deals:0,pipeline:0,won:0};
+    roiMap[k].deals++;
+    roiMap[k].pipeline+=parseFloat(d.revenue_potential)||0;
+    if(d.stage==='Won – Order Confirmed') roiMap[k].won++;
+  }
+  // Cross-join spend into ROI table via campaign_id lookup
+  // state.campaigns has crm_campaigns which may have meta_campaign_id
+  for(const camp of (state.campaigns||[])){
+    if(!camp.meta_campaign_id) continue;
+    const ins=campMap[camp.meta_campaign_id];
+    if(!ins) continue;
+    const key=camp.name;
+    if(roiMap[key]) roiMap[key].spend=ins.spend;
+  }
+
+  const campRows=Object.values(campMap);
+  const roiRows=Object.values(roiMap);
+  const totalSpend=campRows.reduce((s,r)=>s+r.spend,0);
+  const totalLeads=campRows.reduce((s,r)=>s+r.leads,0);
+  const totalImpressions=campRows.reduce((s,r)=>s+r.impressions,0);
+  const totalClicks=campRows.reduce((s,r)=>s+r.clicks,0);
+
+  // KPI tiles
+  const kpis=[
+    {label:'Total Spend',    val:PKR(totalSpend)},
+    {label:'Impressions',    val:totalImpressions.toLocaleString()},
+    {label:'Clicks',         val:totalClicks.toLocaleString()},
+    {label:'Leads (Meta)',   val:totalLeads},
+    {label:'CRM Leads Created', val:metaDeals.length},
+    {label:'Avg CPL',        val:totalLeads?PKR(totalSpend/totalLeads):'—'},
+  ];
+  const kpiHtml=kpis.map(k=>`<div class="stat-tile"><div class="stat-val">${k.val}</div><div class="stat-lbl">${k.label}</div></div>`).join('');
+
+  // Campaign performance table
+  const insTableBody=campRows.length
+    ?campRows.sort((a,b)=>b.spend-a.spend).map(r=>{
+        const ctr=r.impressions?((r.clicks/r.impressions)*100).toFixed(2)+'%':'—';
+        const cpl=r.leads?PKR(r.spend/r.leads):'—';
+        return `<tr><td>${esc(r.id)}</td><td class="num">${PKR(r.spend)}</td><td class="num">${r.impressions.toLocaleString()}</td><td class="num">${r.clicks.toLocaleString()}</td><td class="num">${r.leads}</td><td class="num">${ctr}</td><td class="num">${cpl}</td></tr>`;
+      }).join('')
+    :`<tr><td colspan="7"><div class="empty">No insights data yet. Click "↺ Sync Now" after configuring credentials in Admin → Meta Ads Settings.</div></td></tr>`;
+
+  // ROI attribution table
+  const roiTableBody=roiRows.length
+    ?roiRows.sort((a,b)=>b.pipeline-a.pipeline).map(r=>{
+        const roi=r.spend>0?((r.pipeline/r.spend)*100).toFixed(0)+'%':'—';
+        return `<tr><td>${esc(r.name)}</td><td class="num">${r.deals}</td><td class="num">${r.won}</td><td class="num">${PKR(r.pipeline)}</td><td class="num">${r.spend?PKR(r.spend):'—'}</td><td class="num">${roi}</td></tr>`;
+      }).join('')
+    :`<tr><td colspan="6"><div class="empty">No Meta-sourced deals yet. Once leads arrive via the Lead Ads webhook they appear here.</div></td></tr>`;
+
+  const lastSync=insights.length?insights[0].date:'never';
+
+  v.innerHTML=`
+  <div class="pagehead"><div><h2>Meta Ads</h2><div class="sub">Last 30 days · last sync ${esc(lastSync)}</div></div>
+    <button id="metaAdsSyncBtn" class="btn ghost no-print" onclick="metaAdsSyncNow()">↺ Sync Now</button>
+  </div>
+  <div class="stat-row">${kpiHtml}</div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="card-hdr" style="padding:14px 16px 0;font-weight:600;font-size:14px">📊 Campaign Performance (last 30 days)</div>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Campaign ID</th><th class="num">Spend</th><th class="num">Impressions</th><th class="num">Clicks</th><th class="num">Leads</th><th class="num">CTR</th><th class="num">CPL</th></tr></thead>
+      <tbody>${insTableBody}</tbody>
+    </table></div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="card-hdr" style="padding:14px 16px 0;font-weight:600;font-size:14px">💰 ROI Attribution — Meta-sourced deals in CRM</div>
+    <div class="help" style="padding:4px 16px 10px;color:var(--muted);font-size:12px">Pipeline value = sum of revenue_potential on active Meta-sourced deals. ROI = Pipeline ÷ Spend × 100.</div>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Campaign</th><th class="num">CRM Leads</th><th class="num">Won</th><th class="num">Pipeline Value</th><th class="num">Ad Spend</th><th class="num">ROI %</th></tr></thead>
+      <tbody>${roiTableBody}</tbody>
+    </table></div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="card-hdr" style="padding:14px 16px 8px;font-weight:600;font-size:14px">🕐 Recent Meta Leads (last 20)</div>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Title</th><th>Campaign</th><th>Stage</th><th>Rep</th><th>Date</th></tr></thead>
+      <tbody>${metaDeals.slice(0,20).map(d=>`<tr>
+        <td>${esc(d.title||'—')}</td>
+        <td>${esc(d.campaign_name||'—')}</td>
+        <td><span class="pill">${esc(d.stage||'—')}</span></td>
+        <td>${esc(d.assigned_to||'—')}</td>
+        <td>${esc(d.first_contact||'—')}</td>
+      </tr>`).join('')||`<tr><td colspan="5"><div class="empty">No Meta-sourced deals yet.</div></td></tr>`}
+      </tbody>
+    </table></div>
+  </div>`;
+}
+
+/* ======================================================================
    DOCUMENTS -- files attached to a client (optional), stored the same way
    quote PDF attachments already are: as a base64 data URL in a text
    column, not a separate storage bucket. Capped client-side at 5MB.
@@ -4209,6 +4382,7 @@ function renderAdmin(v){
      </div></div>
    </div>
    ${waAdminCard()}
+   ${metaAdsAdminCard()}
    <div class="card" style="margin-top:16px"><h3>👤 Users & access</h3><div class="tablewrap"><table><thead><tr><th>Username</th><th>Role</th><th>Rep</th><th>Password</th><th></th></tr></thead><tbody>${users}</tbody></table></div>
       <div style="padding:14px"><button class="btn primary" onclick="addUser()">＋ Add User</button></div></div>
    <div class="card" style="margin-top:16px"><h3>🔐 Module Permissions</h3><div class="help" style="padding:12px 16px 0;color:#666;font-size:12.5px">Set per-module access for each employee. Masters always have full access.</div>${renderPermMatrix()}</div>
