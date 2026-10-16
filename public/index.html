@@ -3059,7 +3059,7 @@ async function generatePO(id){
     const r=await fetch(cfg.waWorkerUrl+'/wa-send',{
       method:'POST',
       headers:{'Content-Type':'application/json','X-API-Key':cfg.waApiKey},
-      body:JSON.stringify({phone,message:msg,repName:(session&&session.repName)||myRep()||''})
+      body:JSON.stringify({phone,message:msg,repName:(session&&session.repName)||myRep()||'',customerName:who})
     });
     if(r.ok)toast('PO '+poNumber+' sent to customer via WhatsApp ✓');
     else{const t=await r.text();toast('PO saved, but WhatsApp send failed: '+t);}
@@ -4617,6 +4617,7 @@ const WA_DEFAULT_TEMPLATES = [
   {name:"Quotation ready", body:"Dear {contact}, your quotation for {company} (Ref# {quoteNo}) is ready and has been shared with you. Please let us know if you have any questions. — {rep}, Pakistan Safety Glass"},
   {name:"Quotation follow-up", body:"Dear {contact}, following up on your enquiry for {company}. Please share the required sizes/specifications so we can prepare your quotation. — {rep}, Pakistan Safety Glass"},
   {name:"Revised quotation sent", body:"Dear {contact}, as discussed, we've revised the quotation for {company} (Ref# {quoteNo}). Updated pricing/terms have been shared. Please confirm to proceed. — {rep}, Pakistan Safety Glass"},
+  {name:"Negotiation follow-up", body:"Dear {contact}, following up on our discussion for {company} regarding terms/pricing. Please let us know your thoughts so we can finalize. — {rep}, Pakistan Safety Glass"},
   {name:"Site visit / sample request", body:"Dear {contact}, to proceed with technical approval for {company}, we'd like to schedule a site visit/sample review. Please suggest a convenient date. — {rep}, Pakistan Safety Glass"},
   {name:"Meeting reminder", body:"Dear {contact}, a reminder for our meeting on {date} {time} ({type}) regarding: {agenda}. — {rep}, Pakistan Safety Glass"},
   {name:"Technical approval confirmation", body:"Dear {contact}, thank you for confirming technical approval for {company}. We can now proceed to order confirmation. — {rep}, Pakistan Safety Glass"},
@@ -4698,10 +4699,40 @@ async function waSendViaBot(num,msg){
   let pdfBase64=ctx.pdfBase64||'';
   const phone=num.replace(/\D/g,"");
   if(!phone){toast("Enter a phone number first");return;}
+  const quoteId=ctx._quoteId||'';
+  // No quote in context (e.g. Negotiation / a Pipeline deal with no PDF attached) —
+  // Phase 8: send plain text through the bot's /wa-send (same path generatePO() uses),
+  // which now auto-detects the 24h window and falls back to the approved re-engagement
+  // template on its own — no PDF requirement for this branch.
+  if(!pdfBase64 && !quoteId){
+    closeModal();
+    toast("Sending via WhatsApp bot…");
+    try{
+      const r=await fetch(cfg.waWorkerUrl+'/wa-send',{
+        method:"POST",
+        headers:{"Content-Type":"application/json","X-API-Key":cfg.waApiKey},
+        body:JSON.stringify({phone,message:msg,repName:session&&session.repName||myRep()||"",customerName:ctx.contact||""})
+      });
+      const d=await r.json();
+      if(d.ok){
+        toast(d.usedTemplate?"✅ Sent — customer outside 24h window, used the approved follow-up template instead of free text":"✅ Message sent via WhatsApp!");
+        if(ctx._pipelineDealId){
+          const pd=state.pipelineDeals.find(x=>x.id===ctx._pipelineDealId);
+          if(pd&&PIPELINE_STAGES.indexOf('Negotiation')>PIPELINE_STAGES.indexOf(pd.stage||'New Lead')){
+            pd.stage='Negotiation';pd.lastContact=today();upsert('pipelineDeals',pd);maybeConvertToClient(pd);
+            toast('Pipeline → Negotiation');
+          }
+        }
+      }else{
+        toast("❌ "+(d.error||"Send failed — check Worker logs"));
+      }
+    }catch(e){
+      toast("❌ "+e.message);
+    }
+    return;
+  }
   // Generate PDF on-the-fly if none pre-saved
   if(!pdfBase64){
-    const quoteId=ctx._quoteId||'';
-    if(!quoteId){toast("No PDF available — open a specific quote first");return;}
     const q=state.quotes.find(x=>x.id===quoteId);
     if(!q){toast("Quote not found");return;}
     if(typeof html2canvas==='undefined'||!window.jspdf){toast("PDF library still loading — wait a moment and try again");return;}
@@ -4774,7 +4805,7 @@ function waOpenModal(phone, ctx, presetName){
     // (no auto stage-bump on a plain WhatsApp send \u2014 'New Inquiry' has no finer sub-stage in the unified flow; sending a quote still bumps to 'Quotation Sent' above)
     // Pipeline deal: advance stage when a stage-linked template is sent
     if(ctx._pipelineDealId){
-      const _WA_TPL_STAGE={'Requirement Confirmation':'Requirement Received','Quotation Sent':'Quotation Sent'};
+      const _WA_TPL_STAGE={'Requirement Confirmation':'Requirement Received','Quotation Sent':'Quotation Sent','Negotiation follow-up':'Negotiation'};
       const _tgtStage=_WA_TPL_STAGE[tplName];
       if(_tgtStage){
         const _pd=state.pipelineDeals.find(x=>x.id===ctx._pipelineDealId);
