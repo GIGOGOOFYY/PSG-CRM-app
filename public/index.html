@@ -1022,8 +1022,8 @@ const MAP = {
     to:d=>({id:d.id,close_date:d.closeDate||null,rep:d.rep,client_id:d.clientId,company:d.company,product:d.product,qty:num(d.qty),unit_price:num(d.unitPrice),deal_value:dealValue(d),collect_status:d.collectStatus,collected:dealCollected(d),comm_rate:num(d.commRate),comm_earned:dealCommission(d),remarks:d.remarks,quote_no:d.quoteNo||null,po_number:d.poNumber||null}),
     from:r=>({id:r.id,closeDate:r.close_date||"",rep:r.rep,clientId:r.client_id,company:r.company,product:r.product,qty:r.qty,unitPrice:r.unit_price,collectStatus:r.collect_status,collected:r.collected||0,commRate:r.comm_rate,remarks:r.remarks,quoteNo:r.quote_no||"",poNumber:r.po_number||""}) },
   quotes:{table:"crm_quotes", pk:"id",
-    to:q=>({id:q.id,quote_date:q.quoteDate||null,valid_until:q.validUntil||null,rep:q.rep,client_id:q.clientId,company:q.company,contact:q.contact,status:q.status,category:q.category||null,customer_code:q.customerCode||null,ntn:q.ntn||null,gst:q.gst||null,items:q.items||[],notes:q.notes,pdf_data:q.pdfData||null,serial_no:q.serialNo||null,contact_gender:q.contactGender||null,account_id:q.accountId||null,contact_id:q.contactId||null,deal_id:q.dealId||null}),
-    from:r=>({id:r.id,quoteDate:r.quote_date||"",validUntil:r.valid_until||"",rep:r.rep,clientId:r.client_id,company:r.company,contact:r.contact,status:r.status,category:r.category||"",customerCode:r.customer_code||"",ntn:r.ntn||"",gst:r.gst||"",items:r.items||[],notes:r.notes,pdfData:r.pdf_data||"",serialNo:r.serial_no||null,contactGender:r.contact_gender||"",accountId:r.account_id||"",contactId:r.contact_id||"",dealId:r.deal_id||""}) },
+    to:q=>({id:q.id,quote_date:q.quoteDate||null,valid_until:q.validUntil||null,rep:q.rep,client_id:q.clientId,company:q.company,contact:q.contact,status:q.status,category:q.category||null,customer_code:q.customerCode||null,ntn:q.ntn||null,gst:q.gst||null,items:q.items||[],notes:q.notes,pdf_data:q.pdfData||null,serial_no:q.serialNo||null,contact_gender:q.contactGender||null,account_id:q.accountId||null,contact_id:q.contactId||null,deal_id:q.dealId||null,revision:q.revision||0}),
+    from:r=>({id:r.id,quoteDate:r.quote_date||"",validUntil:r.valid_until||"",rep:r.rep,clientId:r.client_id,company:r.company,contact:r.contact,status:r.status,category:r.category||"",customerCode:r.customer_code||"",ntn:r.ntn||"",gst:r.gst||"",items:r.items||[],notes:r.notes,pdfData:r.pdf_data||"",serialNo:r.serial_no||null,contactGender:r.contact_gender||"",accountId:r.account_id||"",contactId:r.contact_id||"",dealId:r.deal_id||"",revision:r.revision||0}) },
   tasks:{table:"crm_tasks", pk:"id",
     to:t=>({id:t.id,title:t.title,due_date:t.dueDate||null,assigned_to:t.assignedTo,assigned_by:t.assignedBy,priority:t.priority,status:t.status,client_id:t.clientId||null,company:t.company||"",notes:t.notes,approved:!!t.approved,created_by_admin:!!t.createdByAdmin}),
     from:r=>({id:r.id,title:r.title,dueDate:r.due_date||"",assignedTo:r.assigned_to,assignedBy:r.assigned_by,priority:r.priority,status:r.status,clientId:r.client_id||"",company:r.company||"",notes:r.notes,approved:!!r.approved,createdByAdmin:!!r.created_by_admin}) },
@@ -4453,7 +4453,7 @@ function mmToInchFrac(mm){
 }
 function quoteStatusPill(s){ const c={Draft:"gray",Sent:"amber",Accepted:"green",Rejected:"red",Expired:"gray"}[s]||"gray"; return `<span class="pill ${c}">${esc(s||"Draft")}</span>`; }
 function renderQuotes(v){
-  const rows=vQuotes().filter(matchSearch);
+  const rows=vQuotes().filter(matchSearch).slice().sort((a,b)=>(a.serialNo||0)-(b.serialNo||0)||(a.revision||0)-(b.revision||0));
   const body=rows.length?rows.map(q=>{
     const total=quoteTotal(q.items);
     return `<tr>
@@ -4465,6 +4465,7 @@ function renderQuotes(v){
     <td class="no-print"><div class="rowbtns">
       <button class="btn sm ghost" title="View / Print" onclick="viewQuote('${esc(q.id)}')">👁</button>
       <button class="btn sm ghost" title="Send WhatsApp" onclick="waQuote('${esc(q.id)}')">💬</button>
+      <button class="btn sm ghost" title="Create next revision (price update)" onclick="reviseQuote('${esc(q.id)}')">↻ Rev</button>
       <button class="btn sm ghost" title="Convert to Deal" onclick="convertQuoteToDeal('${esc(q.id)}')">➔ Deal</button>
       <button class="btn sm ghost" onclick="edit_quote('${esc(q.id)}')">Edit</button>
       <button class="btn sm ghost danger" onclick="del_quote('${esc(q.id)}')">✕</button>
@@ -4886,12 +4887,34 @@ function convertQuoteToDeal(id){
   toast("Deal created from quote"); go("deals");
 }
 function viewQuote(id){ window.__quoteViewId=id; go("quoteView"); }
-function quoteDisplayId(q){ return "GQ-"+(q.serialNo||1); }
+function quoteDisplayId(q){ return "GQ-"+(q.serialNo||1)+(q.revision?" Rev"+q.revision:""); }
 function quoteSerialDisplay(q, c){
   const year=(q.quoteDate?new Date(q.quoteDate):new Date()).getFullYear();
   const serial=q.serialNo||1;
   const idPadded=String((c&&c.id)||"").padStart(7,"0");
-  return `PSG-${serial}-${year}/${idPadded}`;
+  return `PSG-${serial}${q.revision?"-R"+q.revision:""}-${year}/${idPadded}`;
+}
+// Makes a new quote from an existing one as the next revision -- same GQ serial number,
+// revision+1 (e.g. GQ-1 -> GQ-1 Rev1 -> GQ-1 Rev2), used when a customer negotiates and
+// the rep needs to send an updated price without losing the original quote/history.
+// Copies client/items/notes as a starting point; status resets to Draft and the old PDF
+// is cleared since the new revision needs its own (prices likely changed).
+function reviseQuote(id){
+  const src=state.quotes.find(x=>x.id===id); if(!src)return;
+  const family=(state.quotes||[]).filter(x=>x.serialNo===src.serialNo);
+  const nextRev=Math.max(0,...family.map(x=>x.revision||0))+1;
+  const rev=Object.assign({},src,{
+    id:nextId("QT",src.rep),
+    revision:nextRev,
+    quoteDate:today(),
+    status:"Draft",
+    pdfData:"",
+    items:(src.items||[]).map(it=>Object.assign({},it))
+  });
+  state.quotes.push(rev);
+  upsert("quotes",rev);
+  toast("Created "+quoteDisplayId(rev)+" — update the price and save");
+  edit_quote(rev.id);
 }
 function quoteHonorific(q){
   return q.contactGender==="Male"?"Mr.":q.contactGender==="Female"?"Ms.":"";
@@ -4928,7 +4951,7 @@ function quoteLetterheadHtml(q){
       <img src="${PSG_LOGO_DATA}" style="width:100%;display:block" alt="Pakistan Safety Glass">
       <div style="padding:20px 28px">
         <div style="text-align:right;margin:-6px 0 10px">
-          <span style="display:inline-block;border:1.5px solid #1a1a1a;border-radius:4px;padding:5px 14px;font-weight:700;font-size:12.5px">Project Quotation Voucher - #${q.serialNo||1}</span>
+          <span style="display:inline-block;border:1.5px solid #1a1a1a;border-radius:4px;padding:5px 14px;font-weight:700;font-size:12.5px">Project Quotation Voucher - #${q.serialNo||1}${q.revision?" (Rev "+q.revision+")":""}</span>
         </div>
         <div class="no-break" style="display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;font-size:13px;border-bottom:1px solid #ccc;padding-bottom:10px;margin-bottom:10px">
           <div><b>S.NO:</b> ${esc(quoteSerialDisplay(q,c))}<br><b>Date:</b> ${esc(q.quoteDate)}</div>
@@ -4979,7 +5002,7 @@ function renderQuoteView(v){
   const q=state.quotes.find(x=>x.id===window.__quoteViewId);
   if(!q){ v.innerHTML='<div class="card" style="padding:20px">Quote not found. <button class="btn sm ghost" onclick="go(\'quotes\')">Back</button></div>'; return; }
   v.innerHTML=`<div class="pagehead no-print"><div><h2>Quote # ${esc(quoteDisplayId(q))}</h2><div class="sub">${quoteStatusPill(q.status)}</div></div>
-    <div class="toolbar"><button class="btn ghost sm" onclick="go('quotes')">← Back</button><button class="btn ghost sm" onclick="waQuote('${esc(q.id)}')">💬 WhatsApp</button><button class="btn primary sm" onclick="printQuoteById('${esc(q.id)}')">🖨 Print / Save PDF</button></div></div>
+    <div class="toolbar"><button class="btn ghost sm" onclick="go('quotes')">← Back</button><button class="btn ghost sm" onclick="waQuote('${esc(q.id)}')">💬 WhatsApp</button><button class="btn ghost sm" title="Create next revision (price update)" onclick="reviseQuote('${esc(q.id)}')">↻ New Revision</button><button class="btn primary sm" onclick="printQuoteById('${esc(q.id)}')">🖨 Print / Save PDF</button></div></div>
     ${quoteLetterheadHtml(q)}`;
 }
 // Chrome's "Save as PDF" uses document.title as the default filename -- without this override
