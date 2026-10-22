@@ -643,6 +643,10 @@ const SIDEBAR_NAV = [
     { id:"calls",     icon:"phone",          label:"Calls" },
   ]},
 
+  { section:"AI", items:[
+    { id:"_aiAssist", icon:"bot",            label:"AI Assistant",    route:"aiAssistant" },
+  ]},
+
   { section:"Inventory", items:[
     { id:"_prod",     icon:"package",        label:"Products",        route:"products" },
     { id:"_price",    icon:"tag",            label:"Price Books",     route:"priceBooks" },
@@ -661,6 +665,7 @@ const SIDEBAR_NAV = [
     { id:"_catalog",  icon:"package",        label:"Bot Catalog",     route:"catalog" },
     { id:"_repRoute", icon:"users",          label:"Rep Routing",     route:"repRouting" },
     { id:"_auditLog", icon:"file-text",      label:"Audit Log",       route:"auditLog" },
+    { id:"_autoRules", icon:"target",        label:"Automation Rules", route:"automationRules" },
   ]},
 ];
 
@@ -891,7 +896,7 @@ function loadCfg(){
     const saved=JSON.parse(localStorage.getItem("psgcrm_cfg"));
     if(saved && saved.url && saved.key) return saved;
   }catch(e){}
-  return {url:DEFAULT_SB_URL, key:DEFAULT_SB_KEY, waWorkerUrl:'', waApiKey:''};
+  return {url:DEFAULT_SB_URL, key:DEFAULT_SB_KEY, waWorkerUrl:'', waApiKey:'', agentWorkerUrl:'', agentApiKey:''};
 }
 function saveCfg(){ localStorage.setItem("psgcrm_cfg", JSON.stringify(cfg)); }
 /* ── WhatsApp Bot settings (Worker URL / API key / templates) synced via Supabase ──
@@ -919,6 +924,27 @@ async function pushWaConfig(){
   try{
     await sb.from('crm_app_settings').upsert({key:'wa_config',value:{waWorkerUrl:cfg.waWorkerUrl||'',waApiKey:cfg.waApiKey||'',waCountry:cfg.waCountry||'92',waMode:cfg.waMode||'',waTemplates:cfg.waTemplates||[]},updated_at:new Date().toISOString()});
   }catch(e){ console.warn('[pushWaConfig]',e.message); toast('Saved locally, but could not sync WhatsApp settings to cloud: '+e.message); }
+}
+/* ── Phase 9-A: AI Agent Worker settings (psg-crm-backend URL / key) ──
+   Same sync pattern as wa_config above — one row in crm_app_settings
+   (key='agent_config') so every browser picks up whichever device saved
+   last, instead of being local-only to the browser that configured it. */
+async function pullAgentConfig(){
+  if(!sb) return;
+  try{
+    const {data,error}=await sb.from('crm_app_settings').select('value').eq('key','agent_config').maybeSingle();
+    if(error||!data||!data.value) return;
+    const v=data.value;
+    if(v.agentWorkerUrl!==undefined) cfg.agentWorkerUrl=v.agentWorkerUrl;
+    if(v.agentApiKey!==undefined) cfg.agentApiKey=v.agentApiKey;
+    saveCfg();
+  }catch(e){ console.warn('[pullAgentConfig]',e.message); }
+}
+async function pushAgentConfig(){
+  if(!sb) return;
+  try{
+    await sb.from('crm_app_settings').upsert({key:'agent_config',value:{agentWorkerUrl:cfg.agentWorkerUrl||'',agentApiKey:cfg.agentApiKey||''},updated_at:new Date().toISOString()});
+  }catch(e){ console.warn('[pushAgentConfig]',e.message); toast('Saved locally, but could not sync AI Agent settings to cloud: '+e.message); }
 }
 
 /* ---------- default users (admins from workbook + one login per rep) ---------- */
@@ -1112,6 +1138,7 @@ async function cloudPull(){
     savePendingWrites(); // persist updated queue after flush
   }
   await pullWaConfig();
+  await pullAgentConfig();
   cloudOK=anyOK; return anyOK;
 }
 async function backfillQuoteSerials(){
@@ -1299,6 +1326,213 @@ async function renderEntityAuditPanel(entityType, entityId, mountId){
   const box=document.getElementById(mountId); if(!box) return;
   box.innerHTML=rows.length?rows.map(auditRowHtml).join(''):'<div class="empty">No history recorded yet.</div>';
 }
+/* ======================================================================
+   Phase 9-B: WHEN → IF → THEN AUTOMATION ENGINE — webapp admin UI
+   Rules live in crm_automation_rules (read/written directly via sb.from,
+   same pattern as loadAuditLog above — not part of the big state/MAP sync
+   list since this is a small, admin-only table). Actual rule EVALUATION
+   happens server-side in psg-crm-backend (automationEngine.js) on its
+   existing 20-minute cron tick — this page only manages the rules.
+   ====================================================================== */
+const AUTOMATION_TRIGGERS=[
+  {value:'stage_change',  label:'Deal stage changes',            hint:'e.g. stage, assigned_to, title'},
+  {value:'follow_up_due', label:'A call follow-up is due today', hint:'e.g. status, type, company'},
+  {value:'cold_lead',     label:'Deal goes cold (Contacted/Qualified, stale)', hint:'e.g. priority, assigned_to, revenue_potential'},
+  {value:'quote_stale',   label:'Quotation Sent, no response (stale)',        hint:'e.g. priority, assigned_to, revenue_potential'},
+];
+const AUTOMATION_OPERATORS=[['eq','='],['neq','≠'],['gt','>'],['gte','≥'],['lt','<'],['lte','≤'],['contains','contains']];
+const AUTOMATION_ACTIONS=[
+  {value:'create_task',           label:'Create a task'},
+  {value:'send_whatsapp_template', label:'Send a WhatsApp template'},
+  {value:'assign_rep',            label:'Reassign to a rep'},
+  {value:'update_field',          label:'Update a deal field'},
+];
+async function loadAutomationRules(){
+  if(!sb) return [];
+  try{
+    const {data,error}=await sb.from('crm_automation_rules').select('*').order('created_at',{ascending:false});
+    if(error) throw error;
+    return data||[];
+  }catch(e){ console.warn('[automation load]',e.message); return []; }
+}
+function renderAutomationRules(v){
+  v.innerHTML=pagehead('Automation Rules','WHEN a trigger fires, IF conditions match, THEN run an action — evaluated every ~20 min by the backend Worker, no AI needed.','New Rule','addAutomationRule()',false)+
+    `<div class="card"><div id="autoRules_list" class="tablewrap"><div class="empty" style="padding:20px">Loading…</div></div></div>`;
+  refreshAutomationRules();
+}
+async function refreshAutomationRules(){
+  const rows=await loadAutomationRules();
+  const box=document.getElementById('autoRules_list'); if(!box) return;
+  if(!rows.length){ box.innerHTML='<div class="empty" style="padding:20px">No automation rules yet — click "＋ New Rule" to create one.</div>'; return; }
+  box.innerHTML=`<table><thead><tr><th>Name</th><th>When</th><th>Actions</th><th>Status</th><th>Last ran</th><th>Fired</th><th></th></tr></thead><tbody>
+    ${rows.map(r=>{
+      const trig=AUTOMATION_TRIGGERS.find(t=>t.value===r.trigger_event);
+      const actionLabels=(r.actions||[]).map(a=>(AUTOMATION_ACTIONS.find(x=>x.value===a.type)||{}).label||a.type).join(', ');
+      return `<tr>
+        <td><b>${esc(r.name)}</b></td>
+        <td>${esc(trig?trig.label:r.trigger_event)}${(r.conditions||[]).length?` <span class="help">(${(r.conditions||[]).length} condition${(r.conditions||[]).length>1?'s':''})</span>`:''}</td>
+        <td>${esc(actionLabels||'—')}</td>
+        <td>${r.active?'<span class="pill green">Active</span>':'<span class="pill gray">Paused</span>'}</td>
+        <td>${r.last_run_at?new Date(r.last_run_at).toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):'Never'}</td>
+        <td>${r.run_count||0}×</td>
+        <td><div class="rowbtns">
+          <button class="btn sm ghost" onclick="editAutomationRule('${esc(r.id)}')">Edit</button>
+          <button class="btn sm ghost danger" onclick="delAutomationRule('${esc(r.id)}')">✕</button>
+        </div></td>
+      </tr>`;
+    }).join('')}
+  </tbody></table>`;
+}
+function automationConditionRowHtml(idx,cond){
+  cond=cond||{};
+  return `<div class="field full" style="display:flex;gap:6px;align-items:flex-end" id="ar_cond_${idx}">
+    <div style="flex:1"><label>Field</label><input id="ar_cfield_${idx}" placeholder="e.g. stage" value="${esc(cond.field||'')}"></div>
+    <div style="width:110px"><label>Operator</label><select id="ar_cop_${idx}">${AUTOMATION_OPERATORS.map(([v,l])=>`<option value="${v}" ${cond.operator===v?'selected':''}>${l}</option>`).join('')}</select></div>
+    <div style="flex:1"><label>Value</label><input id="ar_cval_${idx}" value="${esc(cond.value??'')}"></div>
+  </div>`;
+}
+function automationActionParamsHtml(type,params){
+  params=params||{};
+  if(type==='create_task') return `
+    <div class="field"><label>Task title</label><input id="ar_ap_title" placeholder="Follow up" value="${esc(params.title||'')}"></div>
+    <div class="field"><label>Due in (days)</label><input id="ar_ap_dueInDays" type="number" min="0" value="${esc(params.dueInDays??1)}"></div>
+    <div class="field"><label>Assign to</label><select id="ar_ap_assignedTo"><option value="@rep" ${params.assignedTo==='@rep'?'selected':''}>Same rep as the deal</option>${state.users.filter(u=>u.repName).map(u=>`<option value="${esc(u.repName)}" ${params.assignedTo===u.repName?'selected':''}>${esc(u.repName)}</option>`).join('')}</select></div>
+    <div class="field"><label>Priority</label><select id="ar_ap_priority">${['Low','Medium','High'].map(p=>`<option ${params.priority===p?'selected':''}>${p}</option>`).join('')}</select></div>`;
+  if(type==='send_whatsapp_template') return `
+    <div class="field"><label>Template name</label><input id="ar_ap_templateName" placeholder="crm_followup_nudge" value="${esc(params.templateName||'')}"></div>
+    <div class="field"><label>Language code</label><input id="ar_ap_languageCode" placeholder="en_US" value="${esc(params.languageCode||'en_US')}"></div>
+    <div class="field full"><label>Body variables (comma-separated field names, filled in order)</label><input id="ar_ap_bodyFields" placeholder="title,stage" value="${esc((params.bodyFields||[]).join(','))}"></div>
+    <div class="field"><label>Send to</label><select id="ar_ap_to"><option value="@rep" ${params.to==='@rep'?'selected':''}>The assigned rep</option><option value="admin" ${params.to==='admin'?'selected':''}>Admin</option></select></div>`;
+  if(type==='assign_rep') return `
+    <div class="field"><label>New rep</label><select id="ar_ap_repName">${state.users.filter(u=>u.repName).map(u=>`<option value="${esc(u.repName)}" ${params.repName===u.repName?'selected':''}>${esc(u.repName)}</option>`).join('')}</select></div>`;
+  if(type==='update_field') return `
+    <div class="field"><label>Field name</label><input id="ar_ap_field" placeholder="priority" value="${esc(params.field||'')}"></div>
+    <div class="field"><label>New value</label><input id="ar_ap_value" value="${esc(params.value??'')}"></div>`;
+  return '';
+}
+function automationRuleForm(r){
+  r=r||{};
+  const conditions=r.conditions||[];
+  const action=(r.actions||[])[0]||{};
+  return `<div class="formgrid">
+    <div class="field full"><label>Rule name</label><input id="ar_name" value="${esc(r.name||'')}" placeholder="e.g. Alert admin when a deal goes cold"></div>
+    <div class="field full"><label>WHEN</label><select id="ar_trigger" onchange="document.getElementById('ar_hint').textContent='Field names: '+(AUTOMATION_TRIGGERS.find(t=>t.value===this.value)||{}).hint">${AUTOMATION_TRIGGERS.map(t=>`<option value="${t.value}" ${r.trigger_event===t.value?'selected':''}>${t.label}</option>`).join('')}</select>
+      <div class="help" id="ar_hint" style="margin-top:4px">Field names: ${(AUTOMATION_TRIGGERS.find(t=>t.value===r.trigger_event)||AUTOMATION_TRIGGERS[0]).hint}</div></div>
+    <div class="field full"><label>IF (optional — leave blank to match every record)</label>
+      <div id="ar_conditions">${automationConditionRowHtml(0,conditions[0])}${automationConditionRowHtml(1,conditions[1])}</div>
+    </div>
+    <div class="field full"><label>THEN</label><select id="ar_actionType" onchange="document.getElementById('ar_actionParams').innerHTML=automationActionParamsHtml(this.value,{})">${AUTOMATION_ACTIONS.map(a=>`<option value="${a.value}" ${action.type===a.value?'selected':''}>${a.label}</option>`).join('')}</select></div>
+    <div id="ar_actionParams" class="field full" style="display:contents">${automationActionParamsHtml(action.type||AUTOMATION_ACTIONS[0].value,action.params)}</div>
+    <div class="field"><label>Status</label><select id="ar_active"><option value="1" ${r.active!==false?'selected':''}>Active</option><option value="0" ${r.active===false?'selected':''}>Paused</option></select></div>
+  </div>`;
+}
+function readAutomationRuleForm(existing){
+  const conditions=[0,1].map(i=>{
+    const f=(document.getElementById('ar_cfield_'+i)||{}).value;
+    if(!f) return null;
+    return {field:f, operator:(document.getElementById('ar_cop_'+i)||{}).value||'eq', value:(document.getElementById('ar_cval_'+i)||{}).value||''};
+  }).filter(Boolean);
+  const type=document.getElementById('ar_actionType').value;
+  const params={};
+  document.querySelectorAll('#ar_actionParams [id^="ar_ap_"]').forEach(el=>{
+    const key=el.id.replace('ar_ap_','');
+    if(key==='bodyFields') params[key]=el.value.split(',').map(s=>s.trim()).filter(Boolean);
+    else if(key==='dueInDays') params[key]=parseInt(el.value,10)||1;
+    else params[key]=el.value;
+  });
+  return Object.assign({}, existing, {
+    name: document.getElementById('ar_name').value,
+    trigger_event: document.getElementById('ar_trigger').value,
+    conditions,
+    actions: [{type, params}],
+    active: document.getElementById('ar_active').value==='1',
+  });
+}
+function addAutomationRule(){
+  openModal('New Automation Rule', automationRuleForm({}), async()=>{
+    const r=readAutomationRuleForm({});
+    if(!r.name){ toast('Enter a rule name'); return false; }
+    r.id='RULE-'+Date.now().toString(36).toUpperCase();
+    r.created_by=session&&session.username||'';
+    if(!sb){ toast('Not connected to cloud — cannot save a rule offline'); return false; }
+    const {error}=await sb.from('crm_automation_rules').insert(r);
+    if(error){ toast('Error: '+error.message); return false; }
+    closeModal(); toast('Automation rule created'); go('automationRules');
+  });
+}
+async function editAutomationRule(id){
+  const rows=await loadAutomationRules();
+  const r=rows.find(x=>x.id===id); if(!r) return;
+  openModal('Edit Automation Rule', automationRuleForm(r), async()=>{
+    const upd=readAutomationRuleForm(r);
+    if(!sb){ toast('Not connected to cloud'); return false; }
+    const {error}=await sb.from('crm_automation_rules').update(upd).eq('id',id);
+    if(error){ toast('Error: '+error.message); return false; }
+    closeModal(); toast('Automation rule updated'); go('automationRules');
+  });
+}
+function delAutomationRule(id){
+  confirmDel('Delete this automation rule?', async()=>{
+    if(!sb){ toast('Not connected to cloud'); return; }
+    const {error}=await sb.from('crm_automation_rules').delete().eq('id',id);
+    if(error){ toast('Error: '+error.message); return; }
+    toast('Deleted'); go('automationRules');
+  });
+}
+
+/* ======================================================================
+   Phase 9-A: AI AGENT — webapp chat UI
+   Talks to psg-crm-backend's POST /agent/query (cfg.agentWorkerUrl /
+   cfg.agentApiKey — same "Worker URL + key" pattern already used for the
+   WhatsApp bot Worker, configured in Admin). The backend returns
+   available:false with a plain-English explanation whenever no AI
+   provider/credit is configured yet — this page just displays that.
+   ====================================================================== */
+let aiChatHistory=[];
+function renderAIAssistant(v){
+  v.innerHTML=pagehead('AI Assistant','Ask about deals, follow-ups, or cold leads. Can create a task or move a deal\'s stage if you ask it to.','','',false)+
+    `<div class="card" style="display:flex;flex-direction:column;height:60vh">
+      <div id="aiChatBody" style="flex:1;overflow:auto;padding:16px">${aiChatHistory.length?aiChatHistory.map(aiChatRowHtml).join(''):'<div class="empty">Ask something like "What deals have I not followed up on?" or "Create a task to call PSG Interstellar tomorrow".</div>'}</div>
+      <div style="display:flex;gap:8px;padding:12px;border-top:1px solid var(--border)">
+        <input id="aiChatInput" placeholder="${cfg.agentWorkerUrl?'Ask the AI assistant…':'Configure AI Agent Worker URL in Admin first'}" style="flex:1" ${cfg.agentWorkerUrl?'':'disabled'} onkeydown="if(event.key==='Enter')sendAiChat()">
+        <button class="btn primary" ${cfg.agentWorkerUrl?'':'disabled'} onclick="sendAiChat()">Send</button>
+      </div>
+    </div>`;
+  const body=document.getElementById('aiChatBody'); if(body) body.scrollTop=body.scrollHeight;
+}
+function aiChatRowHtml(m){
+  if(m.role==='user') return `<div style="text-align:right;margin-bottom:10px"><span class="pill blue" style="padding:8px 12px;display:inline-block;max-width:80%;text-align:left">${esc(m.text)}</span></div>`;
+  return `<div style="margin-bottom:10px"><span class="pill ${m.available===false?'amber':'gray'}" style="padding:8px 12px;display:inline-block;max-width:80%;text-align:left">${esc(m.text)}</span></div>`;
+}
+async function sendAiChat(){
+  const input=document.getElementById('aiChatInput'); if(!input) return;
+  const question=input.value.trim(); if(!question) return;
+  if(!cfg.agentWorkerUrl){ toast('Configure AI Agent Worker URL in Admin first'); return; }
+  input.value=''; input.disabled=true;
+  aiChatHistory.push({role:'user', text:question});
+  renderAIAssistant_appendOnly();
+  try{
+    const r=await fetch(cfg.agentWorkerUrl+'/agent/query',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+(cfg.agentApiKey||'')},
+      body:JSON.stringify({question, repName: myRep()}),
+    });
+    const data=await r.json();
+    aiChatHistory.push({role:'assistant', text:data.answer||'(no answer)', available:data.available});
+  }catch(e){
+    aiChatHistory.push({role:'assistant', text:'Could not reach the AI Agent Worker: '+e.message, available:false});
+  }
+  input.disabled=false;
+  renderAIAssistant_appendOnly();
+}
+function renderAIAssistant_appendOnly(){
+  if(route!=='aiAssistant') return;
+  const body=document.getElementById('aiChatBody'); if(!body) return;
+  body.innerHTML=aiChatHistory.length?aiChatHistory.map(aiChatRowHtml).join(''):'';
+  body.scrollTop=body.scrollHeight;
+  const input=document.getElementById('aiChatInput'); if(input) input.focus();
+}
+
 async function remove(kind, id){
   const _pk=MAP[kind].pk||'id'; pendingWrites=pendingWrites.filter(p=>!(p.kind===kind&&p.obj[_pk]===id)); savePendingWrites();
   try{ saveLocal(); }catch(e){ console.warn('[saveLocal]',e.message); }
@@ -1452,7 +1686,7 @@ function go(r){ route=r; searchTerm=""; renderSidebar(); renderRoute(); window.s
 function renderRoute(){
   const v=document.getElementById("view");
   if(!isAdmin()&&typeof canView==='function'&&ROUTE_PERM&&ROUTE_PERM[route]&&!canView(route)){route='dashboard';renderSidebar();renderDashboard(v);return;}
-  ({dashboard:renderDashboard,analytics:renderAnalytics,clients:renderClients,leads:renderLeadsOnly,clientsOnly:renderClientsOnly,prospects:renderProspectsOnly,tasks:renderTasks,calls:renderCalls,meetings:renderMeetings,deals:renderDeals,quotes:renderQuotes,quoteView:renderQuoteView,performance:renderPerformance,admin:renderAdmin,salesOrders:renderSalesOrders,invoices:renderInvoices,accounts:renderAccounts,contacts:renderContacts,pipeline:renderPipeline,purchaseOrders:renderPurchaseOrders,deliveryChallans:renderDeliveryChallans,materialRequisitions:renderMaterialRequisitions,receivings:renderReceivings,vendors:renderVendors,products:renderProducts,campaigns:renderCampaigns,priceBooks:renderPriceBooks,documents:renderDocuments,catalog:renderCatalog,repRouting:renderRepRouting,metaAds:renderMetaAds,auditLog:renderAuditLog}[route]||renderDashboard)(v);
+  ({dashboard:renderDashboard,analytics:renderAnalytics,clients:renderClients,leads:renderLeadsOnly,clientsOnly:renderClientsOnly,prospects:renderProspectsOnly,tasks:renderTasks,calls:renderCalls,meetings:renderMeetings,deals:renderDeals,quotes:renderQuotes,quoteView:renderQuoteView,performance:renderPerformance,admin:renderAdmin,salesOrders:renderSalesOrders,invoices:renderInvoices,accounts:renderAccounts,contacts:renderContacts,pipeline:renderPipeline,purchaseOrders:renderPurchaseOrders,deliveryChallans:renderDeliveryChallans,materialRequisitions:renderMaterialRequisitions,receivings:renderReceivings,vendors:renderVendors,products:renderProducts,campaigns:renderCampaigns,priceBooks:renderPriceBooks,documents:renderDocuments,catalog:renderCatalog,repRouting:renderRepRouting,metaAds:renderMetaAds,auditLog:renderAuditLog,automationRules:renderAutomationRules,aiAssistant:renderAIAssistant}[route]||renderDashboard)(v);
 }
 
 /* ======================================================================
@@ -4655,6 +4889,7 @@ function renderAdmin(v){
      </div></div>
    </div>
    ${coldLeadRadarAdminCard()}
+   ${aiAdminCard()}
    ${waAdminCard()}
    ${metaAdsAdminCard()}
    <div class="card" style="margin-top:16px"><h3>👤 Users & access</h3><div class="tablewrap"><table><thead><tr><th>Username</th><th>Role</th><th>Rep</th><th>Password</th><th></th></tr></thead><tbody>${users}</tbody></table></div>
@@ -5128,6 +5363,78 @@ function waFromDom(){ const t=[]; let i=0; while(document.getElementById("wat_n_
 function waSaveTpls(){ cfg.waCountry=(document.getElementById("wa_cc").value.replace(/[^0-9]/g,""))||"92"; const md=document.getElementById("wa_mode"); if(md)cfg.waMode=md.value; const wk=document.getElementById("wa_worker_url");if(wk)cfg.waWorkerUrl=wk.value.trim(); const ak=document.getElementById("wa_api_key");if(ak)cfg.waApiKey=ak.value.trim(); cfg.waTemplates=waFromDom().filter(t=>t.name.trim()); saveCfg(); pushWaConfig().then(()=>{ renderRoute(); }); toast("WhatsApp settings saved — syncing to all browsers"); go("admin"); }
 function waAddTpl(){ cfg.waTemplates=waFromDom(); cfg.waTemplates.push({name:"New template",body:"Dear {contact}, "}); saveCfg(); go("admin"); }
 function waDelTpl(i){ const t=waFromDom(); t.splice(i,1); cfg.waTemplates=t; saveCfg(); go("admin"); }
+
+/* ======================================================================
+   Phase 9: AI Agent & Automation — admin settings card
+   Two separate things live here:
+   1. psg-crm-backend Worker URL/key (cfg.agentWorkerUrl/cfg.agentApiKey,
+      synced via crm_app_settings like wa_config) — needed for the AI
+      Assistant chat page to reach POST /agent/query at all.
+   2. crm_ai_settings (the Worker's OWN singleton settings row — which
+      provider to try, monthly budget, morning briefing opt-in) — read and
+      written directly here, since the Worker's cron jobs read this same
+      row server-side with no browser involved.
+   Neither an Anthropic key nor OpenRouter credit is required for this card
+   to work — it's just configuration. The "AI Usage this month" line reads
+   crm_ai_usage so cost tracking (9-H) is visible from day one.
+   ====================================================================== */
+let _aiSettingsCache=null;
+async function loadAiSettings(){
+  if(!sb) return {active_provider:'auto',monthly_budget_usd:10,alert_threshold_pct:80,morning_briefing_enabled:false};
+  try{
+    const {data,error}=await sb.from('crm_ai_settings').select('*').eq('id','default').maybeSingle();
+    if(error||!data) throw error||new Error('no row');
+    return data;
+  }catch(e){ console.warn('[ai settings load]',e.message); return {active_provider:'auto',monthly_budget_usd:10,alert_threshold_pct:80,morning_briefing_enabled:false}; }
+}
+async function loadAiMonthSpend(){
+  if(!sb) return 0;
+  try{
+    const monthStart=new Date(); monthStart.setDate(1); monthStart.setHours(0,0,0,0);
+    const {data,error}=await sb.from('crm_ai_usage').select('estimated_cost_usd').gte('created_at',monthStart.toISOString());
+    if(error) throw error;
+    return (data||[]).reduce((s,r)=>s+Number(r.estimated_cost_usd||0),0);
+  }catch(e){ console.warn('[ai usage load]',e.message); return 0; }
+}
+function aiAdminCard(){
+  setTimeout(async()=>{
+    _aiSettingsCache=await loadAiSettings();
+    const spend=await loadAiMonthSpend();
+    const box=document.getElementById('aiAdminBody'); if(!box) return;
+    const s=_aiSettingsCache;
+    box.innerHTML=`
+      <div class="settings-row"><label class="help">psg-crm-backend Worker URL</label><input id="ai_worker_url" placeholder="https://psg-crm-backend.workers.dev" value="${esc(cfg.agentWorkerUrl||"")}"></div>
+      <div class="settings-row"><label class="help">AGENT_API_KEY</label><input id="ai_worker_key" type="password" placeholder="•••• paste key" value="${esc(cfg.agentApiKey||"")}"></div>
+      <div class="settings-row"><label class="help">Active AI provider</label><select id="ai_provider">
+        <option value="auto" ${s.active_provider==='auto'?'selected':''}>Auto (try Claude API first, then OpenRouter)</option>
+        <option value="anthropic" ${s.active_provider==='anthropic'?'selected':''}>Claude API only</option>
+        <option value="openrouter" ${s.active_provider==='openrouter'?'selected':''}>OpenRouter only</option>
+        <option value="off" ${s.active_provider==='off'?'selected':''}>Off (disable AI features)</option>
+      </select></div>
+      <div class="settings-row"><label class="help">Monthly budget (USD)</label><input id="ai_budget" type="number" min="0" step="0.5" value="${esc(s.monthly_budget_usd??10)}"></div>
+      <div class="settings-row"><label class="help">Morning briefing (9am PKT WhatsApp to admin)</label><select id="ai_briefing"><option value="0" ${!s.morning_briefing_enabled?'selected':''}>Off</option><option value="1" ${s.morning_briefing_enabled?'selected':''}>On</option></select></div>
+      <div class="statusbar"><span class="dot ${spend>0?'on':''}"></span><span>AI spend this month: $${spend.toFixed(3)} of $${Number(s.monthly_budget_usd||0).toFixed(2)} budget</span></div>
+      <div class="help" style="margin:8px 0">Neither key is required — rule-based automation (Phase 9-B) and cost tracking (9-H) run with no AI at all. The AI Assistant and Morning Briefing light up automatically the moment a Claude API key or funded OpenRouter key is added in the Worker's Cloudflare Dashboard secrets.</div>
+      <button class="btn primary" onclick="saveAiAdminCard()">Save AI settings</button>`;
+  },0);
+  return `<div class="card" style="margin-top:16px"><h3>🤖 AI Agent & Automation</h3><div style="padding:16px" id="aiAdminBody"><i style="color:#aaa">Loading…</i></div></div>`;
+}
+async function saveAiAdminCard(){
+  const wk=document.getElementById('ai_worker_url'); if(wk) cfg.agentWorkerUrl=wk.value.trim();
+  const ak=document.getElementById('ai_worker_key'); if(ak) cfg.agentApiKey=ak.value.trim();
+  saveCfg(); await pushAgentConfig();
+  if(sb){
+    const upd={
+      active_provider: document.getElementById('ai_provider').value,
+      monthly_budget_usd: parseFloat(document.getElementById('ai_budget').value)||10,
+      morning_briefing_enabled: document.getElementById('ai_briefing').value==='1',
+      updated_at: new Date().toISOString(),
+    };
+    const {error}=await sb.from('crm_ai_settings').update(upd).eq('id','default');
+    if(error){ toast('Saved Worker URL/key, but AI settings sync failed: '+error.message); go('admin'); return; }
+  }
+  toast('AI settings saved'); go('admin');
+}
 
 /* ======================================================================
    BOOT
