@@ -657,11 +657,10 @@ const SIDEBAR_NAV = [
     { id:"_mr",       icon:"package",        label:"Material Requisitions", route:"materialRequisitions" },
     { id:"_rv",       icon:"check-circle",   label:"Receivings",            route:"receivings" },
     { id:"_inv",      icon:"receipt",        label:"Invoices",        route:"invoices" },
-    { id:"_vend",     icon:"store",          label:"Vendors",         route:"vendors" },
   ]},
 
   { section:"Store", items:[
-    { id:"_matVend",  icon:"truck",          label:"Material Vendors", route:"materialVendors" },
+    { id:"_matVend",  icon:"truck",          label:"Vendors", route:"vendors" },
     { id:"_storeInv", icon:"package",        label:"Inventory (Glass/PVB)", route:"storeInventory" },
   ]},
 
@@ -1554,7 +1553,7 @@ async function loadMaterialVendors(){
   }catch(e){ console.warn('[material vendors load]',e.message); return []; }
 }
 function renderMaterialVendors(v){
-  v.innerHTML=pagehead('Material Vendors','Supplier master for the Store/Procurement module — glass, PVB and consumable suppliers, lead times, preferred-SKU routing.','New Vendor','addMaterialVendor()',true)+
+  v.innerHTML=pagehead('Vendors','Supplier master — glass, PVB and consumable suppliers, lead times, preferred-SKU routing.','New Vendor','addMaterialVendor()',true)+
     `<div class="card"><div id="matVend_list" class="tablewrap"><div class="empty" style="padding:20px">Loading…</div></div></div>`;
   refreshMaterialVendors();
 }
@@ -1588,9 +1587,11 @@ function materialVendorForm(r){
     <div class="field"><label>City</label><input id="mv_city" value="${esc(r.city||'')}"></div>
     <div class="field"><label>Lead time (days)</label><input id="mv_lead" type="number" min="0" value="${esc(r.lead_time_days??14)}"></div>
     <div class="field full"><label>Supplies</label>
-      <label style="margin-right:14px"><input type="checkbox" id="mv_t_glass" ${types.includes('glass')?'checked':''}> Glass</label>
-      <label style="margin-right:14px"><input type="checkbox" id="mv_t_pvb" ${types.includes('pvb')?'checked':''}> PVB</label>
-      <label><input type="checkbox" id="mv_t_consumable" ${types.includes('consumable')?'checked':''}> Consumables</label>
+      <div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:2px">
+        <label style="display:inline-flex;align-items:center;gap:6px;text-transform:none;font-weight:400;font-size:13.5px;color:var(--text)"><input type="checkbox" id="mv_t_glass" ${types.includes('glass')?'checked':''}> Glass</label>
+        <label style="display:inline-flex;align-items:center;gap:6px;text-transform:none;font-weight:400;font-size:13.5px;color:var(--text)"><input type="checkbox" id="mv_t_pvb" ${types.includes('pvb')?'checked':''}> PVB</label>
+        <label style="display:inline-flex;align-items:center;gap:6px;text-transform:none;font-weight:400;font-size:13.5px;color:var(--text)"><input type="checkbox" id="mv_t_consumable" ${types.includes('consumable')?'checked':''}> Consumables</label>
+      </div>
     </div>
     <div class="field full"><label>Notes</label><textarea id="mv_notes">${esc(r.notes||'')}</textarea></div>
     <div class="field"><label>Status</label><select id="mv_active"><option value="1" ${r.active!==false?'selected':''}>Active</option><option value="0" ${r.active===false?'selected':''}>Inactive</option></select></div>
@@ -1620,7 +1621,7 @@ function addMaterialVendor(){
     if(!sb){ toast('Not connected to cloud — cannot save offline'); return false; }
     const {error}=await sb.from('vendors').insert(r);
     if(error){ toast('Error: '+error.message); return false; }
-    closeModal(); toast('Vendor added'); go('materialVendors');
+    closeModal(); toast('Vendor added'); go('vendors');
   });
 }
 async function editMaterialVendor(id){
@@ -1631,7 +1632,7 @@ async function editMaterialVendor(id){
     if(!sb){ toast('Not connected to cloud'); return false; }
     const {error}=await sb.from('vendors').update(upd).eq('id',id);
     if(error){ toast('Error: '+error.message); return false; }
-    closeModal(); toast('Vendor updated'); go('materialVendors');
+    closeModal(); toast('Vendor updated'); go('vendors');
   });
 }
 function delMaterialVendor(id){
@@ -1639,7 +1640,7 @@ function delMaterialVendor(id){
     if(!sb){ toast('Not connected to cloud'); return; }
     const {error}=await sb.from('vendors').delete().eq('id',id);
     if(error){ toast('Error: '+error.message); return; }
-    toast('Deleted'); go('materialVendors');
+    toast('Deleted'); go('vendors');
   });
 }
 
@@ -1875,7 +1876,7 @@ function go(r){ route=r; searchTerm=""; renderSidebar(); renderRoute(); window.s
 function renderRoute(){
   const v=document.getElementById("view");
   if(!isAdmin()&&typeof canView==='function'&&ROUTE_PERM&&ROUTE_PERM[route]&&!canView(route)){route='dashboard';renderSidebar();renderDashboard(v);return;}
-  ({dashboard:renderDashboard,analytics:renderAnalytics,clients:renderClients,leads:renderLeadsOnly,clientsOnly:renderClientsOnly,prospects:renderProspectsOnly,tasks:renderTasks,calls:renderCalls,meetings:renderMeetings,deals:renderDeals,quotes:renderQuotes,quoteView:renderQuoteView,performance:renderPerformance,admin:renderAdmin,salesOrders:renderSalesOrders,invoices:renderInvoices,accounts:renderAccounts,contacts:renderContacts,pipeline:renderPipeline,purchaseOrders:renderPurchaseOrders,deliveryChallans:renderDeliveryChallans,materialRequisitions:renderMaterialRequisitions,receivings:renderReceivings,vendors:renderVendors,products:renderProducts,campaigns:renderCampaigns,priceBooks:renderPriceBooks,documents:renderDocuments,catalog:renderCatalog,repRouting:renderRepRouting,metaAds:renderMetaAds,auditLog:renderAuditLog,automationRules:renderAutomationRules,aiAssistant:renderAIAssistant,materialVendors:renderMaterialVendors,storeInventory:renderStoreInventory}[route]||renderDashboard)(v);
+  ({dashboard:renderDashboard,analytics:renderAnalytics,clients:renderClients,leads:renderLeadsOnly,clientsOnly:renderClientsOnly,prospects:renderProspectsOnly,tasks:renderTasks,calls:renderCalls,meetings:renderMeetings,deals:renderDeals,quotes:renderQuotes,quoteView:renderQuoteView,performance:renderPerformance,admin:renderAdmin,salesOrders:renderSalesOrders,invoices:renderInvoices,accounts:renderAccounts,contacts:renderContacts,pipeline:renderPipeline,purchaseOrders:renderPurchaseOrders,deliveryChallans:renderDeliveryChallans,materialRequisitions:renderMaterialRequisitions,receivings:renderReceivings,products:renderProducts,campaigns:renderCampaigns,priceBooks:renderPriceBooks,documents:renderDocuments,catalog:renderCatalog,repRouting:renderRepRouting,metaAds:renderMetaAds,auditLog:renderAuditLog,automationRules:renderAutomationRules,aiAssistant:renderAIAssistant,vendors:renderMaterialVendors,materialVendors:renderMaterialVendors,storeInventory:renderStoreInventory}[route]||renderDashboard)(v);
 }
 
 /* ======================================================================
