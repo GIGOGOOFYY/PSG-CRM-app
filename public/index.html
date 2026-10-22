@@ -660,6 +660,11 @@ const SIDEBAR_NAV = [
     { id:"_vend",     icon:"store",          label:"Vendors",         route:"vendors" },
   ]},
 
+  { section:"Store", items:[
+    { id:"_matVend",  icon:"truck",          label:"Material Vendors", route:"materialVendors" },
+    { id:"_storeInv", icon:"package",        label:"Inventory (Glass/PVB)", route:"storeInventory" },
+  ]},
+
   { section:"System", adminSection:true, items:[
     { id:"admin",     icon:"settings",       label:"Admin" },
     { id:"_catalog",  icon:"package",        label:"Bot Catalog",     route:"catalog" },
@@ -1533,6 +1538,190 @@ function renderAIAssistant_appendOnly(){
   const input=document.getElementById('aiChatInput'); if(input) input.focus();
 }
 
+/* ======================================================================
+   PHASE 10 (Store/Procurement): MATERIAL VENDORS — new structured vendor
+   master (distinct from the existing "Vendors" page at route "vendors",
+   which is the legacy crm_clients/account_type==='Vendor' list). This one
+   reads/writes the new `vendors` Supabase table directly — lead times,
+   material types supplied, used by Price Book/PO going forward.
+   ====================================================================== */
+async function loadMaterialVendors(){
+  if(!sb) return [];
+  try{
+    const {data,error}=await sb.from('vendors').select('*').order('name');
+    if(error) throw error;
+    return data||[];
+  }catch(e){ console.warn('[material vendors load]',e.message); return []; }
+}
+function renderMaterialVendors(v){
+  v.innerHTML=pagehead('Material Vendors','Supplier master for the Store/Procurement module — glass, PVB and consumable suppliers, lead times, preferred-SKU routing.','New Vendor','addMaterialVendor()',true)+
+    `<div class="card"><div id="matVend_list" class="tablewrap"><div class="empty" style="padding:20px">Loading…</div></div></div>`;
+  refreshMaterialVendors();
+}
+async function refreshMaterialVendors(){
+  const rows=(await loadMaterialVendors()).filter(matchSearch);
+  const box=document.getElementById('matVend_list'); if(!box) return;
+  if(!rows.length){ box.innerHTML='<div class="empty" style="padding:20px">No material vendors yet — click "＋ New Vendor" to add one.</div>'; return; }
+  box.innerHTML=`<table><thead><tr><th>ID</th><th>Name</th><th>Contact</th><th>City</th><th>Supplies</th><th>Lead time</th><th>Status</th><th></th></tr></thead><tbody>
+    ${rows.map(r=>`<tr>
+      <td>${esc(r.id)}</td>
+      <td><b>${esc(r.name)}</b></td>
+      <td>${esc(r.contact_name||'—')}${r.phone?`<br><span class="help">${esc(r.phone)}</span>`:''}</td>
+      <td>${esc(r.city||'—')}</td>
+      <td>${(r.material_types||[]).map(t=>`<span class="pill gray sm">${esc(t)}</span>`).join(' ')||'—'}</td>
+      <td>${r.lead_time_days||0}d</td>
+      <td>${r.active!==false?'<span class="pill green">Active</span>':'<span class="pill gray">Inactive</span>'}</td>
+      <td><div class="rowbtns">
+        <button class="btn sm ghost" onclick="editMaterialVendor('${esc(r.id)}')">Edit</button>
+        <button class="btn sm ghost danger" onclick="delMaterialVendor('${esc(r.id)}')">✕</button>
+      </div></td>
+    </tr>`).join('')}
+  </tbody></table>`;
+}
+function materialVendorForm(r){
+  r=r||{};
+  const types=r.material_types||[];
+  return `<div class="formgrid">
+    <div class="field full"><label>Name</label><input id="mv_name" value="${esc(r.name||'')}" placeholder="e.g. Tariq Glass"></div>
+    <div class="field"><label>Contact name</label><input id="mv_contact" value="${esc(r.contact_name||'')}"></div>
+    <div class="field"><label>Phone</label><input id="mv_phone" value="${esc(r.phone||'')}"></div>
+    <div class="field"><label>City</label><input id="mv_city" value="${esc(r.city||'')}"></div>
+    <div class="field"><label>Lead time (days)</label><input id="mv_lead" type="number" min="0" value="${esc(r.lead_time_days??14)}"></div>
+    <div class="field full"><label>Supplies</label>
+      <label style="margin-right:14px"><input type="checkbox" id="mv_t_glass" ${types.includes('glass')?'checked':''}> Glass</label>
+      <label style="margin-right:14px"><input type="checkbox" id="mv_t_pvb" ${types.includes('pvb')?'checked':''}> PVB</label>
+      <label><input type="checkbox" id="mv_t_consumable" ${types.includes('consumable')?'checked':''}> Consumables</label>
+    </div>
+    <div class="field full"><label>Notes</label><textarea id="mv_notes">${esc(r.notes||'')}</textarea></div>
+    <div class="field"><label>Status</label><select id="mv_active"><option value="1" ${r.active!==false?'selected':''}>Active</option><option value="0" ${r.active===false?'selected':''}>Inactive</option></select></div>
+  </div>`;
+}
+function readMaterialVendorForm(existing){
+  const types=[];
+  if(document.getElementById('mv_t_glass').checked) types.push('glass');
+  if(document.getElementById('mv_t_pvb').checked) types.push('pvb');
+  if(document.getElementById('mv_t_consumable').checked) types.push('consumable');
+  return Object.assign({}, existing, {
+    name: document.getElementById('mv_name').value,
+    contact_name: document.getElementById('mv_contact').value,
+    phone: document.getElementById('mv_phone').value,
+    city: document.getElementById('mv_city').value,
+    lead_time_days: parseInt(document.getElementById('mv_lead').value,10)||14,
+    material_types: types,
+    notes: document.getElementById('mv_notes').value,
+    active: document.getElementById('mv_active').value==='1',
+  });
+}
+function addMaterialVendor(){
+  openModal('New Material Vendor', materialVendorForm({}), async()=>{
+    const r=readMaterialVendorForm({});
+    if(!r.name){ toast('Enter a vendor name'); return false; }
+    r.id='VEN-'+Date.now().toString(36).toUpperCase();
+    if(!sb){ toast('Not connected to cloud — cannot save offline'); return false; }
+    const {error}=await sb.from('vendors').insert(r);
+    if(error){ toast('Error: '+error.message); return false; }
+    closeModal(); toast('Vendor added'); go('materialVendors');
+  });
+}
+async function editMaterialVendor(id){
+  const rows=await loadMaterialVendors();
+  const r=rows.find(x=>x.id===id); if(!r) return;
+  openModal('Edit Material Vendor', materialVendorForm(r), async()=>{
+    const upd=readMaterialVendorForm(r);
+    if(!sb){ toast('Not connected to cloud'); return false; }
+    const {error}=await sb.from('vendors').update(upd).eq('id',id);
+    if(error){ toast('Error: '+error.message); return false; }
+    closeModal(); toast('Vendor updated'); go('materialVendors');
+  });
+}
+function delMaterialVendor(id){
+  confirmDel('Delete this vendor?', async()=>{
+    if(!sb){ toast('Not connected to cloud'); return; }
+    const {error}=await sb.from('vendors').delete().eq('id',id);
+    if(error){ toast('Error: '+error.message); return; }
+    toast('Deleted'); go('materialVendors');
+  });
+}
+
+/* ======================================================================
+   PHASE 10 (Store/Procurement): INVENTORY — read view over inventory_glass/
+   inventory_pvb/inventory_consumables with inline quantity correction
+   (per the "import real numbers now, correct later" decision). No BOM/
+   movement-ledger wiring yet — that's a later build step.
+   ====================================================================== */
+let _invTab='glass';
+async function loadInventoryTab(kind){
+  if(!sb) return [];
+  const table = kind==='glass'?'inventory_glass':kind==='pvb'?'inventory_pvb':'inventory_consumables';
+  const order = kind==='consumables'?'name':'b_code';
+  try{
+    const {data,error}=await sb.from(table).select('*').order(order,{ascending:true,nullsFirst:false});
+    if(error) throw error;
+    return data||[];
+  }catch(e){ console.warn('[inventory load]',e.message); return []; }
+}
+function renderStoreInventory(v){
+  v.innerHTML=pagehead('Inventory','Live stock — glass sheets, PVB rolls, consumables. Quantities imported from Master_Stock_Report_rev7.xlsm on 2026-10-22; correct any as needed below.','','',true)+
+    `<div class="card" style="padding:12px 16px 0">
+      <div class="rowbtns" style="margin-bottom:12px">
+        <button class="btn sm ${_invTab==='glass'?'primary':'ghost'}" onclick="switchInvTab('glass')">Glass (202)</button>
+        <button class="btn sm ${_invTab==='pvb'?'primary':'ghost'}" onclick="switchInvTab('pvb')">PVB (59)</button>
+        <button class="btn sm ${_invTab==='consumables'?'primary':'ghost'}" onclick="switchInvTab('consumables')">Consumables (3)</button>
+      </div>
+    </div>
+    <div class="card tablewrap" id="storeInv_list"><div class="empty" style="padding:20px">Loading…</div></div>`;
+  refreshStoreInventory();
+}
+function switchInvTab(kind){ _invTab=kind; go('storeInventory'); }
+async function refreshStoreInventory(){
+  const rows=(await loadInventoryTab(_invTab)).filter(matchSearch);
+  const box=document.getElementById('storeInv_list'); if(!box) return;
+  if(!rows.length){ box.innerHTML='<div class="empty" style="padding:20px">No rows.</div>'; return; }
+  if(_invTab==='glass'){
+    box.innerHTML=`<table><thead><tr><th>Code</th><th>Thickness</th><th>Type</th><th>Size (mm)</th><th>Brand</th><th class="num">Sqft/sheet</th><th class="num">Qty (sheets)</th><th></th></tr></thead><tbody>
+      ${rows.map(r=>{
+        const low = r.qty_sheets<r.min_stock_sheets || r.qty_sheets<0;
+        return `<tr>
+          <td>${r.b_code??'—'}</td><td>${esc(r.thickness)}</td><td>${esc(r.type)}</td>
+          <td>${r.height_mm}×${r.width_mm}</td><td>${esc(r.brand||'—')}</td>
+          <td class="num">${(r.sqft_per_sheet||0).toFixed(1)}</td>
+          <td class="num"><input type="number" id="inv_q_${r.id}" value="${r.qty_sheets}" style="width:80px;text-align:right${low?';color:#e5484d;font-weight:600':''}"></td>
+          <td><button class="btn sm ghost" onclick="saveInvQty('inventory_glass','${r.id}','qty_sheets')">Save</button></td>
+        </tr>`;
+      }).join('')}
+    </tbody></table>`;
+  } else if(_invTab==='pvb'){
+    box.innerHTML=`<table><thead><tr><th>Code</th><th>Thickness (mm)</th><th>Type</th><th>Roll W×L</th><th>Brand</th><th class="num">Qty (rolls)</th><th></th></tr></thead><tbody>
+      ${rows.map(r=>{
+        const low = r.qty_rolls<r.min_stock_rolls || r.qty_rolls<0;
+        return `<tr>
+          <td>${r.b_code??'—'}</td><td>${r.thickness_mm}</td><td>${esc(r.type)}</td>
+          <td>${r.roll_width_mm}mm × ${r.roll_length_m}m</td><td>${esc(r.brand||'—')}</td>
+          <td class="num"><input type="number" id="inv_q_${r.id}" value="${r.qty_rolls}" style="width:80px;text-align:right${low?';color:#e5484d;font-weight:600':''}"></td>
+          <td><button class="btn sm ghost" onclick="saveInvQty('inventory_pvb','${r.id}','qty_rolls')">Save</button></td>
+        </tr>`;
+      }).join('')}
+    </tbody></table>`;
+  } else {
+    box.innerHTML=`<table><thead><tr><th>Code</th><th>Name</th><th>Category</th><th>Unit</th><th>Brand</th><th class="num">Qty</th><th></th></tr></thead><tbody>
+      ${rows.map(r=>`<tr>
+        <td>${r.b_code??'—'}</td><td>${esc(r.name)}</td><td>${esc(r.category||'—')}</td><td>${esc(r.unit||'—')}</td><td>${esc(r.brand||'—')}</td>
+        <td class="num"><input type="number" id="inv_q_${r.id}" value="${r.qty}" style="width:80px;text-align:right"></td>
+        <td><button class="btn sm ghost" onclick="saveInvQty('inventory_consumables','${r.id}','qty')">Save</button></td>
+      </tr>`).join('')}
+    </tbody></table>`;
+  }
+}
+async function saveInvQty(table,id,col){
+  const input=document.getElementById('inv_q_'+id); if(!input) return;
+  const val=Number(input.value);
+  if(Number.isNaN(val)){ toast('Enter a number'); return; }
+  if(!sb){ toast('Not connected to cloud'); return; }
+  const {error}=await sb.from(table).update({[col]:val}).eq('id',id);
+  if(error){ toast('Error: '+error.message); return; }
+  toast('Updated');
+}
+
 async function remove(kind, id){
   const _pk=MAP[kind].pk||'id'; pendingWrites=pendingWrites.filter(p=>!(p.kind===kind&&p.obj[_pk]===id)); savePendingWrites();
   try{ saveLocal(); }catch(e){ console.warn('[saveLocal]',e.message); }
@@ -1686,7 +1875,7 @@ function go(r){ route=r; searchTerm=""; renderSidebar(); renderRoute(); window.s
 function renderRoute(){
   const v=document.getElementById("view");
   if(!isAdmin()&&typeof canView==='function'&&ROUTE_PERM&&ROUTE_PERM[route]&&!canView(route)){route='dashboard';renderSidebar();renderDashboard(v);return;}
-  ({dashboard:renderDashboard,analytics:renderAnalytics,clients:renderClients,leads:renderLeadsOnly,clientsOnly:renderClientsOnly,prospects:renderProspectsOnly,tasks:renderTasks,calls:renderCalls,meetings:renderMeetings,deals:renderDeals,quotes:renderQuotes,quoteView:renderQuoteView,performance:renderPerformance,admin:renderAdmin,salesOrders:renderSalesOrders,invoices:renderInvoices,accounts:renderAccounts,contacts:renderContacts,pipeline:renderPipeline,purchaseOrders:renderPurchaseOrders,deliveryChallans:renderDeliveryChallans,materialRequisitions:renderMaterialRequisitions,receivings:renderReceivings,vendors:renderVendors,products:renderProducts,campaigns:renderCampaigns,priceBooks:renderPriceBooks,documents:renderDocuments,catalog:renderCatalog,repRouting:renderRepRouting,metaAds:renderMetaAds,auditLog:renderAuditLog,automationRules:renderAutomationRules,aiAssistant:renderAIAssistant}[route]||renderDashboard)(v);
+  ({dashboard:renderDashboard,analytics:renderAnalytics,clients:renderClients,leads:renderLeadsOnly,clientsOnly:renderClientsOnly,prospects:renderProspectsOnly,tasks:renderTasks,calls:renderCalls,meetings:renderMeetings,deals:renderDeals,quotes:renderQuotes,quoteView:renderQuoteView,performance:renderPerformance,admin:renderAdmin,salesOrders:renderSalesOrders,invoices:renderInvoices,accounts:renderAccounts,contacts:renderContacts,pipeline:renderPipeline,purchaseOrders:renderPurchaseOrders,deliveryChallans:renderDeliveryChallans,materialRequisitions:renderMaterialRequisitions,receivings:renderReceivings,vendors:renderVendors,products:renderProducts,campaigns:renderCampaigns,priceBooks:renderPriceBooks,documents:renderDocuments,catalog:renderCatalog,repRouting:renderRepRouting,metaAds:renderMetaAds,auditLog:renderAuditLog,automationRules:renderAutomationRules,aiAssistant:renderAIAssistant,materialVendors:renderMaterialVendors,storeInventory:renderStoreInventory}[route]||renderDashboard)(v);
 }
 
 /* ======================================================================
