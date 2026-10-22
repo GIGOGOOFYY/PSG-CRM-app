@@ -2938,7 +2938,7 @@ function renderSalesOrders(v){
     <td>${esc(so.quoteNo)}</td><td>${esc(so.poNumber)}</td><td>${esc(so.product)}</td>
     <td class="num">${esc(so.qty)}</td><td class="num">${PKR(soValue(so))}</td>
     <td>${soStatusPill(so.status)}${so.productionOrderNo?` <span class="pill gray" title="Production Planning status">🏭 ${esc(so.productionStatus||"—")}</span>`:""}</td><td>${esc(so.expectedDelivery||"")}</td>
-    <td class="no-print"><div class="rowbtns">${so.status!=="Delivered"&&so.status!=="Cancelled"?`<button class="btn sm ghost" title="Generate Invoice" onclick="generateInvoiceFromSO('${esc(so.id)}')">➔ Invoice</button>`:""}<button class="btn sm ghost" onclick="edit_salesOrder('${esc(so.id)}')">Edit</button><button class="btn sm ghost danger" onclick="del_salesOrder('${esc(so.id)}')">✕</button></div></td></tr>`).join("")
+    <td class="no-print"><div class="rowbtns">${so.pipelineDealId&&!so.productionOrderNo?`<button class="btn sm ghost" title="Send to Production Planning" onclick="sendToProduction('${esc(so.id)}')">🏭 Send to Production</button>`:""}${so.status!=="Delivered"&&so.status!=="Cancelled"?`<button class="btn sm ghost" title="Generate Invoice" onclick="generateInvoiceFromSO('${esc(so.id)}')">➔ Invoice</button>`:""}<button class="btn sm ghost" onclick="edit_salesOrder('${esc(so.id)}')">Edit</button><button class="btn sm ghost danger" onclick="del_salesOrder('${esc(so.id)}')">✕</button></div></td></tr>`).join("")
     :`<tr><td colspan="13"><div class="empty">No sales orders yet.</div></td></tr>`;
   const total=rows.reduce((s,so)=>s+soValue(so),0);
   v.innerHTML=pagehead("Sales Orders","Sales Orders — "+vSalesOrders().length+" · Value "+PKR(total)+(isAdmin()?"":" (yours)"),"Add Sales Order","addSalesOrder()",true)+
@@ -2966,7 +2966,20 @@ function salesOrderForm(so){ so=so||{}; const rep=myRep();
 function readSalesOrder(existing){ const g=id=>document.getElementById("f_"+id).value; const id=g("clientId"); const cl=findClientOrAccount(id);
   return Object.assign({},existing||{},{soDate:g("soDate"),rep:g("rep"),clientId:id,company:cl?cl.company:(existing&&existing.company)||"",quoteNo:g("quoteNo"),poNumber:g("poNumber"),product:g("product"),qty:num(g("qty")),unitPrice:num(g("unitPrice")),status:g("status"),expectedDelivery:g("expectedDelivery"),notes:g("notes"),projectName:g("projectName"),projectNumber:g("projectNumber"),siteAddress:g("siteAddress")}); }
 function addSalesOrder(){ openModal("New Sales Order", salesOrderForm({rep:myRep()||""}), async()=>{ const so=readSalesOrder(); if(!so.clientId){toast("Pick a client");return false;} so.id=nextId("SO",so.rep); if(!so.projectNumber){ const yr=new Date().getFullYear(); const ex=state.salesOrders.filter(x=>x.projectNumber&&x.projectNumber.startsWith("PSG-"+yr+"-")).length; so.projectNumber="PSG-"+yr+"-"+String(ex+1).padStart(3,"0"); } state.salesOrders.push(so); await upsert("salesOrders",so); syncStageFromSalesOrder(so); closeModal(); toast("Sales order added"); go("salesOrders"); }); }
-function edit_salesOrder(id){ const so=state.salesOrders.find(x=>x.id===id); if(!so)return; openModal("Edit Sales Order", salesOrderForm(so), async()=>{ Object.assign(so,readSalesOrder(so)); await upsert("salesOrders",so); syncStageFromSalesOrder(so); closeModal(); toast("Sales order updated"); go("salesOrders"); }); }
+function edit_salesOrder(id){ const so=state.salesOrders.find(x=>x.id===id); if(!so)return; openModal("Edit Sales Order", salesOrderForm(so), async()=>{ Object.assign(so,readSalesOrder(so)); await upsert("salesOrders",so); syncStageFromSalesOrder(so);
+    // Pipeline-born SOs do NOT auto-push to production on save — the rep sends it manually
+    // (the "🏭 Send to Production" button on the Sales Orders list) once they're ready.
+    closeModal(); toast("Sales order updated"); go("salesOrders"); }); }
+// Manual trigger for a pipeline-born Sales Order's production push — the rep presses this when
+// ready, rather than it firing automatically the moment a delivery date is saved.
+async function sendToProduction(id){
+  const so=state.salesOrders.find(x=>x.id===id); if(!so) return;
+  if(so.productionOrderNo){ toast('Already sent to production: #'+so.productionOrderNo); return; }
+  if(!so.expectedDelivery){ toast('Set a delivery date first'); edit_salesOrder(id); return; }
+  const pd=state.pipelineDeals.find(x=>x.id===so.pipelineDealId);
+  const ok=await pushObliquesToProduction(so, pd?bestQuoteForDeal(pd):null);
+  if(ok) go('salesOrders');
+}
 function del_salesOrder(id){ confirmDel("Delete this sales order?", async()=>{ state.salesOrders=state.salesOrders.filter(x=>x.id!==id); await remove("salesOrders",id); toast("Deleted"); go("salesOrders"); }); }
 
 
@@ -3464,7 +3477,7 @@ function renderPipeline(v){
         <button class="btn sm ghost" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();waPipelineDeal('${esc(d.id)}')" style="padding:2px 6px;font-size:11px;line-height:1;background:#25d366;color:#fff;border:none;border-radius:4px">💬 WA</button>
         ${chatBtn(esc(d.id))}
         ${poolRow?`<button class="btn sm ghost" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();claimTalkToSales('${esc(poolRow.id)}','${esc(d.id)}')" style="padding:2px 6px;font-size:11px;line-height:1;background:#f39c12;color:#fff;border:none;border-radius:4px">🙋 Claim</button>`:''}
-        ${d.stage==='Won – Order Confirmed'?(d.poNumber?`<span class="pill sm" title="PO generated ${esc(d.poGeneratedAt||'')}">📄 ${esc(d.poNumber)}</span>`:`<button class="btn sm ghost" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();generatePO('${esc(d.id)}')" style="padding:2px 6px;font-size:11px;line-height:1">📄 Generate PO</button>`):''}
+        ${d.stage==='Won – Order Confirmed'?(d.poNumber?`<span class="pill sm" title="Customer PO · recorded ${esc(d.poGeneratedAt||'')}" onclick="event.stopPropagation();recordCustomerPO('${esc(d.id)}')" style="cursor:pointer">📄 ${esc(d.poNumber)}</span>`:`<button class="btn sm ghost" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();recordCustomerPO('${esc(d.id)}')" style="padding:2px 6px;font-size:11px;line-height:1" title="Record the PO number the customer sent, if any">📄 Add PO #</button>`):''}
         ${isAdmin()?`<button class="btn sm ghost danger kcard-del" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();del_pipelineDeal('${esc(d.id)}')">✕</button>`:''}
       </div>
     </div>`;}).join('');
@@ -3706,10 +3719,12 @@ function bestQuoteForDeal(d){
   const byRecency=(a,b)=>(b.serialNo||0)-(a.serialNo||0)||(b.revision||0)-(a.revision||0)||(b.quoteDate||"").localeCompare(a.quoteDate||"");
   return qs.filter(x=>x.status==="Sent"||x.status==="Accepted").sort(byRecency)[0] || qs.slice().sort(byRecency)[0];
 }
-// A Pipeline deal reaching "Won – Order Confirmed" (bot-driven or a manual drag) is a real sale:
-// auto-fill Sales Tracker + the fulfillment Sales Order from whatever quote that account actually
-// has, same spirit as autoCreateDealAndOrder() for the old client-stage flow. Guarded by
-// pipelineDealId so re-triggering (sweep re-run, duplicate drag) never creates a second row.
+// A Pipeline deal reaching "Won – Order Confirmed" (bot-driven or a manual drag) means the
+// customer confirmed the quotation — a real forecasted sale, so it's logged in Sales Tracker for
+// commission/collection visibility. It is NOT yet a Sales Order: PSG doesn't treat a confirmation
+// alone as grounds to start production. That only happens once payment is actually received —
+// see maybeCreateSalesOrderFromPayment() below. Guarded by pipelineDealId so re-triggering (sweep
+// re-run, duplicate drag) never creates a second Sales Tracker row.
 async function autoCreateFromPipelineDeal(d){
   if(!d||(d.stage||'')!=='Won – Order Confirmed') return;
   if((state.deals||[]).find(x=>x.pipelineDealId===d.id)) return;
@@ -3728,14 +3743,7 @@ async function autoCreateFromPipelineDeal(d){
   deal.id=nextId("DL",deal.rep);
   state.deals.push(deal); await upsert("deals",deal);
   if(bestQuote && bestQuote.status!=="Accepted"){ bestQuote.status="Accepted"; await upsert("quotes",bestQuote); }
-
-  let so=(state.salesOrders||[]).find(x=>x.pipelineDealId===d.id);
-  if(!so){
-    so=salesOrderFromDeal(deal);
-    so.pipelineDealId=d.id; so.accountId=d.accountId||""; so.contactId=d.contactId||"";
-    so.id=nextId("SO",so.rep); state.salesOrders.push(so); await upsert("salesOrders",so);
-  }
-  toast('Won deal → Sales Order '+so.id+' created in Sales Tracker');
+  toast('Won deal → logged in Sales Tracker (Sales Order waits for payment)');
 }
 // Runs whenever the Pipeline board is opened: catches any deal that reached Won without going
 // through the drag handler below (e.g. the bot advanced it while nobody had this page open).
@@ -3743,6 +3751,86 @@ async function sweepWonPipelineDeals(){
   const toProcess=(state.pipelineDeals||[]).filter(d=>!d.archived && d.stage==='Won – Order Confirmed' && !(state.deals||[]).find(x=>x.pipelineDealId===d.id));
   for(const d of toProcess){ await autoCreateFromPipelineDeal(d); }
   if(toProcess.length && route==='pipeline') go('pipeline');
+}
+// The real trigger for starting a Sales Order: a payment (advance or full) actually landing on
+// an Invoice. Quotation confirmation alone (Won) only forecasts the sale — PSG doesn't start
+// production off a confirmation, only off money received. Finds the Sales Tracker deal already
+// logged for this account's Won pipeline deal and turns it into a Sales Order, then opens it so
+// the rep sets a real delivery date (never auto-guessed) before anything reaches production.
+// Returns true if it opened the new Sales Order's edit modal (the caller must not call
+// closeModal() itself in that case — it would wipe out the modal this just opened).
+async function maybeCreateSalesOrderFromPayment(inv){
+  if(num(inv.amountPaid)<=0) return false;
+  const pd=(state.pipelineDeals||[]).find(x=>x.accountId===inv.clientId && !x.archived && x.stage==='Won – Order Confirmed');
+  if(!pd) return false;
+  const trackerDeal=(state.deals||[]).find(x=>x.pipelineDealId===pd.id);
+  if(!trackerDeal) return false; // Won hasn't logged a Sales Tracker row yet — nothing to build the SO from
+  if((state.salesOrders||[]).find(x=>x.pipelineDealId===pd.id)) return false; // already has one
+  const so=salesOrderFromDeal(trackerDeal);
+  so.pipelineDealId=pd.id; so.accountId=pd.accountId||""; so.contactId=pd.contactId||"";
+  so.poNumber=pd.poNumber||trackerDeal.poNumber||""; // the customer's own PO, if they sent one — blank otherwise
+  so.id=nextId("SO",so.rep);
+  state.salesOrders.push(so); await upsert("salesOrders",so);
+  inv.salesOrderId=so.id; await upsert("invoices",inv);
+  toast('Payment recorded → Sales Order '+so.id+' created. Set the delivery date, then press "Send to Production" when ready.');
+  edit_salesOrder(so.id);
+  return true;
+}
+// Pushes a Sales Order's actual glass line items to Production Planning — one order per oblique,
+// with real height/width/qty/workcenters pulled straight from the quote (never retyped), under a
+// real ascending factory order number (continuing the existing numbering, e.g. 25415 → 25416)
+// rather than a CRM-generated code. Requires a delivery date first — a production order without
+// one is exactly the "auto-guessed" delivery this was built to avoid.
+async function pushObliquesToProduction(so, quote){
+  if(so.productionOrderNo) return true; // already pushed
+  if(!so.expectedDelivery){ toast('Set a delivery date before this goes to production'); return false; }
+  if(!sb){ toast('Not connected — production order skipped'); return false; }
+  let baseOrderNo;
+  try{
+    const {data,error}=await sb.rpc('crm_next_order_number');
+    if(error) throw error;
+    baseOrderNo=String(data);
+  }catch(e){ toast('Failed to get next order number: '+e.message); return false; }
+
+  const glassItems=quote?(quote.items||[]).filter(it=>(it.type||"Glass")==="Glass"&&num(it.pieces)>0):[];
+  let created=0;
+  if(glassItems.length){
+    for(let idx=0; idx<glassItems.length; idx++){
+      const it=glassItems[idx];
+      const wcs=it.workcenters||{};
+      const qty=num(it.pieces);
+      const orderNo=glassItems.length>1?(baseOrderNo+"/"+(idx+1)):baseOrderNo;
+      const prodOrder={
+        order_number:orderNo, parent_order:baseOrderNo,
+        height_mm:num(it.scaledH)||num(it.sizeH)||0, width_mm:num(it.scaledW)||num(it.sizeW)||0,
+        order_type:"Architectural", client_name:so.company||"",
+        ct:(wcs.ct?1:0)*qty, gr:(wcs.gr?1:0)*qty, pe:(wcs.pe?1:0)*qty, bv:(wcs.bv?1:0)*qty,
+        hl:(wcs.hl?1:0)*qty, pr:(wcs.pr?1:0)*qty, tg:(wcs.tg?1:0)*qty, bg:(wcs.bg?1:0)*qty,
+        lg:(wcs.lg?1:0)*qty, fr:(wcs.fr?1:0)*qty, dg:(wcs.dg?1:0)*qty, qc:qty, order_qty:qty,
+        order_date:so.soDate||today(), delivery_date:so.expectedDelivery, status:"Active",
+        notes:it.desc||("SO "+so.id+" item "+(idx+1)), crm_so_id:so.id
+      };
+      try{ const {error}=await sb.from("orders").insert(prodOrder); if(error) throw error; created++; }
+      catch(e){ console.warn("Production order failed:",e.message); }
+    }
+  } else {
+    try{
+      const {error}=await sb.from("orders").insert({
+        order_number:baseOrderNo, client_name:so.company||"", order_type:"Architectural",
+        order_qty:Math.round(num(so.qty))||0, order_date:so.soDate||today(),
+        delivery_date:so.expectedDelivery, status:"Active",
+        notes:"Auto-created from PSG CRM Sales Order "+so.id, crm_so_id:so.id
+      });
+      if(error) throw error; created=1;
+    }catch(e){ console.warn("Push to Production Planning failed:",e.message); }
+  }
+  if(created>0){
+    so.productionOrderNo=baseOrderNo; so.productionStatus="Active";
+    await upsert("salesOrders",so);
+    toast(created+' production order'+(created>1?'s':'')+' sent — #'+baseOrderNo);
+    return true;
+  }
+  return false;
 }
 function addPipelineDeal(){
   openModal('New Deal',pdForm(),async()=>{
@@ -3772,49 +3860,18 @@ function del_pipelineDeal(id){
   });
 }
 
-/* ── Phase 8: Outbound CRM -> WhatsApp — PSG generates the PO number ──────
-   Reuses the existing Handoff Chat send path (/wa-send on the bot Worker,
-   authenticated with cfg.waApiKey) so no WhatsApp credential ever lives in
-   this webapp -- the bot Worker is the only thing that holds ACCESS_TOKEN /
-   PHONE_NUMBER_ID. Numbering comes from the crm_next_po_number() Supabase
-   RPC so two reps generating a PO at the same moment can never collide,
-   even though the rest of this app is local-first / offline-capable. */
-async function generatePO(id){
+/* ── PO # on a Won deal is the CUSTOMER's own purchase order reference, if they send one.
+   PSG never issues a PO to its own customer, so there is nothing to auto-generate or notify
+   them about here — this just records what they sent (or leaves it blank). */
+async function recordCustomerPO(id){
   const d=state.pipelineDeals.find(x=>x.id===id);if(!d)return;
-  if(d.poNumber){toast('PO already generated: '+d.poNumber);return;}
-  if(!sb){toast('PO numbers require an online connection (Supabase not configured)');return;}
-  let poNumber;
-  try{
-    const {data,error}=await sb.rpc('crm_next_po_number');
-    if(error)throw error;
-    poNumber=data;
-  }catch(e){toast('Failed to generate PO number: '+e.message);return;}
-
-  d.poNumber=poNumber;d.poGeneratedAt=new Date().toISOString();
+  const val=prompt('PO number the customer sent (leave blank if none):',d.poNumber||'');
+  if(val===null) return; // cancelled
+  d.poNumber=val.trim();
+  d.poGeneratedAt=d.poNumber?new Date().toISOString():'';
   await upsert('pipelineDeals',d);
-  toast('PO generated: '+poNumber);
+  toast(d.poNumber?('Customer PO recorded: '+d.poNumber):'PO cleared');
   go('pipeline');
-
-  // Best-effort: tell the customer. Never block/alter the PO itself if this fails.
-  const contact=state.contacts&&state.contacts.find(c=>c.id===d.contactId);
-  const phone=contact&&contact.phone&&contact.phone.replace(/\D/g,'');
-  if(!phone){toast('PO saved, but no phone on file to notify the customer');return;}
-  if(!cfg.waWorkerUrl||!cfg.waApiKey){toast('PO saved — configure Bot Worker URL/Key in Admin to notify the customer automatically');return;}
-  const acct=state.accounts&&state.accounts.find(a=>a.id===d.accountId);
-  const who=(contact.name||'').split(' (')[0]||'';
-  const msg='Hi'+(who?' '+who:'')+', this is Pakistan Safety Glass (PSG).\n\n'+
-    'Your order'+(acct&&acct.name?' for '+acct.name:'')+' has been confirmed. '+
-    'Purchase Order Number: '+poNumber+'\n\n'+
-    'Please keep this for your records. We will update you as production progresses.';
-  try{
-    const r=await fetch(cfg.waWorkerUrl+'/wa-send',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','X-API-Key':cfg.waApiKey},
-      body:JSON.stringify({phone,message:msg,repName:(session&&session.repName)||myRep()||'',customerName:who})
-    });
-    if(r.ok)toast('PO '+poNumber+' sent to customer via WhatsApp ✓');
-    else{const t=await r.text();toast('PO saved, but WhatsApp send failed: '+t);}
-  }catch(e){toast('PO saved, but WhatsApp send failed: '+e.message);}
 }
 
 
@@ -3871,8 +3928,8 @@ function invoiceForm(inv){ inv=inv||{}; const rep=myRep();
 function calcInvoice(){ const amt=num(document.getElementById("f_amount").value), paid=num(document.getElementById("f_amountPaid").value); document.getElementById("f_balance").value=PKR(amt-paid); }
 function readInvoice(existing){ const g=id=>document.getElementById("f_"+id).value; const id=g("clientId"); const cl=findClientOrAccount(id);
   return Object.assign({},existing||{},{invoiceDate:g("invoiceDate"),dueDate:g("dueDate"),rep:g("rep"),clientId:id,company:cl?cl.company:(existing&&existing.company)||"",salesOrderId:g("salesOrderId"),paymentType:g("paymentType"),amount:num(g("amount")),amountPaid:num(g("amountPaid")),status:g("status"),notes:g("notes")}); }
-function addInvoice(){ openModal("New Invoice", invoiceForm({rep:myRep()||""}), async()=>{ const inv=readInvoice(); if(!inv.clientId){toast("Pick a client");return false;} inv.id=nextId("IV",inv.rep); state.invoices.push(inv); await upsert("invoices",inv); promoteInvoiceStage(inv); closeModal(); toast("Invoice added"); go("invoices"); }, calcInvoice); }
-function edit_invoice(id){ const inv=state.invoices.find(x=>x.id===id); if(!inv)return; openModal("Edit Invoice", invoiceForm(inv), async()=>{ Object.assign(inv,readInvoice(inv)); await upsert("invoices",inv); promoteInvoiceStage(inv); closeModal(); toast("Invoice updated"); go("invoices"); }, calcInvoice); }
+function addInvoice(){ openModal("New Invoice", invoiceForm({rep:myRep()||""}), async()=>{ const inv=readInvoice(); if(!inv.clientId){toast("Pick a client");return false;} inv.id=nextId("IV",inv.rep); state.invoices.push(inv); await upsert("invoices",inv); promoteInvoiceStage(inv); const opened=await maybeCreateSalesOrderFromPayment(inv); if(!opened){ closeModal(); toast("Invoice added"); go("invoices"); } }, calcInvoice); }
+function edit_invoice(id){ const inv=state.invoices.find(x=>x.id===id); if(!inv)return; openModal("Edit Invoice", invoiceForm(inv), async()=>{ Object.assign(inv,readInvoice(inv)); await upsert("invoices",inv); promoteInvoiceStage(inv); const opened=await maybeCreateSalesOrderFromPayment(inv); if(!opened){ closeModal(); toast("Invoice updated"); go("invoices"); } }, calcInvoice); }
 function del_invoice(id){ confirmDel("Delete this invoice?", async()=>{ state.invoices=state.invoices.filter(x=>x.id!==id); await remove("invoices",id); toast("Deleted"); go("invoices"); }); }
 
 /* ======================================================================
@@ -4929,7 +4986,7 @@ function dealFromQuote(q, opts){
   let qty, unitPrice;
   if(sumSqft>0){ qty=Math.round(sumSqft*100)/100; unitPrice=Math.round((total/sumSqft)*100)/100; }
   else { qty=1; unitPrice=total; }
-  return {closeDate:today(),rep:q.rep,clientId:q.clientId,company:q.company,product,qty,unitPrice,quoteNo:q.id,poNumber:"",collectStatus:"Pending",collected:0,commRate:repCommRate(q.rep),remarks:opts.remarks||("Converted from quote "+q.id)};
+  return {closeDate:today(),rep:q.rep,clientId:q.clientId,company:q.company,product,qty,unitPrice,quoteNo:quoteDisplayId(q),poNumber:"",collectStatus:"Pending",collected:0,commRate:repCommRate(q.rep),remarks:opts.remarks||("Converted from quote "+quoteDisplayId(q))};
 }
 function convertQuoteToDeal(id){
   const q=state.quotes.find(x=>x.id===id); if(!q)return;
@@ -5477,7 +5534,7 @@ async function waSendViaBot(num,msg){
   if(!phone){toast("Enter a phone number first");return;}
   const quoteId=ctx._quoteId||'';
   // No quote in context (e.g. Negotiation / a Pipeline deal with no PDF attached) —
-  // Phase 8: send plain text through the bot's /wa-send (same path generatePO() uses),
+  // Phase 8: send plain text through the bot's /wa-send,
   // which now auto-detects the 24h window and falls back to the approved re-engagement
   // template on its own — no PDF requirement for this branch.
   if(!pdfBase64 && !quoteId){
