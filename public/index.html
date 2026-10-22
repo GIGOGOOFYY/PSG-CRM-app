@@ -1612,14 +1612,18 @@ function coldLeadRadarCard(){
     </div>`).join('')||`<div class="empty" style="padding:20px">❄️ No stale deals — pipeline is warm</div>`;
   return `<div class="card">
     <h3>🥶 At-Risk Deals (Cold Lead Radar)
-      <span class="help" style="font-weight:500;font-size:11px;margin-left:8px">
-        Contacted/Qualified &gt; <input type="number" min="1" style="width:40px" value="${cfg.coldLeadDays||10}" onchange="setColdLeadDays(this.value)">d ·
-        Quotation Sent &gt; <input type="number" min="1" style="width:40px" value="${cfg.quoteStaleDays||7}" onchange="setQuoteStaleDays(this.value)">d
-      </span>
+      <span class="help" style="font-weight:500;font-size:11px;margin-left:8px">Contacted/Qualified &gt; ${cfg.coldLeadDays||10}d · Quotation Sent &gt; ${cfg.quoteStaleDays||7}d</span>
     </h3>
     <div class="mini-list">${rows}</div>
     ${cold.length>8?`<div style="padding:8px 12px;font-size:12px;color:var(--muted)">${cold.length-8} more stale deal(s) — open Pipeline to see all</div>`:''}
   </div>`;
+}
+function coldLeadRadarAdminCard(){
+  return `<div class="card"><h3>🥶 Cold Lead Radar thresholds</h3><div style="padding:16px">
+     <div class="help" style="margin-bottom:10px">Controls when a deal shows up as "at-risk" on the Home dashboard.</div>
+     <div class="settings-row"><label class="help">Contacted/Qualified stale after</label><input type="number" min="1" style="width:70px" value="${cfg.coldLeadDays||10}" onchange="setColdLeadDays(this.value)"> days</div>
+     <div class="settings-row"><label class="help">Quotation Sent stale after</label><input type="number" min="1" style="width:70px" value="${cfg.quoteStaleDays||7}" onchange="setQuoteStaleDays(this.value)"> days</div>
+  </div></div>`;
 }
 function statusPill(s){
   const green=["Deal Closed","Interested"], amber=["Proposal Sent","Meeting Scheduled","Follow-Up Required","Interested – Not Now"], red=["Not Interested","No Answer","Voicemail Left"];
@@ -4650,6 +4654,7 @@ function renderAdmin(v){
         <div class="help">Tip: paste your logo later and I can wire it in, or drop a PNG at the top of the file.</div>
      </div></div>
    </div>
+   ${coldLeadRadarAdminCard()}
    ${waAdminCard()}
    ${metaAdsAdminCard()}
    <div class="card" style="margin-top:16px"><h3>👤 Users & access</h3><div class="tablewrap"><table><thead><tr><th>Username</th><th>Role</th><th>Rep</th><th>Password</th><th></th></tr></thead><tbody>${users}</tbody></table></div>
