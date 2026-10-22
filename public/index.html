@@ -585,10 +585,6 @@ td .help{font-size:11.5px;color:var(--muted);margin-top:1px;display:block}
       </button>
       <span class="tb-title" id="tbTitle">Home</span>
       <div class="tb-right">
-        <button class="sb-ib" onclick="openUniversalSearch()" title="Search (Ctrl/Cmd+K)" style="display:flex;align-items:center;gap:4px">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 21l-4.35-4.35"/><path d="M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z"/></svg>
-          <span style="font-size:11px;color:var(--muted)">⌘K</span>
-        </button>
         <div class="conn-badge"><div class="cdot" id="connDot2"></div><span id="connTxt2">Checking…</span></div>
         <span id="who"></span>
         <span id="roleChip" class="role"></span>
@@ -660,7 +656,6 @@ const SIDEBAR_NAV = [
     { id:"admin",     icon:"settings",       label:"Admin" },
     { id:"_catalog",  icon:"package",        label:"Bot Catalog",     route:"catalog" },
     { id:"_repRoute", icon:"users",          label:"Rep Routing",     route:"repRouting" },
-    { id:"_auditLog", icon:"file-text",      label:"Audit Log",       route:"auditLog" },
   ]},
 ];
 
@@ -1082,11 +1077,6 @@ async function cloudPull(){
       }
       state[k]=all.map(MAP[k].from);
       anyOK=true;
-      /* ── Phase 9-F: refresh audit-diff baseline for auditable kinds ── */
-      if(AUDIT_ENTITY_MAP[k]){
-        const _pk=MAP[k].pk||'id'; auditSnap[k]={};
-        state[k].forEach(x=>{ auditSnap[k][x[_pk]]=JSON.parse(JSON.stringify(x)); });
-      }
     }catch(e){ console.warn("Cloud pull failed for "+k+":", e.message); }
   }
   if(!state.users||!state.users.length) state.users=seedUsers();
@@ -1199,105 +1189,10 @@ function startAutoRefresh(){
 async function upsert(kind, obj){
   try{ saveLocal(); }catch(e){ console.warn('[saveLocal]',e.message); }
   if(sb){ try{ const {error}=await sb.from(MAP[kind].table).upsert(MAP[kind].to(obj)); if(error) throw error; cloudOK=true;
-              const _pk=MAP[kind].pk||'id'; pendingWrites=pendingWrites.filter(p=>!(p.kind===kind&&p.obj[_pk]===obj[_pk])); savePendingWrites();
-              try{ await logAuditDiff(kind,obj); }catch(_ae){ console.warn('[audit]',_ae.message); } }
+              const _pk=MAP[kind].pk||'id'; pendingWrites=pendingWrites.filter(p=>!(p.kind===kind&&p.obj[_pk]===obj[_pk])); savePendingWrites(); }
           catch(e){ cloudOK=false; toast("Saved locally — cloud sync failed");
               const _pk=MAP[kind].pk||'id'; pendingWrites=pendingWrites.filter(p=>!(p.kind===kind&&p.obj[_pk]===obj[_pk])); pendingWrites.push({kind,obj:{...obj}}); savePendingWrites(); } }
   renderConn();
-}
-/* ======================================================================
-   Phase 9-F: AUDIT LOG
-   Hooks the shared upsert() helper so every save of an auditable entity
-   (deal/account/client/quote/contact) writes a who/what/when row to
-   crm_audit_log, diffed against the last known snapshot of that record
-   (refreshed on every cloudPull, and updated right after each write so
-   sequential same-session edits still diff correctly without a repull).
-   ====================================================================== */
-const AUDIT_ENTITY_MAP = { pipelineDeals:'deal', accounts:'account', clients:'client', quotes:'quote', contacts:'contact' };
-let auditSnap = {}; // { kind: { id: lastKnownRowClone } }
-function diffFields(oldObj, newObj){
-  const out={}; const keys=new Set([...Object.keys(oldObj||{}),...Object.keys(newObj||{})]);
-  keys.forEach(k=>{
-    if(k==='notes') return; // long free text — exclude from field-level diff noise, still covered by 'created' snapshots
-    const ov=oldObj?oldObj[k]:undefined, nv=newObj?newObj[k]:undefined;
-    const a=ov===undefined||ov===null?'':String(ov), b=nv===undefined||nv===null?'':String(nv);
-    if(a!==b) out[k]={from:ov??null,to:nv??null};
-  });
-  return out;
-}
-async function logAuditDiff(kind,obj){
-  const entityType=AUDIT_ENTITY_MAP[kind]; if(!entityType||!sb) return;
-  const _pk=MAP[kind].pk||'id'; const id=obj[_pk];
-  const prev=auditSnap[kind]&&auditSnap[kind][id];
-  const diff=diffFields(prev,obj);
-  const changedKeys=Object.keys(diff);
-  if(prev && !changedKeys.length) return; // nothing actually changed
-  let action='field_update';
-  if(!prev) action='created';
-  else if(diff.stage) action='stage_change';
-  else if(diff.assignedTo) action='rep_reassigned';
-  const performedBy=(session&&(session.repName||session.username))||'system';
-  const oldValue=prev?Object.fromEntries(changedKeys.map(k=>[k,diff[k].from])):null;
-  const newValue=Object.fromEntries(changedKeys.length?changedKeys.map(k=>[k,diff[k].to]):Object.entries(obj));
-  try{
-    await sb.from('crm_audit_log').insert({entity_type:entityType,entity_id:String(id),action,old_value:oldValue,new_value:newValue,performed_by:performedBy});
-  }catch(e){ console.warn('[audit insert]',e.message); }
-  if(!auditSnap[kind]) auditSnap[kind]={};
-  auditSnap[kind][id]=JSON.parse(JSON.stringify(obj));
-}
-async function loadAuditLog(entityType, entityId, limit){
-  if(!sb) return [];
-  try{
-    let q=sb.from('crm_audit_log').select('*').order('performed_at',{ascending:false}).limit(limit||100);
-    if(entityType) q=q.eq('entity_type',entityType);
-    if(entityId) q=q.eq('entity_id',String(entityId));
-    const {data,error}=await q; if(error) throw error;
-    return data||[];
-  }catch(e){ console.warn('[audit load]',e.message); return []; }
-}
-function auditActionLabel(a){
-  return {created:'Created',stage_change:'Stage changed',field_update:'Field updated',rep_reassigned:'Rep reassigned'}[a]||a||'';
-}
-function auditRowHtml(r){
-  const changes=Object.keys(r.new_value||{}).map(k=>{
-    const ov=r.old_value&&r.old_value[k], nv=r.new_value[k];
-    return r.old_value? `<b>${esc(k)}</b>: ${esc(ov??'—')} → ${esc(nv??'—')}` : `<b>${esc(k)}</b>: ${esc(nv??'—')}`;
-  }).join('; ');
-  const when=r.performed_at?new Date(r.performed_at).toLocaleString('en-GB',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}):'';
-  return `<div class="mini-row" style="align-items:flex-start;flex-direction:column;gap:2px;padding:8px 12px">
-    <div><span class="pill ${r.action==='stage_change'?'blue':r.action==='created'?'green':'gray'} sm">${esc(auditActionLabel(r.action))}</span>
-      <b style="margin-left:6px">${esc(r.performed_by||'system')}</b>
-      <span class="help" style="margin-left:6px">${esc(when)}</span></div>
-    ${changes?`<div class="help" style="font-size:12px">${changes}</div>`:''}
-  </div>`;
-}
-function renderAuditLog(v){
-  v.innerHTML=pagehead('Audit Log','Who changed what, and when — Deals, Accounts, Clients, Quotes, Contacts','','',false)+
-    `<div class="card">
-      <div class="formgrid" style="margin-bottom:10px">
-        <div class="field"><label>Entity type</label><select id="al_type" onchange="refreshAuditLog()">
-          <option value="">All</option>
-          <option value="deal">Deal</option>
-          <option value="account">Account</option>
-          <option value="client">Client</option>
-          <option value="quote">Quote</option>
-          <option value="contact">Contact</option>
-        </select></div>
-      </div>
-      <div id="al_list" class="mini-list"><div class="empty">Loading…</div></div>
-    </div>`;
-  refreshAuditLog();
-}
-async function refreshAuditLog(){
-  const typeSel=document.getElementById('al_type');
-  const rows=await loadAuditLog(typeSel?typeSel.value:'', null, 200);
-  const box=document.getElementById('al_list'); if(!box) return;
-  box.innerHTML=rows.length?rows.map(auditRowHtml).join(''):'<div class="empty">No audit entries yet.</div>';
-}
-async function renderEntityAuditPanel(entityType, entityId, mountId){
-  const rows=await loadAuditLog(entityType, entityId, 25);
-  const box=document.getElementById(mountId); if(!box) return;
-  box.innerHTML=rows.length?rows.map(auditRowHtml).join(''):'<div class="empty">No history recorded yet.</div>';
 }
 async function remove(kind, id){
   const _pk=MAP[kind].pk||'id'; pendingWrites=pendingWrites.filter(p=>!(p.kind===kind&&p.obj[_pk]===id)); savePendingWrites();
@@ -1452,7 +1347,7 @@ function go(r){ route=r; searchTerm=""; renderSidebar(); renderRoute(); window.s
 function renderRoute(){
   const v=document.getElementById("view");
   if(!isAdmin()&&typeof canView==='function'&&ROUTE_PERM&&ROUTE_PERM[route]&&!canView(route)){route='dashboard';renderSidebar();renderDashboard(v);return;}
-  ({dashboard:renderDashboard,analytics:renderAnalytics,clients:renderClients,leads:renderLeadsOnly,clientsOnly:renderClientsOnly,prospects:renderProspectsOnly,tasks:renderTasks,calls:renderCalls,meetings:renderMeetings,deals:renderDeals,quotes:renderQuotes,quoteView:renderQuoteView,performance:renderPerformance,admin:renderAdmin,salesOrders:renderSalesOrders,invoices:renderInvoices,accounts:renderAccounts,contacts:renderContacts,pipeline:renderPipeline,purchaseOrders:renderPurchaseOrders,deliveryChallans:renderDeliveryChallans,materialRequisitions:renderMaterialRequisitions,receivings:renderReceivings,vendors:renderVendors,products:renderProducts,campaigns:renderCampaigns,priceBooks:renderPriceBooks,documents:renderDocuments,catalog:renderCatalog,repRouting:renderRepRouting,metaAds:renderMetaAds,auditLog:renderAuditLog}[route]||renderDashboard)(v);
+  ({dashboard:renderDashboard,analytics:renderAnalytics,clients:renderClients,leads:renderLeadsOnly,clientsOnly:renderClientsOnly,prospects:renderProspectsOnly,tasks:renderTasks,calls:renderCalls,meetings:renderMeetings,deals:renderDeals,quotes:renderQuotes,quoteView:renderQuoteView,performance:renderPerformance,admin:renderAdmin,salesOrders:renderSalesOrders,invoices:renderInvoices,accounts:renderAccounts,contacts:renderContacts,pipeline:renderPipeline,purchaseOrders:renderPurchaseOrders,deliveryChallans:renderDeliveryChallans,materialRequisitions:renderMaterialRequisitions,receivings:renderReceivings,vendors:renderVendors,products:renderProducts,campaigns:renderCampaigns,priceBooks:renderPriceBooks,documents:renderDocuments,catalog:renderCatalog,repRouting:renderRepRouting,metaAds:renderMetaAds}[route]||renderDashboard)(v);
 }
 
 /* ======================================================================
@@ -1559,8 +1454,6 @@ function renderDashboard(v){
      </div>
    </div>
 
-   <div style="margin-bottom:16px">${coldLeadRadarCard()}</div>
-
    <div class="grid2">
      <div class="card"><h3>📊 Pipeline by Status</h3><div class="mini-list">${statusRows}</div></div>
      ${isAdmin()?`<div class="card"><h3>🏅 Rep Leaderboard</h3><div class="mini-list">${repRows}</div></div>`
@@ -1571,55 +1464,6 @@ function renderDashboard(v){
         <div class="mini-row"><span>Status</span><b>${repStats(session.repName||'').tier}</b></div>`
        :'<div class="empty">No deals yet this period</div>'}</div></div>`}
    </div>`;
-}
-/* ======================================================================
-   Phase 9-D: COLD LEAD RADAR
-   Flags crm_deals (the Accounts/Contacts/Deals pipeline) sitting too long
-   without activity: Contacted/Qualified beyond cfg.coldLeadDays (default
-   10), or Quotation Sent beyond cfg.quoteStaleDays (default 7, matching
-   the quote-expiry convention from Phase 5-B3).
-   ====================================================================== */
-function daysSince(dateStr){
-  if(!dateStr) return null;
-  const d=new Date(dateStr); if(isNaN(d)) return null;
-  return Math.floor((Date.now()-d.getTime())/86400000);
-}
-function getColdDeals(){
-  const coldDays=(cfg.coldLeadDays>0?cfg.coldLeadDays:10);
-  const quoteDays=(cfg.quoteStaleDays>0?cfg.quoteStaleDays:7);
-  const acctMap=Object.fromEntries(state.accounts.map(a=>[a.id,a.name]));
-  const r=myRep();
-  return (state.pipelineDeals||[]).filter(d=>!d.archived).filter(d=>r?d.assignedTo===r:true).map(d=>{
-    const lastAct=d.lastContact||d.firstContact||'';
-    const age=daysSince(lastAct);
-    let threshold=null;
-    if(['Contacted','Qualified'].includes(d.stage)) threshold=coldDays;
-    else if(d.stage==='Quotation Sent') threshold=quoteDays;
-    return {d,age,threshold,acctName:acctMap[d.accountId]||''};
-  }).filter(x=>x.threshold!==null && x.age!==null && x.age>=x.threshold)
-    .sort((a,b)=>(b.age-a.age));
-}
-function setColdLeadDays(n){ cfg.coldLeadDays=parseInt(n,10)||10; saveCfg(); renderRoute(); }
-function setQuoteStaleDays(n){ cfg.quoteStaleDays=parseInt(n,10)||7; saveCfg(); renderRoute(); }
-function coldLeadRadarCard(){
-  const cold=getColdDeals();
-  const rows=cold.slice(0,8).map(x=>`
-    <div class="mini-row" style="cursor:pointer" onclick="editPipelineDeal('${esc(x.d.id)}')">
-      <span><span class="pill ${x.age>=(x.threshold*2)?'red':'amber'} sm">${x.age}d</span>
-        <b style="margin-left:6px">${esc(x.acctName||x.d.title)}</b>
-        <span class="help" style="margin-left:6px">${esc(x.d.stage)}</span></span>
-      <span style="font-size:12px;color:var(--muted)">${esc(x.d.assignedTo||'')}</span>
-    </div>`).join('')||`<div class="empty" style="padding:20px">❄️ No stale deals — pipeline is warm</div>`;
-  return `<div class="card">
-    <h3>🥶 At-Risk Deals (Cold Lead Radar)
-      <span class="help" style="font-weight:500;font-size:11px;margin-left:8px">
-        Contacted/Qualified &gt; <input type="number" min="1" style="width:40px" value="${cfg.coldLeadDays||10}" onchange="setColdLeadDays(this.value)">d ·
-        Quotation Sent &gt; <input type="number" min="1" style="width:40px" value="${cfg.quoteStaleDays||7}" onchange="setQuoteStaleDays(this.value)">d
-      </span>
-    </h3>
-    <div class="mini-list">${rows}</div>
-    ${cold.length>8?`<div style="padding:8px 12px;font-size:12px;color:var(--muted)">${cold.length-8} more stale deal(s) — open Pipeline to see all</div>`:''}
-  </div>`;
 }
 function statusPill(s){
   const green=["Deal Closed","Interested"], amber=["Proposal Sent","Meeting Scheduled","Follow-Up Required","Interested – Not Now"], red=["Not Interested","No Answer","Voicemail Left"];
@@ -1932,67 +1776,6 @@ function readClient(existing){
   });
 }
 /* -- View-only modal (no Save button) -- */
-/* ======================================================================
-   Phase 9-G: UNIVERSAL SEARCH (Cmd/Ctrl+K)
-   Searches the in-memory state (already loaded client-side) across
-   Accounts, Contacts, Deals (crm_deals pipeline), Quotes and Sales
-   Orders — instant, no round-trip to Supabase per keystroke.
-   ====================================================================== */
-function openUniversalSearch(){
-  if(!session) return;
-  modalSave=null;
-  document.getElementById('modalMount').innerHTML=`<div class="modal-bg" onclick="if(event.target===this)closeModal()">
-    <div class="modal" style="width:640px;max-width:92vw">
-      <header><h3>🔎 Search</h3><button class="iconbtn" onclick="closeModal()">✕</button></header>
-      <div class="body" style="max-height:70vh;overflow:auto">
-        <input id="usq" type="text" placeholder="Search accounts, contacts, deals, quotes, sales orders… (Esc to close)"
-          style="width:100%;box-sizing:border-box;padding:10px 12px;font-size:15px;border:1px solid var(--border);border-radius:8px;margin-bottom:10px"
-          oninput="runUniversalSearch(this.value)" onkeydown="if(event.key==='Escape'){closeModal();}">
-        <div id="usResults"></div>
-      </div>
-    </div></div>`;
-  setTimeout(()=>{ const el=document.getElementById('usq'); if(el){ el.focus(); runUniversalSearch(''); } },0);
-}
-function usRow(icon,title,sub,onclick){
-  return `<div class="mini-row" style="cursor:pointer" onclick="${onclick}"><span>${icon} <b>${esc(title||'')}</b>${sub?` <span class="help" style="margin-left:6px">${esc(sub)}</span>`:''}</span></div>`;
-}
-function runUniversalSearch(q){
-  const box=document.getElementById('usResults'); if(!box) return;
-  const t=(q||'').trim().toLowerCase();
-  if(!t){ box.innerHTML='<div class="empty" style="padding:16px">Type to search Accounts, Contacts, Deals, Quotes and Sales Orders…</div>'; return; }
-  const LIM=8;
-  const acctMap=Object.fromEntries((state.accounts||[]).map(a=>[a.id,a.name]));
-  const accts=(state.accounts||[]).filter(a=>(a.name||'').toLowerCase().includes(t)||(a.city||'').toLowerCase().includes(t)||(a.industry||'').toLowerCase().includes(t)).slice(0,LIM);
-  const cts=(state.contacts||[]).filter(c=>(c.name||'').toLowerCase().includes(t)||(c.phone||'').toLowerCase().includes(t)||(c.email||'').toLowerCase().includes(t)).slice(0,LIM);
-  const dls=(state.pipelineDeals||[]).filter(d=>(d.title||'').toLowerCase().includes(t)||(acctMap[d.accountId]||'').toLowerCase().includes(t)||(d.id||'').toLowerCase().includes(t)).slice(0,LIM);
-  const qts=(state.quotes||[]).filter(q2=>(String(q2.id||'')).toLowerCase().includes(t)||(q2.company||'').toLowerCase().includes(t)||(q2.contact||'').toLowerCase().includes(t)).slice(0,LIM);
-  const sos=(state.salesOrders||[]).filter(s=>(String(s.id||'')).toLowerCase().includes(t)||(s.company||'').toLowerCase().includes(t)||(s.product||'').toLowerCase().includes(t)).slice(0,LIM);
-  const section=(label,rows)=>rows.length?`<div style="margin-bottom:8px"><div class="help" style="padding:4px 12px;font-weight:600">${esc(label)} (${rows.length})</div>${rows.join('')}</div>`:'';
-  const html=[
-    section('Accounts',accts.map(a=>usRow('🏬',a.name,[a.city,a.industry].filter(Boolean).join(' · '),`usOpen('account','${esc(a.id)}')`))),
-    section('Contacts',cts.map(c=>usRow('👤',c.name,[c.phone,acctMap[c.accountId]].filter(Boolean).join(' · '),`usOpen('contact','${esc(c.id)}')`))),
-    section('Deals',dls.map(d=>usRow('💼',d.title,[acctMap[d.accountId],d.stage].filter(Boolean).join(' · '),`usOpen('deal','${esc(d.id)}')`))),
-    section('Quotes',qts.map(q2=>usRow('📋',String(q2.id),[q2.company,q2.status].filter(Boolean).join(' · '),`usOpen('quote','${esc(q2.id)}')`))),
-    section('Sales Orders',sos.map(s=>usRow('🛒',String(s.id),[s.company,s.product].filter(Boolean).join(' · '),`usOpen('salesOrder','${esc(s.id)}')`)))
-  ].join('');
-  box.innerHTML=html||`<div class="empty" style="padding:16px">No matches for "${esc(q)}"</div>`;
-}
-function usOpen(type,id){
-  closeModal();
-  if(type==='account'){ go('accounts'); setTimeout(()=>viewAccount(id),60); }
-  else if(type==='contact'){ go('contacts'); const c=(state.contacts||[]).find(x=>x.id===id); searchTerm=(c&&c.name)||''; renderRoute(); }
-  else if(type==='deal'){ go('pipeline'); setTimeout(()=>editPipelineDeal(id),60); }
-  else if(type==='quote'){ viewQuote(id); }
-  else if(type==='salesOrder'){ go('salesOrders'); setTimeout(()=>edit_salesOrder(id),60); }
-}
-document.addEventListener('keydown',function(e){
-  if((e.metaKey||e.ctrlKey)&&(e.key==='k'||e.key==='K')){
-    if(!session) return;
-    e.preventDefault();
-    openUniversalSearch();
-  }
-});
-
 function openInfoModal(title, bodyHtml){
   modalSave=null;
   document.getElementById("modalMount").innerHTML=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal" style="width:680px"><header><h3>${esc(title)}</h3><button class="iconbtn" onclick="closeModal()">✕</button></header><div class="body" style="max-height:72vh;overflow:auto">${bodyHtml}</div><footer><button class="btn ghost" onclick="closeModal()">Close</button></footer></div></div>`;
@@ -2871,20 +2654,9 @@ function viewAccount(id){
       </div>
     </div>`).join(''):`<div class="tl-empty">No activity recorded for this account yet.</div>`;
 
-  /* ── Phase 9-C: Customer 360 — pull in Sales Orders, Invoices, Tasks ── */
-  const sos=state.salesOrders.filter(s=>(s.accountId===id)||((s.company||'').toLowerCase()===aNameLc));
-  const invs=state.invoices.filter(iv=>(iv.accountId===id)||((iv.company||'').toLowerCase()===aNameLc));
-  const tks=state.tasks.filter(tk=>(tk.company||'').toLowerCase()===aNameLc);
-  const soRows=sos.length?sos.map(s=>`<tr><td class="mono">${esc(s.id)}</td><td>${esc(s.product||'')}</td><td>${esc(s.qty||'')}</td><td>${esc(s.status||'')}</td><td>${esc(s.expectedDelivery||'')}</td></tr>`).join(''):`<tr><td colspan="5"><div class="empty">No sales orders.</div></td></tr>`;
-  const invRows=invs.length?invs.map(iv=>`<tr><td class="mono">${esc(iv.id)}</td><td>${esc(iv.invoiceDate||'')}</td><td>${typeof PKR==='function'?PKR(iv.amount):esc(iv.amount||'')}</td><td>${typeof PKR==='function'?PKR(iv.amountPaid):esc(iv.amountPaid||'')}</td><td>${esc(iv.status||'')}</td></tr>`).join(''):`<tr><td colspan="5"><div class="empty">No invoices.</div></td></tr>`;
-  const tkRows=tks.length?tks.map(tk=>`<tr><td>${esc(tk.title||'')}</td><td>${esc(tk.dueDate||'')}</td><td>${esc(tk.assignedTo||'')}</td><td>${esc(tk.status||'')}</td></tr>`).join(''):`<tr><td colspan="4"><div class="empty">No tasks logged for this account.</div></td></tr>`;
+  const actCount=[allDls.length,qts.length,cls.length,mts.length,oldDls.length].map((n,i)=>`<div class="ch-stat"><div class="sv">${n}</div><div class="sl">${['Pipeline','Quotes','Calls','Meetings','History'][i]}</div></div>`).join('');
 
-  const actCount=[allDls.length,qts.length,cls.length,mts.length,sos.length,invs.length,tks.length].map((n,i)=>`<div class="ch-stat"><div class="sv">${n}</div><div class="sl">${['Pipeline','Quotes','Calls','Meetings','Orders','Invoices','Tasks'][i]}</div></div>`).join('');
-
-  // Phone numbers for this account's contacts (for the WhatsApp history pull below)
-  const acctPhones=[...new Set(cts.map(c=>c.phone).filter(Boolean).map(waNormalize).filter(Boolean))];
-
-  openInfoModal(esc(a.name)+' — Customer 360',
+  openInfoModal(esc(a.name)+' — Detail',
     `<div class="client-header" style="margin-bottom:16px">
       <div class="ch-body">
         <div class="ch-name">${esc(a.name)}</div>
@@ -2896,49 +2668,8 @@ function viewAccount(id){
     <div class="tablewrap"><table><thead><tr><th>ID</th><th>Name</th><th>Role</th><th>Phone</th><th>Email</th></tr></thead><tbody>${ctRows}</tbody></table></div>
     <h4 style="margin:12px 0 8px">Active Deals</h4>
     <div class="tablewrap"><table><thead><tr><th>ID</th><th>Title</th><th>Stage</th><th>Rep</th></tr></thead><tbody>${dlRows}</tbody></table></div>
-    <h4 style="margin:12px 0 8px">Quotes · Sales Orders · Invoices</h4>
-    <div class="tablewrap"><table><thead><tr><th>ID</th><th>Product</th><th>Qty</th><th>Status</th><th>Expected</th></tr></thead><tbody>${soRows}</tbody></table></div>
-    <div class="tablewrap" style="margin-top:8px"><table><thead><tr><th>ID</th><th>Date</th><th>Amount</th><th>Paid</th><th>Status</th></tr></thead><tbody>${invRows}</tbody></table></div>
-    <h4 style="margin:12px 0 8px">Tasks</h4>
-    <div class="tablewrap"><table><thead><tr><th>Title</th><th>Due</th><th>Assigned To</th><th>Status</th></tr></thead><tbody>${tkRows}</tbody></table></div>
-    <h4 style="margin:12px 0 8px">WhatsApp History</h4>
-    <div id="acct360_wa" class="mini-list"><div class="empty">${cfg.waWorkerUrl?(acctPhones.length?'Loading…':'No phone number on file for contacts of this account.'):'Configure Bot Worker URL in Admin → WhatsApp settings to see message history.'}</div></div>
-    <h4 style="margin:12px 0 8px">Audit History <span class="help" style="font-size:11px;font-weight:500">this account &amp; its deals</span></h4>
-    <div id="acct360_audit" class="mini-list"><div class="empty">Loading…</div></div>
     <h4 style="margin:12px 0 8px">Activity Timeline</h4>
     <div class="timeline">${tlHtml}</div>`);
-
-  // ── async-load the two sections that need a network round-trip ──
-  loadAccount360Audit(id, allDls.map(d=>d.id));
-  if(cfg.waWorkerUrl && acctPhones.length) loadAccount360Wa(acctPhones);
-}
-async function loadAccount360Audit(accountId, dealIds){
-  const box=document.getElementById('acct360_audit'); if(!box) return;
-  try{
-    const [acctRows, dealRows]=await Promise.all([
-      loadAuditLog('account', accountId, 20),
-      dealIds.length? Promise.all(dealIds.map(id=>loadAuditLog('deal', id, 10))).then(arrs=>arrs.flat()) : Promise.resolve([])
-    ]);
-    const all=[...acctRows,...dealRows].sort((a,b)=>String(b.performed_at||'').localeCompare(String(a.performed_at||''))).slice(0,30);
-    if(!document.getElementById('acct360_audit')) return; // modal closed while loading
-    document.getElementById('acct360_audit').innerHTML = all.length? all.map(auditRowHtml).join('') : '<div class="empty">No audit entries yet.</div>';
-  }catch(e){ if(box) box.innerHTML='<div class="empty">Could not load audit history.</div>'; }
-}
-async function loadAccount360Wa(phones){
-  const box=document.getElementById('acct360_wa'); if(!box) return;
-  try{
-    const results=await Promise.all(phones.map(p=>
-      fetch(cfg.waWorkerUrl+'/wa-messages?phone='+encodeURIComponent(p)+'&key='+encodeURIComponent(cfg.waApiKey||''))
-        .then(r=>r.ok?r.json():{messages:[]}).catch(()=>({messages:[]}))
-    ));
-    const msgs=results.flatMap(j=>j.messages||[]).sort((a,b)=>String(b.created_at||'').localeCompare(String(a.created_at||''))).slice(0,20);
-    if(!document.getElementById('acct360_wa')) return;
-    document.getElementById('acct360_wa').innerHTML = msgs.length? msgs.map(m=>{
-      const isOut=m.direction==='outbound';
-      const time=m.created_at?new Date(m.created_at).toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):'';
-      return `<div class="mini-row"><span>${isOut?'↑':'↓'} ${esc((m.message||'').slice(0,100))}</span><span class="help" style="font-size:11px">${esc(time)}${isOut?' · '+esc(m.rep_name||'Rep'):''}</span></div>`;
-    }).join('') : '<div class="empty">No WhatsApp messages found for this account.</div>';
-  }catch(e){ if(box) box.innerHTML='<div class="empty">Could not load WhatsApp history.</div>'; }
 }
 
 // ── CONTACTS ─────────────────────────────────────────────────────────
