@@ -1019,8 +1019,8 @@ const MAP = {
     to:m=>({id:m.id,meet_date:m.date||null,meet_time:m.time,rep:m.rep,client_id:m.clientId,company:m.company,contact:m.contact,type:m.type,location:m.location,agenda:m.agenda,status:m.status,follow_notes:m.followNotes,source_call:m.sourceCall}),
     from:r=>({id:r.id,date:r.meet_date||"",time:r.meet_time,rep:r.rep,clientId:r.client_id,company:r.company,contact:r.contact,type:r.type,location:r.location,agenda:r.agenda,status:r.status,followNotes:r.follow_notes,sourceCall:r.source_call}) },
   deals:{table:"crm_commissions", pk:"id",
-    to:d=>({id:d.id,close_date:d.closeDate||null,rep:d.rep,client_id:d.clientId,company:d.company,product:d.product,qty:num(d.qty),unit_price:num(d.unitPrice),deal_value:dealValue(d),collect_status:d.collectStatus,collected:dealCollected(d),comm_rate:num(d.commRate),comm_earned:dealCommission(d),remarks:d.remarks,quote_no:d.quoteNo||null,po_number:d.poNumber||null}),
-    from:r=>({id:r.id,closeDate:r.close_date||"",rep:r.rep,clientId:r.client_id,company:r.company,product:r.product,qty:r.qty,unitPrice:r.unit_price,collectStatus:r.collect_status,collected:r.collected||0,commRate:r.comm_rate,remarks:r.remarks,quoteNo:r.quote_no||"",poNumber:r.po_number||""}) },
+    to:d=>({id:d.id,close_date:d.closeDate||null,rep:d.rep,client_id:d.clientId,company:d.company,product:d.product,qty:num(d.qty),unit_price:num(d.unitPrice),deal_value:dealValue(d),collect_status:d.collectStatus,collected:dealCollected(d),comm_rate:num(d.commRate),comm_earned:dealCommission(d),remarks:d.remarks,quote_no:d.quoteNo||null,po_number:d.poNumber||null,account_id:d.accountId||null,pipeline_deal_id:d.pipelineDealId||null}),
+    from:r=>({id:r.id,closeDate:r.close_date||"",rep:r.rep,clientId:r.client_id,company:r.company,product:r.product,qty:r.qty,unitPrice:r.unit_price,collectStatus:r.collect_status,collected:r.collected||0,commRate:r.comm_rate,remarks:r.remarks,quoteNo:r.quote_no||"",poNumber:r.po_number||"",accountId:r.account_id||"",pipelineDealId:r.pipeline_deal_id||""}) },
   quotes:{table:"crm_quotes", pk:"id",
     to:q=>({id:q.id,quote_date:q.quoteDate||null,valid_until:q.validUntil||null,rep:q.rep,client_id:q.clientId,company:q.company,contact:q.contact,status:q.status,category:q.category||null,customer_code:q.customerCode||null,ntn:q.ntn||null,gst:q.gst||null,items:q.items||[],notes:q.notes,pdf_data:q.pdfData||null,serial_no:q.serialNo||null,contact_gender:q.contactGender||null,account_id:q.accountId||null,contact_id:q.contactId||null,deal_id:q.dealId||null,revision:q.revision||0}),
     from:r=>({id:r.id,quoteDate:r.quote_date||"",validUntil:r.valid_until||"",rep:r.rep,clientId:r.client_id,company:r.company,contact:r.contact,status:r.status,category:r.category||"",customerCode:r.customer_code||"",ntn:r.ntn||"",gst:r.gst||"",items:r.items||[],notes:r.notes,pdfData:r.pdf_data||"",serialNo:r.serial_no||null,contactGender:r.contact_gender||"",accountId:r.account_id||"",contactId:r.contact_id||"",dealId:r.deal_id||"",revision:r.revision||0}) },
@@ -1034,8 +1034,8 @@ const MAP = {
     to:t=>({rep:t.rep,target:num(t.target),comm_rate:num(t.commRate)}),
     from:r=>({rep:r.rep,target:r.target,commRate:r.comm_rate}) },
   salesOrders:{table:"crm_sales_orders", pk:"id",
-    to:so=>({id:so.id,so_date:so.soDate||null,deal_id:so.dealId||null,client_id:so.clientId||null,company:so.company,rep:so.rep,quote_no:so.quoteNo,po_number:so.poNumber,product:so.product,qty:num(so.qty),unit_price:num(so.unitPrice),order_value:soValue(so),status:so.status,expected_delivery:so.expectedDelivery||null,notes:so.notes,production_order_no:so.productionOrderNo||null,production_status:so.productionStatus||null,project_name:so.projectName||null,project_number:so.projectNumber||null,site_address:so.siteAddress||null,account_id:so.accountId||null,contact_id:so.contactId||null}),
-    from:r=>({id:r.id,soDate:r.so_date||"",dealId:r.deal_id||"",clientId:r.client_id||"",company:r.company,rep:r.rep,quoteNo:r.quote_no||"",poNumber:r.po_number||"",product:r.product,qty:r.qty,unitPrice:r.unit_price,status:r.status,expectedDelivery:r.expected_delivery||"",notes:r.notes,productionOrderNo:r.production_order_no||"",productionStatus:r.production_status||"",projectName:r.project_name||"",projectNumber:r.project_number||"",siteAddress:r.site_address||"",accountId:r.account_id||"",contactId:r.contact_id||""}) },
+    to:so=>({id:so.id,so_date:so.soDate||null,deal_id:so.dealId||null,client_id:so.clientId||null,company:so.company,rep:so.rep,quote_no:so.quoteNo,po_number:so.poNumber,product:so.product,qty:num(so.qty),unit_price:num(so.unitPrice),order_value:soValue(so),status:so.status,expected_delivery:so.expectedDelivery||null,notes:so.notes,production_order_no:so.productionOrderNo||null,production_status:so.productionStatus||null,project_name:so.projectName||null,project_number:so.projectNumber||null,site_address:so.siteAddress||null,account_id:so.accountId||null,contact_id:so.contactId||null,pipeline_deal_id:so.pipelineDealId||null}),
+    from:r=>({id:r.id,soDate:r.so_date||"",dealId:r.deal_id||"",clientId:r.client_id||"",company:r.company,rep:r.rep,quoteNo:r.quote_no||"",poNumber:r.po_number||"",product:r.product,qty:r.qty,unitPrice:r.unit_price,status:r.status,expectedDelivery:r.expected_delivery||"",notes:r.notes,productionOrderNo:r.production_order_no||"",productionStatus:r.production_status||"",projectName:r.project_name||"",projectNumber:r.project_number||"",siteAddress:r.site_address||"",accountId:r.account_id||"",contactId:r.contact_id||"",pipelineDealId:r.pipeline_deal_id||""}) },
   invoices:{table:"crm_invoices", pk:"id",
     to:inv=>({id:inv.id,invoice_date:inv.invoiceDate||null,due_date:inv.dueDate||null,sales_order_id:inv.salesOrderId||null,deal_id:inv.dealId||null,client_id:inv.clientId||null,company:inv.company,rep:inv.rep,amount:num(inv.amount),amount_paid:num(inv.amountPaid),status:inv.status,notes:inv.notes,payment_type:inv.paymentType||null,account_id:inv.accountId||null}),
     from:r=>({id:r.id,invoiceDate:r.invoice_date||"",dueDate:r.due_date||"",salesOrderId:r.sales_order_id||"",dealId:r.deal_id||"",clientId:r.client_id||"",company:r.company,rep:r.rep,amount:r.amount,amountPaid:r.amount_paid,status:r.status,notes:r.notes,paymentType:r.payment_type||"",accountId:r.account_id||""}) },
@@ -3450,6 +3450,8 @@ function renderPipeline(v){
     const clr=STAGE_CLR[stage]||'';
     const cards=stageDls.map(d=>{
       const poolRow=(state.talkToSalesPool||[]).find(t=>t.dealId===d.id && !t.claimedBy);
+      const bq=bestQuoteForDeal(d);
+      const bqAccepted=bq&&bq.status==='Accepted';
       return `<div class="kcard" data-id="${esc(d.id)}"
         onpointerdown="kcardDown(event,'${esc(d.id)}')" style="touch-action:none;user-select:none">
       <div class="kcard-title">${esc(d.title)}</div>
@@ -3458,6 +3460,7 @@ function renderPipeline(v){
       <div class="kcard-foot">
         <span class="kcard-id">${esc(d.id)}</span>
         ${d.priority?`<span class="pill ${PRI_CLR[d.priority]||''} sm">${esc(d.priority)}</span>`:''}
+        ${bq?`<span class="pill sm ${bqAccepted?'green':''}" title="${esc(PKR(quoteTotal(bq.items)))} — ${esc(bq.status)}">📋 ${esc(quoteDisplayId(bq))}${bqAccepted?' ✓ Accepted':''}</span>`:''}
         <button class="btn sm ghost" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();waPipelineDeal('${esc(d.id)}')" style="padding:2px 6px;font-size:11px;line-height:1;background:#25d366;color:#fff;border:none;border-radius:4px">💬 WA</button>
         ${chatBtn(esc(d.id))}
         ${poolRow?`<button class="btn sm ghost" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();claimTalkToSales('${esc(poolRow.id)}','${esc(d.id)}')" style="padding:2px 6px;font-size:11px;line-height:1;background:#f39c12;color:#fff;border:none;border-radius:4px">🙋 Claim</button>`:''}
@@ -3473,6 +3476,9 @@ function renderPipeline(v){
   const total=deals.length;
   v.innerHTML=pagehead('Pipeline',total+' active deal'+(total===1?'':'s')+' · drag to change stage'+(isAdmin()?'':' (yours)'),'New Deal','addPipelineDeal()',true)+
     `<div class="kanban-wrap">${cols}</div>`;
+  // Catches a deal the bot (or anyone) moved to Won while this page wasn't open —
+  // fire-and-forget so it never blocks the render; re-renders itself if it creates anything.
+  sweepWonPipelineDeals();
 }
 // ── Kanban pointer drag-and-drop (mouse + touch) ──────────────────
 let _kDrag=null;
@@ -3513,7 +3519,7 @@ async function _kcardUp(e){
   if(!ds.moved){editPipelineDeal(ds.id);return;}
   if(ds.targetStage){
     const d=state.pipelineDeals.find(x=>x.id===ds.id);
-    if(d&&d.stage!==ds.targetStage){d.stage=ds.targetStage;d.lastContact=today();await upsert('pipelineDeals',d);await maybeConvertToClient(d);toast('Moved → '+ds.targetStage);go('pipeline');}
+    if(d&&d.stage!==ds.targetStage){d.stage=ds.targetStage;d.lastContact=today();await upsert('pipelineDeals',d);await maybeConvertToClient(d);await autoCreateFromPipelineDeal(d);toast('Moved → '+ds.targetStage);go('pipeline');}
   }
 }
 function _kcardCancel(){const ds=_kDrag;_kcardClean(ds);_kDrag=null;}
@@ -3689,6 +3695,54 @@ async function maybeConvertToClient(deal){
   acct.accountType='Client';
   await upsert('accounts',acct);
   toast((acct.name||'Account')+' → Client');
+}
+// Finds the quote most likely tied to a Pipeline deal — matched by account (same convention
+// waQuote() already uses: pipeline deals link to quotes via accountId===quote.clientId, since
+// quotes created against an Account store the account's id in the legacy clientId field).
+function bestQuoteForDeal(d){
+  if(!d||!d.accountId) return null;
+  const qs=(state.quotes||[]).filter(x=>x.clientId===d.accountId);
+  if(!qs.length) return null;
+  const byRecency=(a,b)=>(b.serialNo||0)-(a.serialNo||0)||(b.revision||0)-(a.revision||0)||(b.quoteDate||"").localeCompare(a.quoteDate||"");
+  return qs.filter(x=>x.status==="Sent"||x.status==="Accepted").sort(byRecency)[0] || qs.slice().sort(byRecency)[0];
+}
+// A Pipeline deal reaching "Won – Order Confirmed" (bot-driven or a manual drag) is a real sale:
+// auto-fill Sales Tracker + the fulfillment Sales Order from whatever quote that account actually
+// has, same spirit as autoCreateDealAndOrder() for the old client-stage flow. Guarded by
+// pipelineDealId so re-triggering (sweep re-run, duplicate drag) never creates a second row.
+async function autoCreateFromPipelineDeal(d){
+  if(!d||(d.stage||'')!=='Won – Order Confirmed') return;
+  if((state.deals||[]).find(x=>x.pipelineDealId===d.id)) return;
+  const bestQuote=bestQuoteForDeal(d);
+  let deal;
+  if(bestQuote){
+    deal=dealFromQuote(bestQuote,{remarks:"Auto-created — Pipeline deal "+d.id+" reached Won"});
+  } else {
+    const acct=state.accounts.find(a=>a.id===d.accountId);
+    const rep=d.assignedTo||myRep()||"";
+    deal={closeDate:today(),rep,clientId:d.accountId||"",company:acct?acct.name:d.title,product:d.title||"",qty:0,unitPrice:0,quoteNo:"",poNumber:d.poNumber||"",collectStatus:"Pending",collected:0,commRate:repCommRate(rep),remarks:"Auto-created — Pipeline deal "+d.id+" reached Won (no quote on file yet)"};
+  }
+  deal.accountId=d.accountId||"";
+  deal.pipelineDealId=d.id;
+  if(d.poNumber && !deal.poNumber) deal.poNumber=d.poNumber;
+  deal.id=nextId("DL",deal.rep);
+  state.deals.push(deal); await upsert("deals",deal);
+  if(bestQuote && bestQuote.status!=="Accepted"){ bestQuote.status="Accepted"; await upsert("quotes",bestQuote); }
+
+  let so=(state.salesOrders||[]).find(x=>x.pipelineDealId===d.id);
+  if(!so){
+    so=salesOrderFromDeal(deal);
+    so.pipelineDealId=d.id; so.accountId=d.accountId||""; so.contactId=d.contactId||"";
+    so.id=nextId("SO",so.rep); state.salesOrders.push(so); await upsert("salesOrders",so);
+  }
+  toast('Won deal → Sales Order '+so.id+' created in Sales Tracker');
+}
+// Runs whenever the Pipeline board is opened: catches any deal that reached Won without going
+// through the drag handler below (e.g. the bot advanced it while nobody had this page open).
+async function sweepWonPipelineDeals(){
+  const toProcess=(state.pipelineDeals||[]).filter(d=>!d.archived && d.stage==='Won – Order Confirmed' && !(state.deals||[]).find(x=>x.pipelineDealId===d.id));
+  for(const d of toProcess){ await autoCreateFromPipelineDeal(d); }
+  if(toProcess.length && route==='pipeline') go('pipeline');
 }
 function addPipelineDeal(){
   openModal('New Deal',pdForm(),async()=>{
