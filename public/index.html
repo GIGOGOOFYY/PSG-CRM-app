@@ -626,6 +626,7 @@ const SIDEBAR_NAV = [
     { id:"_crmAccts", icon:"briefcase", label:"Companies",  route:"accounts"  },
     { id:"_crmCts",   icon:"users",     label:"Contacts",   route:"contacts"  },
     { id:"_crmPipe",  icon:"activity",  label:"Pipeline",   route:"pipeline"  },
+    { id:"_crmProj",  icon:"folder",    label:"Projects",   route:"projects"  },
   ]},
 
   { section:"Sales", items:[
@@ -662,6 +663,8 @@ const SIDEBAR_NAV = [
   { section:"Store", items:[
     { id:"_matVend",  icon:"truck",          label:"Vendors", route:"vendors" },
     { id:"_storeInv", icon:"package",        label:"Inventory (Glass/PVB)", route:"storeInventory" },
+    { id:"_vendInv",  icon:"receipt",        label:"Vendor Invoices", route:"vendorInvoices" },
+    { id:"_bom",      icon:"layers",         label:"Bill of Materials", route:"bom" },
   ]},
 
   { section:"System", adminSection:true, items:[
@@ -767,6 +770,8 @@ const PERM_MODULES = [
     { key:"receivings",           label:"Receivings"            },
     { key:"invoices",             label:"Invoices"              },
     { key:"vendors",              label:"Vendors"               },
+    { key:"vendorInvoices",       label:"Vendor Invoices"       },
+    { key:"bom",                  label:"Bill of Materials"     },
   ]},
 ];
 const ROUTE_PERM = {
@@ -777,6 +782,7 @@ const ROUTE_PERM = {
   salesOrders:"salesOrders", purchaseOrders:"purchaseOrders",
   deliveryChallans:"deliveryChallans", materialRequisitions:"materialRequisitions",
   receivings:"receivings", invoices:"invoices", vendors:"vendors",
+  vendorInvoices:"vendorInvoices", storeInventory:"vendors", bom:"bom",
 };
 
 function renderSidebar(){
@@ -884,7 +890,7 @@ function activeRepNames(){ const emp=(state.users||[]).filter(u=>u.role==="emplo
 function vocab(key, extra){ const base = key==="reps" ? activeRepNames() : DD[key]; const s=[...base]; (extra||[]).forEach(v=>{ if(v && !s.includes(v)) s.push(v); }); return s; }
 
 /* ---------- state ---------- */
-let state = { users:[], clients:[], calls:[], meetings:[], deals:[], tasks:[], repTargets:[], quotes:[], salesOrders:[], invoices:[], purchaseOrders:[], products:[], campaigns:[], priceBooks:[], documents:[], deliveryChallans:[], materialRequisitions:[], receivings:[], accounts:[], contacts:[], pipelineDeals:[], productNodes:[], repAssignmentRules:[], talkToSalesPool:[] };
+let state = { users:[], clients:[], calls:[], meetings:[], deals:[], tasks:[], repTargets:[], quotes:[], salesOrders:[], invoices:[], purchaseOrders:[], products:[], campaigns:[], priceBooks:[], documents:[], deliveryChallans:[], materialRequisitions:[], receivings:[], accounts:[], contacts:[], pipelineDeals:[], productNodes:[], repAssignmentRules:[], talkToSalesPool:[], projects:[], vendorInvoices:[] };
 let session = null;          // {username, role, repName}
 const DEFAULT_SB_URL="https://qeyeonucnlsmbeomrrwt.supabase.co";
 const DEFAULT_SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFleWVvbnVjbmxzbWJlb21ycnd0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQxODk0OTksImV4cCI6MjA5OTc2NTQ5OX0.SmacOxNWOR4HLCOQf_gkHYHFTqBWMDNWrpFAKHP5nns";
@@ -993,7 +999,7 @@ function repStats(rep){
    PERSISTENCE
    ====================================================================== */
 function localKey(){ return "psgcrm_data"; }
-function saveLocal(){ localStorage.setItem(localKey(), JSON.stringify({users:state.users,clients:state.clients,calls:state.calls,meetings:state.meetings,deals:state.deals,repTargets:state.repTargets,quotes:state.quotes,products:state.products,campaigns:state.campaigns,priceBooks:state.priceBooks,pipelineDeals:state.pipelineDeals,accounts:state.accounts,contacts:state.contacts})); }
+function saveLocal(){ localStorage.setItem(localKey(), JSON.stringify({users:state.users,clients:state.clients,calls:state.calls,meetings:state.meetings,deals:state.deals,repTargets:state.repTargets,quotes:state.quotes,products:state.products,campaigns:state.campaigns,priceBooks:state.priceBooks,pipelineDeals:state.pipelineDeals,accounts:state.accounts,contacts:state.contacts,projects:state.projects})); }
 function savePendingWrites(){ try{localStorage.setItem('psgcrm_pending',JSON.stringify(pendingWrites));}catch(e){} }
 function loadPendingWrites(){ try{const d=JSON.parse(localStorage.getItem('psgcrm_pending')||'[]');if(Array.isArray(d))pendingWrites=d;}catch(e){} }
 function loadLocalOrSeed(){
@@ -1019,11 +1025,11 @@ const MAP = {
     to:m=>({id:m.id,meet_date:m.date||null,meet_time:m.time,rep:m.rep,client_id:m.clientId,company:m.company,contact:m.contact,type:m.type,location:m.location,agenda:m.agenda,status:m.status,follow_notes:m.followNotes,source_call:m.sourceCall}),
     from:r=>({id:r.id,date:r.meet_date||"",time:r.meet_time,rep:r.rep,clientId:r.client_id,company:r.company,contact:r.contact,type:r.type,location:r.location,agenda:r.agenda,status:r.status,followNotes:r.follow_notes,sourceCall:r.source_call}) },
   deals:{table:"crm_commissions", pk:"id",
-    to:d=>({id:d.id,close_date:d.closeDate||null,rep:d.rep,client_id:d.clientId,company:d.company,product:d.product,qty:num(d.qty),unit_price:num(d.unitPrice),deal_value:dealValue(d),collect_status:d.collectStatus,collected:dealCollected(d),comm_rate:num(d.commRate),comm_earned:dealCommission(d),remarks:d.remarks,quote_no:d.quoteNo||null,po_number:d.poNumber||null,account_id:d.accountId||null,pipeline_deal_id:d.pipelineDealId||null}),
-    from:r=>({id:r.id,closeDate:r.close_date||"",rep:r.rep,clientId:r.client_id,company:r.company,product:r.product,qty:r.qty,unitPrice:r.unit_price,collectStatus:r.collect_status,collected:r.collected||0,commRate:r.comm_rate,remarks:r.remarks,quoteNo:r.quote_no||"",poNumber:r.po_number||"",accountId:r.account_id||"",pipelineDealId:r.pipeline_deal_id||""}) },
+    to:d=>({id:d.id,close_date:d.closeDate||null,rep:d.rep,client_id:d.clientId,company:d.company,product:d.product,qty:num(d.qty),unit_price:num(d.unitPrice),deal_value:dealValue(d),collect_status:d.collectStatus,collected:dealCollected(d),comm_rate:num(d.commRate),comm_earned:dealCommission(d),remarks:d.remarks,quote_no:d.quoteNo||null,po_number:d.poNumber||null,account_id:d.accountId||null,pipeline_deal_id:d.pipelineDealId||null,project_id:d.projectId||null}),
+    from:r=>({id:r.id,closeDate:r.close_date||"",rep:r.rep,clientId:r.client_id,company:r.company,product:r.product,qty:r.qty,unitPrice:r.unit_price,collectStatus:r.collect_status,collected:r.collected||0,commRate:r.comm_rate,remarks:r.remarks,quoteNo:r.quote_no||"",poNumber:r.po_number||"",accountId:r.account_id||"",pipelineDealId:r.pipeline_deal_id||"",projectId:r.project_id||""}) },
   quotes:{table:"crm_quotes", pk:"id",
-    to:q=>({id:q.id,quote_date:q.quoteDate||null,valid_until:q.validUntil||null,rep:q.rep,client_id:q.clientId,company:q.company,contact:q.contact,status:q.status,category:q.category||null,customer_code:q.customerCode||null,ntn:q.ntn||null,gst:q.gst||null,items:q.items||[],notes:q.notes,pdf_data:q.pdfData||null,serial_no:q.serialNo||null,contact_gender:q.contactGender||null,account_id:q.accountId||null,contact_id:q.contactId||null,deal_id:q.dealId||null,revision:q.revision||0}),
-    from:r=>({id:r.id,quoteDate:r.quote_date||"",validUntil:r.valid_until||"",rep:r.rep,clientId:r.client_id,company:r.company,contact:r.contact,status:r.status,category:r.category||"",customerCode:r.customer_code||"",ntn:r.ntn||"",gst:r.gst||"",items:r.items||[],notes:r.notes,pdfData:r.pdf_data||"",serialNo:r.serial_no||null,contactGender:r.contact_gender||"",accountId:r.account_id||"",contactId:r.contact_id||"",dealId:r.deal_id||"",revision:r.revision||0}) },
+    to:q=>({id:q.id,quote_date:q.quoteDate||null,valid_until:q.validUntil||null,rep:q.rep,client_id:q.clientId,company:q.company,contact:q.contact,status:q.status,category:q.category||null,customer_code:q.customerCode||null,ntn:q.ntn||null,gst:q.gst||null,items:q.items||[],notes:q.notes,pdf_data:q.pdfData||null,serial_no:q.serialNo||null,contact_gender:q.contactGender||null,account_id:q.accountId||null,contact_id:q.contactId||null,deal_id:q.dealId||null,revision:q.revision||0,project_id:q.projectId||null}),
+    from:r=>({id:r.id,quoteDate:r.quote_date||"",validUntil:r.valid_until||"",rep:r.rep,clientId:r.client_id,company:r.company,contact:r.contact,status:r.status,category:r.category||"",customerCode:r.customer_code||"",ntn:r.ntn||"",gst:r.gst||"",items:r.items||[],notes:r.notes,pdfData:r.pdf_data||"",serialNo:r.serial_no||null,contactGender:r.contact_gender||"",accountId:r.account_id||"",contactId:r.contact_id||"",dealId:r.deal_id||"",revision:r.revision||0,projectId:r.project_id||""}) },
   tasks:{table:"crm_tasks", pk:"id",
     to:t=>({id:t.id,title:t.title,due_date:t.dueDate||null,assigned_to:t.assignedTo,assigned_by:t.assignedBy,priority:t.priority,status:t.status,client_id:t.clientId||null,company:t.company||"",notes:t.notes,approved:!!t.approved,created_by_admin:!!t.createdByAdmin}),
     from:r=>({id:r.id,title:r.title,dueDate:r.due_date||"",assignedTo:r.assigned_to,assignedBy:r.assigned_by,priority:r.priority,status:r.status,clientId:r.client_id||"",company:r.company||"",notes:r.notes,approved:!!r.approved,createdByAdmin:!!r.created_by_admin}) },
@@ -1034,23 +1040,23 @@ const MAP = {
     to:t=>({rep:t.rep,target:num(t.target),comm_rate:num(t.commRate)}),
     from:r=>({rep:r.rep,target:r.target,commRate:r.comm_rate}) },
   salesOrders:{table:"crm_sales_orders", pk:"id",
-    to:so=>({id:so.id,so_date:so.soDate||null,deal_id:so.dealId||null,client_id:so.clientId||null,company:so.company,rep:so.rep,quote_no:so.quoteNo,po_number:so.poNumber,product:so.product,qty:num(so.qty),unit_price:num(so.unitPrice),order_value:soValue(so),status:so.status,expected_delivery:so.expectedDelivery||null,notes:so.notes,production_order_no:so.productionOrderNo||null,production_status:so.productionStatus||null,project_name:so.projectName||null,project_number:so.projectNumber||null,site_address:so.siteAddress||null,account_id:so.accountId||null,contact_id:so.contactId||null,pipeline_deal_id:so.pipelineDealId||null}),
-    from:r=>({id:r.id,soDate:r.so_date||"",dealId:r.deal_id||"",clientId:r.client_id||"",company:r.company,rep:r.rep,quoteNo:r.quote_no||"",poNumber:r.po_number||"",product:r.product,qty:r.qty,unitPrice:r.unit_price,status:r.status,expectedDelivery:r.expected_delivery||"",notes:r.notes,productionOrderNo:r.production_order_no||"",productionStatus:r.production_status||"",projectName:r.project_name||"",projectNumber:r.project_number||"",siteAddress:r.site_address||"",accountId:r.account_id||"",contactId:r.contact_id||"",pipelineDealId:r.pipeline_deal_id||""}) },
+    to:so=>({id:so.id,so_date:so.soDate||null,deal_id:so.dealId||null,client_id:so.clientId||null,company:so.company,rep:so.rep,quote_no:so.quoteNo,po_number:so.poNumber,product:so.product,qty:num(so.qty),unit_price:num(so.unitPrice),order_value:soValue(so),status:so.status,expected_delivery:so.expectedDelivery||null,notes:so.notes,production_order_no:so.productionOrderNo||null,production_status:so.productionStatus||null,project_name:so.projectName||null,project_number:so.projectNumber||null,site_address:so.siteAddress||null,account_id:so.accountId||null,contact_id:so.contactId||null,pipeline_deal_id:so.pipelineDealId||null,project_id:so.projectId||null}),
+    from:r=>({id:r.id,soDate:r.so_date||"",dealId:r.deal_id||"",clientId:r.client_id||"",company:r.company,rep:r.rep,quoteNo:r.quote_no||"",poNumber:r.po_number||"",product:r.product,qty:r.qty,unitPrice:r.unit_price,status:r.status,expectedDelivery:r.expected_delivery||"",notes:r.notes,productionOrderNo:r.production_order_no||"",productionStatus:r.production_status||"",projectName:r.project_name||"",projectNumber:r.project_number||"",siteAddress:r.site_address||"",accountId:r.account_id||"",contactId:r.contact_id||"",pipelineDealId:r.pipeline_deal_id||"",projectId:r.project_id||""}) },
   invoices:{table:"crm_invoices", pk:"id",
-    to:inv=>({id:inv.id,invoice_date:inv.invoiceDate||null,due_date:inv.dueDate||null,sales_order_id:inv.salesOrderId||null,deal_id:inv.dealId||null,client_id:inv.clientId||null,company:inv.company,rep:inv.rep,amount:num(inv.amount),amount_paid:num(inv.amountPaid),status:inv.status,notes:inv.notes,payment_type:inv.paymentType||null,account_id:inv.accountId||null}),
-    from:r=>({id:r.id,invoiceDate:r.invoice_date||"",dueDate:r.due_date||"",salesOrderId:r.sales_order_id||"",dealId:r.deal_id||"",clientId:r.client_id||"",company:r.company,rep:r.rep,amount:r.amount,amountPaid:r.amount_paid,status:r.status,notes:r.notes,paymentType:r.payment_type||"",accountId:r.account_id||""}) },
+    to:inv=>({id:inv.id,invoice_date:inv.invoiceDate||null,due_date:inv.dueDate||null,sales_order_id:inv.salesOrderId||null,deal_id:inv.dealId||null,client_id:inv.clientId||null,company:inv.company,rep:inv.rep,amount:num(inv.amount),amount_paid:num(inv.amountPaid),status:inv.status,notes:inv.notes,payment_type:inv.paymentType||null,account_id:inv.accountId||null,project_id:inv.projectId||null}),
+    from:r=>({id:r.id,invoiceDate:r.invoice_date||"",dueDate:r.due_date||"",salesOrderId:r.sales_order_id||"",dealId:r.deal_id||"",clientId:r.client_id||"",company:r.company,rep:r.rep,amount:r.amount,amountPaid:r.amount_paid,status:r.status,notes:r.notes,paymentType:r.payment_type||"",accountId:r.account_id||"",projectId:r.project_id||""}) },
   purchaseOrders:{table:"crm_purchase_orders", pk:"id",
-    to:po=>({id:po.id,po_date:po.poDate||null,vendor:po.vendor,item:po.item,qty:num(po.qty),unit_cost:num(po.unitCost),total_cost:poTotalCost(po),status:po.status,expected_delivery:po.expectedDelivery||null,linked_sales_order_id:po.linkedSalesOrderId||null,mr_id:po.mrId||null,notes:po.notes}),
-    from:r=>({id:r.id,poDate:r.po_date||"",vendor:r.vendor,item:r.item,qty:r.qty,unitCost:r.unit_cost,status:r.status,expectedDelivery:r.expected_delivery||"",linkedSalesOrderId:r.linked_sales_order_id||"",mrId:r.mr_id||"",notes:r.notes}) },
+    to:po=>({id:po.id,po_date:po.poDate||null,vendor:po.vendor,item:po.item,qty:num(po.qty),unit_cost:num(po.unitCost),total_cost:poTotalCost(po),status:po.status,expected_delivery:po.expectedDelivery||null,linked_sales_order_id:po.linkedSalesOrderId||null,mr_id:po.mrId||null,notes:po.notes,project_id:po.projectId||null}),
+    from:r=>({id:r.id,poDate:r.po_date||"",vendor:r.vendor,item:r.item,qty:r.qty,unitCost:r.unit_cost,status:r.status,expectedDelivery:r.expected_delivery||"",linkedSalesOrderId:r.linked_sales_order_id||"",mrId:r.mr_id||"",notes:r.notes,projectId:r.project_id||""}) },
   deliveryChallans:{table:"crm_delivery_challans", pk:"id",
-    to:dc=>({id:dc.id,so_id:dc.soId||null,challan_no:dc.challanNo||null,challan_date:dc.challanDate||null,items:dc.items||null,delivered_by:dc.deliveredBy||null,received_by:dc.receivedBy||null,status:dc.status||"Draft",notes:dc.notes||null}),
-    from:r=>({id:r.id,soId:r.so_id||"",challanNo:r.challan_no||"",challanDate:r.challan_date||"",items:r.items||"",deliveredBy:r.delivered_by||"",receivedBy:r.received_by||"",status:r.status||"Draft",notes:r.notes||""}) },
+    to:dc=>({id:dc.id,so_id:dc.soId||null,challan_no:dc.challanNo||null,challan_date:dc.challanDate||null,items:dc.items||null,delivered_by:dc.deliveredBy||null,received_by:dc.receivedBy||null,status:dc.status||"Draft",notes:dc.notes||null,project_id:dc.projectId||null}),
+    from:r=>({id:r.id,soId:r.so_id||"",challanNo:r.challan_no||"",challanDate:r.challan_date||"",items:r.items||"",deliveredBy:r.delivered_by||"",receivedBy:r.received_by||"",status:r.status||"Draft",notes:r.notes||"",projectId:r.project_id||""}) },
   materialRequisitions:{table:"crm_material_requisitions", pk:"id",
-    to:mr=>({id:mr.id,so_id:mr.soId||null,mr_no:mr.mrNo||null,mr_date:mr.mrDate||null,items:mr.items||null,requested_by:mr.requestedBy||null,status:mr.status||"Pending",notes:mr.notes||null}),
-    from:r=>({id:r.id,soId:r.so_id||"",mrNo:r.mr_no||"",mrDate:r.mr_date||"",items:r.items||"",requestedBy:r.requested_by||"",status:r.status||"Pending",notes:r.notes||""}) },
+    to:mr=>({id:mr.id,so_id:mr.soId||null,mr_no:mr.mrNo||null,mr_date:mr.mrDate||null,items:mr.items||null,requested_by:mr.requestedBy||null,status:mr.status||"Pending",notes:mr.notes||null,project_id:mr.projectId||null}),
+    from:r=>({id:r.id,soId:r.so_id||"",mrNo:r.mr_no||"",mrDate:r.mr_date||"",items:r.items||"",requestedBy:r.requested_by||"",status:r.status||"Pending",notes:r.notes||"",projectId:r.project_id||""}) },
   receivings:{table:"crm_receivings", pk:"id",
-    to:rv=>({id:rv.id,po_id:rv.poId||null,mr_id:rv.mrId||null,receive_date:rv.receiveDate||null,items_received:rv.itemsReceived||null,received_by:rv.receivedBy||null,notes:rv.notes||null}),
-    from:r=>({id:r.id,poId:r.po_id||"",mrId:r.mr_id||"",receiveDate:r.receive_date||"",itemsReceived:r.items_received||"",receivedBy:r.received_by||"",notes:r.notes||""}) },
+    to:rv=>({id:rv.id,po_id:rv.poId||null,mr_id:rv.mrId||null,receive_date:rv.receiveDate||null,items_received:rv.itemsReceived||null,received_by:rv.receivedBy||null,notes:rv.notes||null,project_id:rv.projectId||null}),
+    from:r=>({id:r.id,poId:r.po_id||"",mrId:r.mr_id||"",receiveDate:r.receive_date||"",itemsReceived:r.items_received||"",receivedBy:r.received_by||"",notes:r.notes||"",projectId:r.project_id||""}) },
   products:{table:"crm_products", pk:"id",
     to:p=>({id:p.id,name:p.name,sku:p.sku||null,category:p.category||null,unit:p.unit||null,unit_price:num(p.unitPrice),description:p.description||null,active:p.active!==false}),
     from:r=>({id:r.id,name:r.name,sku:r.sku||"",category:r.category||"",unit:r.unit||"",unitPrice:r.unit_price,description:r.description||"",active:r.active!==false}) },
@@ -1071,8 +1077,8 @@ const MAP = {
     to:c=>({id:c.id,account_id:c.accountId||null,name:c.name,phone:c.phone||null,email:c.email||null,designation:c.designation||null,whatsapp_verified:!!c.whatsappVerified,city:c.city||null,area:c.area||null,notes:c.notes||null,active:c.active!==false}),
     from:r=>({id:r.id,accountId:r.account_id||"",name:r.name,phone:r.phone||"",email:r.email||"",designation:r.designation||"",whatsappVerified:!!r.whatsapp_verified,city:r.city||"",area:r.area||"",notes:r.notes||"",active:r.active!==false}) },
   pipelineDeals:{table:"crm_deals", pk:"id",
-    to:d=>({id:d.id,account_id:d.accountId||null,contact_id:d.contactId||null,stage:d.stage||"New Lead",title:d.title||null,assigned_to:d.assignedTo||null,lead_source:d.leadSource||null,priority:d.priority||"Medium",revenue_potential:d.revenuePotential||null,first_contact:d.firstContact||null,last_contact:d.lastContact||null,status:d.status||"active",archived:!!d.archived,notes:d.notes||null,po_number:d.poNumber||null,po_generated_at:d.poGeneratedAt||null,product_path:d.productPath||null,updated_at:new Date().toISOString()}),
-    from:r=>({id:r.id,accountId:r.account_id||"",contactId:r.contact_id||"",stage:r.stage||"New Lead",title:r.title||"",assignedTo:r.assigned_to||"",leadSource:r.lead_source||"",priority:r.priority||"Medium",revenuePotential:r.revenue_potential||null,firstContact:r.first_contact||"",lastContact:r.last_contact||"",status:r.status||"active",archived:!!r.archived,notes:r.notes||"",poNumber:r.po_number||"",poGeneratedAt:r.po_generated_at||"",productPath:r.product_path||"",createdAt:r.created_at||""}) },
+    to:d=>({id:d.id,account_id:d.accountId||null,contact_id:d.contactId||null,stage:d.stage||"New Lead",title:d.title||null,assigned_to:d.assignedTo||null,lead_source:d.leadSource||null,priority:d.priority||"Medium",revenue_potential:d.revenuePotential||null,first_contact:d.firstContact||null,last_contact:d.lastContact||null,status:d.status||"active",archived:!!d.archived,notes:d.notes||null,po_number:d.poNumber||null,po_generated_at:d.poGeneratedAt||null,product_path:d.productPath||null,project_id:d.projectId||null,updated_at:new Date().toISOString()}),
+    from:r=>({id:r.id,accountId:r.account_id||"",contactId:r.contact_id||"",stage:r.stage||"New Lead",title:r.title||"",assignedTo:r.assigned_to||"",leadSource:r.lead_source||"",priority:r.priority||"Medium",revenuePotential:r.revenue_potential||null,firstContact:r.first_contact||"",lastContact:r.last_contact||"",status:r.status||"active",archived:!!r.archived,notes:r.notes||"",poNumber:r.po_number||"",poGeneratedAt:r.po_generated_at||"",productPath:r.product_path||"",projectId:r.project_id||"",createdAt:r.created_at||""}) },
   /* ── Phase 12: bot product-category tree + admin-editable rep routing + Talk-to-Sales claim queue ── */
   productNodes:{table:"product_nodes", pk:"id",
     to:n=>({id:n.id,parent_id:n.parentId||null,label:n.label,depth:num(n.depth)||0,is_leaf:!!n.isLeaf,sort_order:num(n.sortOrder)||0,active:n.active!==false,rep_category:n.repCategory||null}),
@@ -1088,7 +1094,13 @@ const MAP = {
     from:r=>({id:r.id,name:r.name,product:r.product||"",notes:r.notes||"",tiers:r.tiers||[],active:r.active!==false}) },
   configurations:{table:"crm_configurations", pk:"id",
     to:c=>({id:c.id,name:c.name,workcenters:c.workcenters||{},sort_order:c.sortOrder||0,active:c.active!==false}),
-    from:r=>({id:r.id,name:r.name,workcenters:r.workcenters||{},sortOrder:r.sort_order||0,active:r.active!==false}) }
+    from:r=>({id:r.id,name:r.name,workcenters:r.workcenters||{},sortOrder:r.sort_order||0,active:r.active!==false}) },
+  projects:{table:"crm_projects", pk:"id",
+    to:p=>({id:p.id,account_id:p.accountId||null,name:p.name||null,origin_deal_id:p.originDealId||null,status:p.status||"Active",notes:p.notes||null}),
+    from:r=>({id:r.id,accountId:r.account_id||"",name:r.name||"",originDealId:r.origin_deal_id||"",status:r.status||"Active",notes:r.notes||"",createdAt:r.created_at||""}) },
+  vendorInvoices:{table:"crm_vendor_invoices", pk:"id",
+    to:vi=>({id:vi.id,po_id:vi.poId||null,vendor:vi.vendor,invoice_no:vi.invoiceNo||null,invoice_date:vi.invoiceDate||null,due_date:vi.dueDate||null,amount:num(vi.amount),amount_paid:num(vi.amountPaid),status:vi.status||"Unpaid",payment_method:vi.paymentMethod||null,project_id:vi.projectId||null,notes:vi.notes||null}),
+    from:r=>({id:r.id,poId:r.po_id||"",vendor:r.vendor||"",invoiceNo:r.invoice_no||"",invoiceDate:r.invoice_date||"",dueDate:r.due_date||"",amount:r.amount||0,amountPaid:r.amount_paid||0,status:r.status||"Unpaid",paymentMethod:r.payment_method||"",projectId:r.project_id||"",notes:r.notes||""}) }
 };
 
 function initSupabase(){
@@ -1100,7 +1112,7 @@ function initSupabase(){
 async function cloudPull(){
   if(!sb) return false;
   let anyOK=false;
-  for(const k of ["users","clients","calls","meetings","deals","tasks","repTargets","quotes","salesOrders","invoices","purchaseOrders","products","campaigns","priceBooks","documents","deliveryChallans","materialRequisitions","receivings","accounts","contacts","pipelineDeals","scales","configurations","productNodes","repAssignmentRules","talkToSalesPool"]){
+  for(const k of ["users","clients","calls","meetings","deals","tasks","repTargets","quotes","salesOrders","invoices","purchaseOrders","products","campaigns","priceBooks","documents","deliveryChallans","materialRequisitions","receivings","accounts","contacts","pipelineDeals","scales","configurations","productNodes","repAssignmentRules","talkToSalesPool","projects","vendorInvoices"]){
     try{
       const PAGE=1000; let all=[]; let offset=0;
       while(true){
@@ -1645,6 +1657,160 @@ function delMaterialVendor(id){
 }
 
 /* ======================================================================
+   PHASE 14 (Client→Project): PROJECTS PAGE
+   One client (Account ID) has many Projects (PRJ-NNNN). Each project
+   scopes its own quote→approval→payment→SO→delivery chain and its own
+   MR→PO→GRN→invoice chain.
+   ====================================================================== */
+function renderProjects(v){
+  const rows=(state.projects||[]).filter(matchSearch);
+  const acctMap=Object.fromEntries((state.accounts||[]).map(a=>[a.id,a.name]));
+  const body=rows.length?rows.map(p=>{
+    const qCount=(state.quotes||[]).filter(q=>q.projectId===p.id).length;
+    const soCount=(state.salesOrders||[]).filter(s=>s.projectId===p.id).length;
+    return `<tr>
+      <td><a href="#" onclick="go('viewProject',{id:'${esc(p.id)}'});return false"><b>${esc(p.id)}</b></a></td>
+      <td>${esc(p.name||'—')}</td>
+      <td>${esc(acctMap[p.accountId]||p.accountId||'—')}</td>
+      <td>${esc(p.status)}</td>
+      <td>${qCount}</td><td>${soCount}</td>
+      <td>${esc(p.createdAt?p.createdAt.slice(0,10):'')}</td>
+      <td><div class="rowbtns">
+        <button class="btn sm ghost" onclick="editProject('${esc(p.id)}')">Edit</button>
+        ${isAdmin()?`<button class="btn sm ghost danger" onclick="delProject('${esc(p.id)}')">✕</button>`:''}
+      </div></td>
+    </tr>`;
+  }).join(''):`<tr><td colspan="8"><div class="empty">No projects yet — click "＋ New Project" to create one.</div></td></tr>`;
+  v.innerHTML=pagehead('Projects','Projects — '+rows.length+' total. One client → many projects, each with its own quote/SO/MR chain.','New Project','addProject()',true)+
+    `<div class="card tablewrap"><table><thead><tr><th>ID</th><th>Name</th><th>Account</th><th>Status</th><th>Quotes</th><th>SOs</th><th>Created</th><th></th></tr></thead><tbody>${body}</tbody></table></div>`;
+}
+function projectForm(p){
+  p=p||{};
+  const statusOpts=['Active','On Hold','Completed','Cancelled'];
+  const dealOpts=(state.pipelineDeals||[]).filter(d=>!p.accountId||d.accountId===p.accountId).map(d=>`<option value="${esc(d.id)}" ${d.id===p.originDealId?'selected':''}>${esc(d.id)} — ${esc(d.title||d.stage)}</option>`).join('');
+  return `<div class="formgrid">
+    <div class="field full"><label>Project Name</label><input id="pj_name" value="${esc(p.name||'')}" placeholder="e.g. DHA Phase 6 Villa #42"></div>
+    <div class="field full"><label>Account (Company)</label><select id="pj_accountId" onchange="projFilterDeals()">${clientOptions(p.accountId)}</select></div>
+    <div class="field full"><label>Origin Deal (optional)</label><select id="pj_originDeal"><option value="">— None —</option>${dealOpts}</select></div>
+    <div class="field"><label>Status</label><select id="pj_status">${statusOpts.map(s=>`<option ${s===p.status?'selected':''}>${s}</option>`).join('')}</select></div>
+    <div class="field full"><label>Notes</label><textarea id="pj_notes">${esc(p.notes||'')}</textarea></div>
+  </div>`;
+}
+function projFilterDeals(){
+  const acctId=document.getElementById('pj_accountId').value;
+  const sel=document.getElementById('pj_originDeal'); if(!sel) return;
+  const prev=sel.value;
+  const deals=(state.pipelineDeals||[]).filter(d=>!acctId||d.accountId===acctId);
+  sel.innerHTML='<option value="">— None —</option>'+deals.map(d=>`<option value="${esc(d.id)}" ${d.id===prev?'selected':''}>${esc(d.id)} — ${esc(d.title||d.stage)}</option>`).join('');
+}
+function readProjectForm(existing){
+  return Object.assign({},existing||{},{
+    name:document.getElementById('pj_name').value,
+    accountId:document.getElementById('pj_accountId').value,
+    originDealId:document.getElementById('pj_originDeal').value||null,
+    status:document.getElementById('pj_status').value||'Active',
+    notes:document.getElementById('pj_notes').value
+  });
+}
+function addProject(){
+  openModal('New Project',projectForm({}),async()=>{
+    const p=readProjectForm();
+    if(!p.name){toast('Enter a project name');return false;}
+    if(!p.accountId){toast('Select an account');return false;}
+    if(!sb){toast('Not connected to cloud');return false;}
+    const {data:idRow,error:idErr}=await sb.rpc('crm_next_project_id');
+    if(idErr){toast('Error generating project ID: '+idErr.message);return false;}
+    p.id=idRow;
+    const row=MAP.projects.to(p);
+    const {error}=await sb.from('crm_projects').insert(row);
+    if(error){toast('Error: '+error.message);return false;}
+    state.projects.push(MAP.projects.from(row));
+    closeModal(); toast('Project '+p.id+' created'); go('projects');
+  });
+}
+async function editProject(id){
+  const p=(state.projects||[]).find(x=>x.id===id); if(!p) return;
+  openModal('Edit Project — '+id,projectForm(p),async()=>{
+    const upd=readProjectForm(p);
+    if(!upd.name){toast('Enter a project name');return false;}
+    if(!sb){toast('Not connected to cloud');return false;}
+    const row=MAP.projects.to(upd);
+    const {error}=await sb.from('crm_projects').update(row).eq('id',id);
+    if(error){toast('Error: '+error.message);return false;}
+    Object.assign(p,MAP.projects.from(Object.assign({},row,{created_at:p.createdAt})));
+    closeModal(); toast('Project updated'); go('projects');
+  });
+}
+function delProject(id){
+  if(!isAdmin()) return;
+  confirmDel('Delete project '+id+'? This will NOT delete associated quotes/SOs.',async()=>{
+    if(!sb){toast('Not connected');return;}
+    const {error}=await sb.from('crm_projects').delete().eq('id',id);
+    if(error){toast('Error: '+error.message);return;}
+    state.projects=state.projects.filter(x=>x.id!==id);
+    toast('Deleted'); go('projects');
+  });
+}
+function renderProjectView(v){
+  const id=(window._routeParams||{}).id;
+  const p=(state.projects||[]).find(x=>x.id===id);
+  if(!p){v.innerHTML='<div class="empty">Project not found.</div>';return;}
+  const acctMap=Object.fromEntries((state.accounts||[]).map(a=>[a.id,a.name]));
+  const qs=(state.quotes||[]).filter(q=>q.projectId===p.id);
+  const sos=(state.salesOrders||[]).filter(s=>s.projectId===p.id);
+  const invs=(state.invoices||[]).filter(i=>i.projectId===p.id);
+  const pos=(state.purchaseOrders||[]).filter(o=>o.projectId===p.id);
+  const mrs=(state.materialRequisitions||[]).filter(m=>m.projectId===p.id);
+  const dcs=(state.deliveryChallans||[]).filter(d=>d.projectId===p.id);
+  const deal=p.originDealId?(state.pipelineDeals||[]).find(d=>d.id===p.originDealId):null;
+  const statusClr={'Active':'green','Completed':'blue','On Hold':'amber','Cancelled':'red'}[p.status]||'gray';
+  v.innerHTML=`
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px;flex-wrap:wrap">
+      <button class="btn sm ghost" onclick="go('projects')">← Projects</button>
+      <h2 style="margin:0">${esc(p.id)} — ${esc(p.name)}</h2>
+      <span class="pill ${statusClr}">${esc(p.status)}</span>
+      <button class="btn sm ghost" onclick="editProject('${esc(p.id)}')" style="margin-left:auto">Edit</button>
+    </div>
+    <div class="card" style="padding:18px;margin-bottom:18px">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px">
+        <div><span class="help">Account</span><br><b>${esc(acctMap[p.accountId]||p.accountId||'—')}</b></div>
+        <div><span class="help">Origin Deal</span><br>${deal?`<b>${esc(deal.id)}</b> — ${esc(deal.title||deal.stage)}`:'—'}</div>
+        <div><span class="help">Created</span><br>${esc(p.createdAt?p.createdAt.slice(0,10):'—')}</div>
+        ${p.notes?`<div style="grid-column:1/-1"><span class="help">Notes</span><br>${esc(p.notes)}</div>`:''}
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:18px">
+      <div class="card" style="padding:14px;text-align:center"><div style="font-size:22px;font-weight:700">${qs.length}</div><div class="help">Quotes</div></div>
+      <div class="card" style="padding:14px;text-align:center"><div style="font-size:22px;font-weight:700">${sos.length}</div><div class="help">Sales Orders</div></div>
+      <div class="card" style="padding:14px;text-align:center"><div style="font-size:22px;font-weight:700">${invs.length}</div><div class="help">Invoices</div></div>
+      <div class="card" style="padding:14px;text-align:center"><div style="font-size:22px;font-weight:700">${pos.length}</div><div class="help">Purchase Orders</div></div>
+      <div class="card" style="padding:14px;text-align:center"><div style="font-size:22px;font-weight:700">${mrs.length}</div><div class="help">Material Reqs</div></div>
+      <div class="card" style="padding:14px;text-align:center"><div style="font-size:22px;font-weight:700">${dcs.length}</div><div class="help">Delivery Challans</div></div>
+    </div>
+    ${qs.length?`<div class="card" style="margin-bottom:14px"><h3 style="padding:14px 14px 0">Quotes</h3><div class="tablewrap"><table><thead><tr><th>Quote #</th><th>Date</th><th>Status</th><th>Value</th></tr></thead><tbody>
+      ${qs.map(q=>`<tr><td><a href="#" onclick="go('quoteView',{id:'${esc(q.id)}'});return false">${esc(quoteDisplayId(q))}</a></td><td>${esc(q.quoteDate||'')}</td><td>${esc(q.status||'')}</td><td class="num">${PKR(quoteTotal(q.items))}</td></tr>`).join('')}
+    </tbody></table></div></div>`:''}
+    ${sos.length?`<div class="card" style="margin-bottom:14px"><h3 style="padding:14px 14px 0">Sales Orders</h3><div class="tablewrap"><table><thead><tr><th>SO #</th><th>Date</th><th>Product</th><th>Status</th><th>Value</th></tr></thead><tbody>
+      ${sos.map(s=>`<tr><td>${esc(s.id)}</td><td>${esc(s.soDate||'')}</td><td>${esc(s.product||'')}</td><td>${esc(s.status||'')}</td><td class="num">${PKR(soValue(s))}</td></tr>`).join('')}
+    </tbody></table></div></div>`:''}
+    ${invs.length?`<div class="card" style="margin-bottom:14px"><h3 style="padding:14px 14px 0">Invoices</h3><div class="tablewrap"><table><thead><tr><th>Invoice #</th><th>Date</th><th>Status</th><th>Amount</th></tr></thead><tbody>
+      ${invs.map(i=>`<tr><td>${esc(i.id)}</td><td>${esc(i.invoiceDate||'')}</td><td>${esc(i.status||'')}</td><td class="num">${PKR(num(i.amount))}</td></tr>`).join('')}
+    </tbody></table></div></div>`:''}
+  `;
+}
+function projectPickerHtml(selectedId,accountId,elId){
+  elId=elId||'pj_projectId';
+  const projs=(state.projects||[]).filter(p=>p.status==='Active'&&(!accountId||p.accountId===accountId));
+  return `<select id="${elId}"><option value="">— No project —</option>${projs.map(p=>`<option value="${esc(p.id)}" ${p.id===selectedId?'selected':''}>${esc(p.id)} — ${esc(p.name)}</option>`).join('')}</select>`;
+}
+function refreshProjectPicker(elId,accountId,keepVal){
+  const sel=document.getElementById(elId); if(!sel) return;
+  const prev=keepVal||sel.value;
+  const projs=(state.projects||[]).filter(p=>p.status==='Active'&&(!accountId||p.accountId===accountId));
+  sel.innerHTML='<option value="">— No project —</option>'+projs.map(p=>`<option value="${esc(p.id)}" ${p.id===prev?'selected':''}>${esc(p.id)} — ${esc(p.name)}</option>`).join('');
+}
+
+/* ======================================================================
    PHASE 10 (Store/Procurement): INVENTORY — read view over inventory_glass/
    inventory_pvb/inventory_consumables with inline quantity correction
    (per the "import real numbers now, correct later" decision). No BOM/
@@ -1721,6 +1887,313 @@ async function saveInvQty(table,id,col){
   const {error}=await sb.from(table).update({[col]:val}).eq('id',id);
   if(error){ toast('Error: '+error.message); return; }
   toast('Updated');
+}
+
+/* ======================================================================
+   VENDOR INVOICES — bills received from vendors, optionally linked to a PO
+   and a project. Payment tracking with status progression.
+   ====================================================================== */
+function viBalance(vi){ return num(vi.amount)-num(vi.amountPaid); }
+function viStatusPill(s){ const c={Paid:"green",Partial:"amber",Unpaid:"gray",Overdue:"red",Cancelled:"red"}[s]||"gray"; return `<span class="pill ${c}">${esc(s||"")}</span>`; }
+function renderVendorInvoices(v){
+  const rows=state.vendorInvoices.filter(matchSearch);
+  const body=rows.length?rows.map(vi=>`<tr>
+    <td>${esc(vi.id)}</td><td>${esc(vi.invoiceNo||"—")}</td><td>${esc(vi.invoiceDate||"")}</td>
+    <td><b>${esc(vi.vendor)}</b></td>
+    <td>${esc(vi.poId||"—")}</td><td>${esc(vi.projectId||"—")}</td>
+    <td class="num">${PKR(vi.amount)}</td><td class="num">${PKR(vi.amountPaid)}</td><td class="num">${PKR(viBalance(vi))}</td>
+    <td>${viStatusPill(vi.status)}</td><td>${esc(vi.dueDate||"")}</td>
+    <td class="no-print"><div class="rowbtns"><button class="btn sm ghost" onclick="edit_vendorInvoice('${esc(vi.id)}')">Edit</button>${isAdmin()?`<button class="btn sm ghost danger" onclick="del_vendorInvoice('${esc(vi.id)}')">✕</button>`:""}</div></td></tr>`).join("")
+    :`<tr><td colspan="12"><div class="empty">No vendor invoices yet.</div></td></tr>`;
+  const total=rows.reduce((s,vi)=>s+num(vi.amount),0), paid=rows.reduce((s,vi)=>s+num(vi.amountPaid),0);
+  v.innerHTML=pagehead("Vendor Invoices","Vendor Invoices — "+rows.length+" · Total "+PKR(total)+" · Paid "+PKR(paid),"Add Vendor Invoice","addVendorInvoice()",true)+
+   `<div class="card tablewrap"><table><thead><tr><th>ID</th><th>Invoice #</th><th>Date</th><th>Vendor</th><th>PO #</th><th>Project</th><th class="num">Amount</th><th class="num">Paid</th><th class="num">Balance</th><th>Status</th><th>Due</th><th></th></tr></thead><tbody>${body}</tbody></table></div>`;
+}
+function vendorInvoiceForm(vi){ vi=vi||{};
+  const statusOpts=["Unpaid","Partial","Paid","Overdue","Cancelled"];
+  const payOpts=["Cash","Bank Transfer","Cheque","Online",""];
+  const poOpts=state.purchaseOrders.map(po=>`<option value="${esc(po.id)}" ${po.id===vi.poId?"selected":""}>${esc(po.id)} — ${esc(po.vendor)} — ${esc((po.item||"").substring(0,30))}</option>`).join("");
+  return `<div class="formgrid">
+    <div class="field"><label>Vendor Invoice #</label><input id="f_invoiceNo" value="${esc(vi.invoiceNo||"")}"></div>
+    <div class="field"><label>Invoice Date</label><input id="f_invoiceDate" type="date" value="${esc(vi.invoiceDate||today())}"></div>
+    <div class="field"><label>Due Date</label><input id="f_dueDate" type="date" value="${esc(vi.dueDate||"")}"></div>
+    <div class="field full"><label>Vendor</label><input id="f_vendor" value="${esc(vi.vendor||"")}" placeholder="Supplier name"></div>
+    <div class="field full"><label>Linked Purchase Order</label><select id="f_poId"><option value="">(None)</option>${poOpts}</select></div>
+    <div class="field full"><label>Project</label>${projectPickerHtml(vi.projectId||"","","f_projectId")}</div>
+    <div class="field"><label>Amount (PKR)</label><input id="f_amount" type="number" step="any" value="${esc(vi.amount||"")}" oninput="calcVI()"></div>
+    <div class="field"><label>Amount Paid (PKR)</label><input id="f_amountPaid" type="number" step="any" value="${esc(vi.amountPaid!=null?vi.amountPaid:"")}" oninput="calcVI()"></div>
+    <div class="field"><label>Balance (auto)</label><input id="f_viBalance" class="calc" readonly value="${PKR(viBalance(vi))}"></div>
+    <div class="field"><label>Status</label><select id="f_status">${statusOpts.map(o=>`<option ${o===vi.status?"selected":""}>${o}</option>`).join("")}</select></div>
+    <div class="field"><label>Payment Method</label><select id="f_paymentMethod">${payOpts.map(o=>`<option ${o===(vi.paymentMethod||"")?"selected":""}>${o||"—"}</option>`).join("")}</select></div>
+    <div class="field full"><label>Notes</label><textarea id="f_notes">${esc(vi.notes||"")}</textarea></div>
+  </div>`;
+}
+function calcVI(){ const amt=num(document.getElementById("f_amount").value), paid=num(document.getElementById("f_amountPaid").value); document.getElementById("f_viBalance").value=PKR(amt-paid); }
+function readVendorInvoice(existing){ const g=id=>document.getElementById("f_"+id).value; const pjEl=document.getElementById("f_projectId");
+  return Object.assign({},existing||{},{invoiceNo:g("invoiceNo"),invoiceDate:g("invoiceDate"),dueDate:g("dueDate"),vendor:g("vendor"),poId:g("poId")||null,projectId:pjEl?pjEl.value||null:null,amount:num(g("amount")),amountPaid:num(g("amountPaid")),status:g("status"),paymentMethod:g("paymentMethod")==="—"?"":g("paymentMethod"),notes:g("notes")}); }
+function addVendorInvoice(){ openModal("New Vendor Invoice", vendorInvoiceForm({}), async()=>{ const vi=readVendorInvoice(); if(!vi.vendor){toast("Enter a vendor name");return false;} vi.id=nextId("VI",""); state.vendorInvoices.push(vi); await upsert("vendorInvoices",vi); closeModal(); toast("Vendor invoice added"); go("vendorInvoices"); }, calcVI); }
+function edit_vendorInvoice(id){ const vi=state.vendorInvoices.find(x=>x.id===id); if(!vi)return; openModal("Edit Vendor Invoice", vendorInvoiceForm(vi), async()=>{ Object.assign(vi,readVendorInvoice(vi)); await upsert("vendorInvoices",vi); closeModal(); toast("Vendor invoice updated"); go("vendorInvoices"); }, calcVI); }
+function del_vendorInvoice(id){ confirmDel("Delete this vendor invoice?", async()=>{ state.vendorInvoices=state.vendorInvoices.filter(x=>x.id!==id); await remove("vendorInvoices",id); toast("Deleted"); go("vendorInvoices"); }); }
+
+/* ======================================================================
+   BILL OF MATERIALS (BOM) — header + line items (glass cuts, processing)
+   Uses direct sb.from() queries (parent/child pattern, not MAP).
+   ====================================================================== */
+const GLASS_TYPES=['Clear','Tinted','Reflective','Low-E','Tempered','Laminated','Double Glazed','Frosted','Patterned','Mirror'];
+const GLASS_THICKNESSES=['3mm','4mm','5mm','6mm','8mm','10mm','12mm','15mm','19mm','25mm'];
+const PROCESSING_TYPES=['None','Tempering','Laminating','Double Glazing','Bending','Drilling','Notching','Edging','Sandblasting','Screen Print'];
+const EDGE_TYPES=['None','Flat Polish','Pencil Polish','Bevel','Miter','OG Edge'];
+const STD_SHEET_SIZES=['1525×2850','1800×3050','2134×3660','2440×2850','2440×3660','2591×3660'];
+
+function bomStatusPill(s){ const c={Draft:"gray",Approved:"amber","In Production":"blue",Completed:"green"}[s]||"gray"; return `<span class="pill ${c}">${esc(s||"")}</span>`; }
+function nextBomId(){ const nums=(window._bomList||[]).map(b=>num(String(b.id||"").replace(/^BOM-/,""))); return "BOM-"+String((nums.length?Math.max(...nums):0)+1).padStart(4,"0"); }
+function nextBomItemId(bomId,items){ return bomId+"-L"+String((items||[]).length+1).padStart(3,"0"); }
+
+async function loadBOMs(){
+  if(!sb) return [];
+  const {data,error}=await sb.from('crm_bom').select('*').order('created_at',{ascending:false});
+  if(error){ console.warn('[loadBOMs]',error.message); return []; }
+  return data||[];
+}
+async function loadBOMItems(bomId){
+  if(!sb) return [];
+  const {data,error}=await sb.from('crm_bom_items').select('*').eq('bom_id',bomId).order('line_no');
+  if(error){ console.warn('[loadBOMItems]',error.message); return []; }
+  return data||[];
+}
+
+function renderBOMList(v){
+  v.innerHTML=pagehead('Bill of Materials','BOMs — glass cut lists, processing specs, quantities.','New BOM','addBOM()',true)+
+    `<div class="card tablewrap" id="bom_list"><div class="empty" style="padding:20px">Loading…</div></div>`;
+  refreshBOMList();
+}
+async function refreshBOMList(){
+  const rows=window._bomList=await loadBOMs();
+  const box=document.getElementById('bom_list'); if(!box) return;
+  const filtered=rows.filter(r=>!searchTerm||JSON.stringify(r).toLowerCase().includes(searchTerm.toLowerCase()));
+  if(!filtered.length){ box.innerHTML='<div class="empty" style="padding:20px">No BOMs yet — click "+ New BOM" to create one.</div>'; return; }
+  box.innerHTML=`<table><thead><tr><th>BOM #</th><th>Name</th><th>Project</th><th>Quote</th><th>Status</th><th>Created</th><th></th></tr></thead><tbody>
+    ${filtered.map(b=>{
+      const pj=(state.projects||[]).find(p=>p.id===b.project_id);
+      return `<tr style="cursor:pointer" onclick="go('bomView',{id:'${esc(b.id)}'})">
+        <td>${esc(b.id)}</td><td><b>${esc(b.name||'Untitled')}</b></td>
+        <td>${pj?esc(pj.id+' — '+pj.name):'—'}</td><td>${esc(b.quote_id||'—')}</td>
+        <td>${bomStatusPill(b.status)}</td><td>${(b.created_at||'').substring(0,10)}</td>
+        <td class="no-print"><div class="rowbtns" onclick="event.stopPropagation()">
+          <button class="btn sm ghost" onclick="editBOMHeader('${esc(b.id)}')">Edit</button>
+          ${isAdmin()?`<button class="btn sm ghost danger" onclick="delBOM('${esc(b.id)}')">✕</button>`:''}
+        </div></td></tr>`;
+    }).join('')}
+  </tbody></table>`;
+}
+
+function bomHeaderForm(b){ b=b||{};
+  const statusOpts=['Draft','Approved','In Production','Completed'];
+  const qOpts=state.quotes.map(q=>`<option value="${esc(q.id)}" ${q.id===b.quote_id?'selected':''}>${esc(q.id)} — ${esc(q.company||'')}</option>`).join('');
+  return `<div class="formgrid">
+    <div class="field full"><label>BOM Name</label><input id="f_name" value="${esc(b.name||'')}"></div>
+    <div class="field full"><label>Project</label>${projectPickerHtml(b.project_id||'','','f_projectId')}</div>
+    <div class="field full"><label>Linked Quote</label><select id="f_quoteId"><option value="">(None)</option>${qOpts}</select></div>
+    <div class="field"><label>Status</label><select id="f_status">${statusOpts.map(o=>`<option ${o===b.status?'selected':''}>${o}</option>`).join('')}</select></div>
+    <div class="field full"><label>Notes</label><textarea id="f_notes">${esc(b.notes||'')}</textarea></div>
+  </div>`;
+}
+function readBOMHeader(existing){ const g=id=>document.getElementById('f_'+id).value; const pjEl=document.getElementById('f_projectId');
+  return Object.assign({},existing||{},{name:g('name'),project_id:pjEl?pjEl.value||null:null,quote_id:g('quoteId')||null,status:g('status'),notes:g('notes')}); }
+
+function addBOM(){ openModal('New BOM', bomHeaderForm({}), async()=>{
+  const b=readBOMHeader(); if(!b.name){toast('Enter a BOM name');return false;}
+  b.id=nextBomId();
+  if(!sb){toast('Not connected');return false;}
+  const {error}=await sb.from('crm_bom').insert(b);
+  if(error){toast('Error: '+error.message);return false;}
+  closeModal(); toast('BOM created'); go('bomView',{id:b.id});
+}); }
+function editBOMHeader(id){ (async()=>{
+  const rows=await loadBOMs(); const b=rows.find(x=>x.id===id); if(!b) return;
+  openModal('Edit BOM', bomHeaderForm(b), async()=>{
+    const upd=readBOMHeader(b);
+    const {error}=await sb.from('crm_bom').update(upd).eq('id',id);
+    if(error){toast('Error: '+error.message);return false;}
+    closeModal(); toast('BOM updated'); go('bom');
+  });
+})(); }
+function delBOM(id){ confirmDel('Delete this BOM and all its line items?', async()=>{
+  if(!sb){toast('Not connected');return;}
+  await sb.from('crm_bom_items').delete().eq('bom_id',id);
+  await sb.from('crm_bom').delete().eq('id',id);
+  toast('BOM deleted'); go('bom');
+}); }
+
+/* ── BOM detail view (header + line-items table + cut-list optimizer) ── */
+async function renderBOMView(v){
+  const bomId=(window._routeParams||{}).id;
+  if(!bomId){go('bom');return;}
+  const boms=await loadBOMs(); const bom=boms.find(x=>x.id===bomId);
+  if(!bom){toast('BOM not found');go('bom');return;}
+  const items=await loadBOMItems(bomId);
+  const pj=(state.projects||[]).find(p=>p.id===bom.project_id);
+  const totalSqft=items.reduce((s,i)=>{const w=num(i.width_mm),h=num(i.height_mm);return s+(w*h*num(i.qty||1))/(304.8*304.8);},0);
+  v.innerHTML=`<div style="display:flex;align-items:center;gap:12px;margin:0 0 12px">
+    <button class="btn sm ghost" onclick="go('bom')">← Back</button>
+    <div><h2 style="margin:0">${esc(bom.name||'Untitled BOM')} <small style="font-weight:400;color:var(--muted)">${esc(bom.id)}</small></h2>
+    <div class="help">${pj?'Project: '+esc(pj.id+' — '+pj.name):'No project linked'} · ${bomStatusPill(bom.status)} · ${items.length} items · ${totalSqft.toFixed(1)} sqft total</div></div>
+  </div>
+  <div class="card tablewrap" id="bomItems_list">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-bottom:1px solid var(--border)">
+      <b>Line Items</b>
+      <div class="rowbtns">
+        <button class="btn sm primary" onclick="addBOMItem('${esc(bomId)}')">+ Add Item</button>
+        <button class="btn sm ghost" onclick="runCutListOptimizer('${esc(bomId)}')">🔪 Cut-List Optimizer</button>
+      </div>
+    </div>
+    ${items.length?`<table><thead><tr><th>#</th><th>Product</th><th>Glass</th><th>Thick</th><th>W (mm)</th><th>H (mm)</th><th>Qty</th><th>Sqft</th><th>Processing</th><th>Edge</th><th>Notes</th><th></th></tr></thead><tbody>
+      ${items.map((it,idx)=>{
+        const sqft=(num(it.width_mm)*num(it.height_mm)*num(it.qty||1))/(304.8*304.8);
+        return `<tr>
+          <td>${it.line_no||idx+1}</td><td>${esc(it.product_type||'—')}</td><td>${esc(it.glass_type||'—')}</td><td>${esc(it.thickness||'—')}</td>
+          <td class="num">${num(it.width_mm)}</td><td class="num">${num(it.height_mm)}</td><td class="num">${num(it.qty||1)}</td>
+          <td class="num">${sqft.toFixed(1)}</td><td>${esc(it.processing||'None')}</td><td>${esc(it.edge_work||'None')}</td>
+          <td style="max-width:120px">${esc(it.notes||'')}</td>
+          <td class="no-print"><div class="rowbtns">
+            <button class="btn sm ghost" onclick="editBOMItem('${esc(bomId)}','${esc(it.id)}')">Edit</button>
+            <button class="btn sm ghost danger" onclick="delBOMItem('${esc(bomId)}','${esc(it.id)}')">✕</button>
+          </div></td></tr>`;
+      }).join('')}
+    </tbody></table>`:`<div class="empty" style="padding:20px">No line items — click "+ Add Item" to add glass cuts.</div>`}
+  </div>
+  <div id="cutListResult"></div>`;
+}
+
+function bomItemForm(it){ it=it||{};
+  return `<div class="formgrid">
+    <div class="field"><label>Product Type</label><input id="f_product_type" value="${esc(it.product_type||'')}" placeholder="e.g. Window, Door, Partition"></div>
+    <div class="field"><label>Glass Type</label><select id="f_glass_type">${GLASS_TYPES.map(g=>`<option ${g===it.glass_type?'selected':''}>${g}</option>`).join('')}</select></div>
+    <div class="field"><label>Thickness</label><select id="f_thickness">${GLASS_THICKNESSES.map(t=>`<option ${t===it.thickness?'selected':''}>${t}</option>`).join('')}</select></div>
+    <div class="field"><label>Width (mm)</label><input id="f_width_mm" type="number" step="1" value="${num(it.width_mm)||''}"></div>
+    <div class="field"><label>Height (mm)</label><input id="f_height_mm" type="number" step="1" value="${num(it.height_mm)||''}"></div>
+    <div class="field"><label>Quantity</label><input id="f_qty" type="number" step="1" value="${num(it.qty)||1}" min="1"></div>
+    <div class="field"><label>Processing</label><select id="f_processing">${PROCESSING_TYPES.map(p=>`<option ${p===it.processing?'selected':''}>${p}</option>`).join('')}</select></div>
+    <div class="field"><label>Edge Work</label><select id="f_edge_work">${EDGE_TYPES.map(e=>`<option ${e===it.edge_work?'selected':''}>${e}</option>`).join('')}</select></div>
+    <div class="field full"><label>Notes</label><textarea id="f_notes">${esc(it.notes||'')}</textarea></div>
+  </div>`;
+}
+function readBOMItem(existing){ const g=id=>document.getElementById('f_'+id).value;
+  return Object.assign({},existing||{},{product_type:g('product_type'),glass_type:g('glass_type'),thickness:g('thickness'),width_mm:num(g('width_mm')),height_mm:num(g('height_mm')),qty:Math.max(1,num(g('qty'))),processing:g('processing'),edge_work:g('edge_work'),notes:g('notes')}); }
+
+function addBOMItem(bomId){ openModal('Add BOM Line Item', bomItemForm({}), async()=>{
+  const it=readBOMItem();
+  if(!it.width_mm||!it.height_mm){toast('Enter width and height');return false;}
+  const items=await loadBOMItems(bomId);
+  it.id=nextBomItemId(bomId,items); it.bom_id=bomId; it.line_no=items.length+1;
+  if(!sb){toast('Not connected');return false;}
+  const {error}=await sb.from('crm_bom_items').insert(it);
+  if(error){toast('Error: '+error.message);return false;}
+  closeModal(); toast('Item added'); go('bomView',{id:bomId});
+}); }
+function editBOMItem(bomId,itemId){ (async()=>{
+  const items=await loadBOMItems(bomId); const it=items.find(x=>x.id===itemId); if(!it) return;
+  openModal('Edit BOM Item', bomItemForm(it), async()=>{
+    const upd=readBOMItem(it);
+    const {error}=await sb.from('crm_bom_items').update(upd).eq('id',itemId);
+    if(error){toast('Error: '+error.message);return false;}
+    closeModal(); toast('Item updated'); go('bomView',{id:bomId});
+  });
+})(); }
+function delBOMItem(bomId,itemId){ confirmDel('Delete this line item?', async()=>{
+  if(!sb) return;
+  await sb.from('crm_bom_items').delete().eq('id',itemId);
+  toast('Item deleted'); go('bomView',{id:bomId});
+}); }
+
+/* ── Cut-List Optimizer — first-fit-decreasing bin packing on standard sheets ── */
+async function runCutListOptimizer(bomId){
+  const items=await loadBOMItems(bomId);
+  if(!items.length){toast('No items to optimize');return;}
+  /* Group by glass_type + thickness */
+  const groups={};
+  items.forEach(it=>{
+    const key=(it.glass_type||'Clear')+'|'+(it.thickness||'6mm');
+    if(!groups[key]) groups[key]={glassType:it.glass_type||'Clear',thickness:it.thickness||'6mm',cuts:[]};
+    for(let i=0;i<num(it.qty||1);i++) groups[key].cuts.push({w:num(it.width_mm),h:num(it.height_mm),label:it.product_type||it.id});
+  });
+  let html='<h3 style="margin:16px 0 8px">🔪 Cut-List Optimization Results</h3>';
+  for(const key of Object.keys(groups)){
+    const g=groups[key];
+    /* Try each standard sheet, pick best utilization */
+    let bestResult=null, bestSheet=null, bestUtil=0;
+    for(const ss of STD_SHEET_SIZES){
+      const [sw,sh]=ss.split('×').map(Number);
+      const result=packCuts(g.cuts, sw, sh);
+      const totalSheetArea=result.sheets.length*sw*sh;
+      const usedArea=g.cuts.reduce((s,c)=>s+c.w*c.h,0);
+      const util=totalSheetArea>0?(usedArea/totalSheetArea*100):0;
+      if(!bestResult||result.sheets.length<bestResult.sheets.length||(result.sheets.length===bestResult.sheets.length&&util>bestUtil)){
+        bestResult=result; bestSheet=ss; bestUtil=util;
+      }
+    }
+    html+=`<div class="card" style="margin:8px 0;padding:12px 16px">
+      <b>${esc(g.glassType)} — ${esc(g.thickness)}</b> · Best sheet: <b>${esc(bestSheet)}</b> · ${bestResult.sheets.length} sheet${bestResult.sheets.length>1?'s':''} needed · ${bestUtil.toFixed(1)}% utilization
+      <table style="margin-top:8px"><thead><tr><th>Sheet #</th><th>Cuts on this sheet</th><th>Waste area (mm²)</th></tr></thead><tbody>
+      ${bestResult.sheets.map((sh,idx)=>{
+        const shDims=bestSheet.split('×').map(Number);
+        const usedOnSheet=sh.cuts.reduce((s,c)=>s+c.w*c.h,0);
+        const waste=shDims[0]*shDims[1]-usedOnSheet;
+        return `<tr><td>${idx+1}</td><td>${sh.cuts.map(c=>`${c.label} (${c.w}×${c.h})`).join(', ')}</td><td class="num">${waste.toLocaleString()}</td></tr>`;
+      }).join('')}
+      </tbody></table>
+    </div>`;
+  }
+  document.getElementById('cutListResult').innerHTML=html;
+}
+
+/* First-fit-decreasing shelf-based bin packing */
+function packCuts(cuts, sheetW, sheetH){
+  /* Sort by height descending (shelf heuristic) */
+  const sorted=[...cuts].sort((a,b)=>{
+    /* Try both orientations — pick the one where the larger dim goes along shelf height */
+    const ah=Math.max(a.w,a.h), bh=Math.max(b.w,b.h);
+    return bh-ah;
+  });
+  /* Orient each cut so w<=sheetW and h<=sheetH if possible */
+  sorted.forEach(c=>{
+    if(c.w>sheetW&&c.h<=sheetW){const tmp=c.w;c.w=c.h;c.h=tmp;}
+    else if(c.h>sheetH&&c.w<=sheetH){const tmp=c.w;c.w=c.h;c.h=tmp;}
+    else if(c.w>sheetW||c.h>sheetH){
+      /* Try rotating */
+      if(c.h<=sheetW&&c.w<=sheetH){const tmp=c.w;c.w=c.h;c.h=tmp;}
+    }
+  });
+  const sheets=[];
+  for(const cut of sorted){
+    let placed=false;
+    for(const sheet of sheets){
+      if(tryPlaceOnSheet(sheet, cut, sheetW, sheetH)){placed=true;break;}
+    }
+    if(!placed){
+      const newSheet={shelves:[],cuts:[]};
+      if(tryPlaceOnSheet(newSheet, cut, sheetW, sheetH)){sheets.push(newSheet);}
+      else{
+        /* Piece too large for sheet — place it anyway with a warning */
+        sheets.push({shelves:[{y:0,h:cut.h,xUsed:cut.w}],cuts:[cut]});
+      }
+    }
+  }
+  return {sheets};
+}
+function tryPlaceOnSheet(sheet, cut, sheetW, sheetH){
+  /* Try existing shelves */
+  for(const shelf of sheet.shelves){
+    if(shelf.xUsed+cut.w<=sheetW && cut.h<=shelf.h){
+      shelf.xUsed+=cut.w; sheet.cuts.push(cut); return true;
+    }
+  }
+  /* New shelf */
+  const usedH=sheet.shelves.reduce((s,sh)=>s+sh.h,0);
+  if(usedH+cut.h<=sheetH && cut.w<=sheetW){
+    sheet.shelves.push({y:usedH,h:cut.h,xUsed:cut.w}); sheet.cuts.push(cut); return true;
+  }
+  return false;
 }
 
 async function remove(kind, id){
@@ -1872,11 +2345,11 @@ function renderConn(){
   const ob=document.getElementById("offlineBanner");
   if(ob) ob.classList.toggle("hidden", !(sb && !cloudOK));
 }
-function go(r){ route=r; searchTerm=""; renderSidebar(); renderRoute(); window.scrollTo(0,0); }
+function go(r,params){ route=r; window._routeParams=params||{}; searchTerm=""; renderSidebar(); renderRoute(); window.scrollTo(0,0); }
 function renderRoute(){
   const v=document.getElementById("view");
   if(!isAdmin()&&typeof canView==='function'&&ROUTE_PERM&&ROUTE_PERM[route]&&!canView(route)){route='dashboard';renderSidebar();renderDashboard(v);return;}
-  ({dashboard:renderDashboard,analytics:renderAnalytics,clients:renderClients,leads:renderLeadsOnly,clientsOnly:renderClientsOnly,prospects:renderProspectsOnly,tasks:renderTasks,calls:renderCalls,meetings:renderMeetings,deals:renderDeals,quotes:renderQuotes,quoteView:renderQuoteView,performance:renderPerformance,admin:renderAdmin,salesOrders:renderSalesOrders,invoices:renderInvoices,accounts:renderAccounts,contacts:renderContacts,pipeline:renderPipeline,purchaseOrders:renderPurchaseOrders,deliveryChallans:renderDeliveryChallans,materialRequisitions:renderMaterialRequisitions,receivings:renderReceivings,products:renderProducts,campaigns:renderCampaigns,priceBooks:renderPriceBooks,documents:renderDocuments,catalog:renderCatalog,repRouting:renderRepRouting,metaAds:renderMetaAds,auditLog:renderAuditLog,automationRules:renderAutomationRules,aiAssistant:renderAIAssistant,vendors:renderMaterialVendors,materialVendors:renderMaterialVendors,storeInventory:renderStoreInventory}[route]||renderDashboard)(v);
+  ({dashboard:renderDashboard,analytics:renderAnalytics,clients:renderClients,leads:renderLeadsOnly,clientsOnly:renderClientsOnly,prospects:renderProspectsOnly,tasks:renderTasks,calls:renderCalls,meetings:renderMeetings,deals:renderDeals,quotes:renderQuotes,quoteView:renderQuoteView,performance:renderPerformance,admin:renderAdmin,salesOrders:renderSalesOrders,invoices:renderInvoices,accounts:renderAccounts,contacts:renderContacts,pipeline:renderPipeline,purchaseOrders:renderPurchaseOrders,deliveryChallans:renderDeliveryChallans,materialRequisitions:renderMaterialRequisitions,receivings:renderReceivings,products:renderProducts,campaigns:renderCampaigns,priceBooks:renderPriceBooks,documents:renderDocuments,catalog:renderCatalog,repRouting:renderRepRouting,metaAds:renderMetaAds,auditLog:renderAuditLog,automationRules:renderAutomationRules,aiAssistant:renderAIAssistant,vendors:renderMaterialVendors,materialVendors:renderMaterialVendors,storeInventory:renderStoreInventory,vendorInvoices:renderVendorInvoices,bom:renderBOMList,bomView:renderBOMView,projects:renderProjects,viewProject:renderProjectView}[route]||renderDashboard)(v);
 }
 
 /* ======================================================================
@@ -2957,14 +3430,15 @@ function salesOrderForm(so){ so=so||{}; const rep=myRep();
     <div class="field"><label>Unit Price (PKR)</label><input id="f_unitPrice" type="number" step="any" value="${esc(so.unitPrice||"")}"></div>
     <div class="field"><label>Status</label><select id="f_status">${statusOpts.map(o=>`<option ${o===so.status?"selected":""}>${o}</option>`).join("")}</select></div>
     <div class="field"><label>Expected Delivery</label><input id="f_expectedDelivery" type="date" value="${esc(so.expectedDelivery||"")}"></div>
-    <div class="field"><label>Project #</label><input id="f_projectNumber" value="${esc(so.projectNumber||"")}" placeholder="Auto-generated on save"></div>
-    <div class="field full"><label>Project / Job Name</label><input id="f_projectName" value="${esc(so.projectName||"")}"></div>
+    <div class="field full"><label>Project</label>${projectPickerHtml(so.projectId,so.clientId,'f_projectId')}</div>
+    <div class="field"><label>Project # (legacy)</label><input id="f_projectNumber" value="${esc(so.projectNumber||"")}" placeholder="Auto from project"></div>
+    <div class="field full"><label>Project / Job Name (legacy)</label><input id="f_projectName" value="${esc(so.projectName||"")}"></div>
     <div class="field full"><label>Site Address (if site visit)</label><input id="f_siteAddress" value="${esc(so.siteAddress||"")}"></div>
     <div class="field full"><label>Notes</label><textarea id="f_notes">${esc(so.notes||"")}</textarea></div>
   </div>`;
 }
 function readSalesOrder(existing){ const g=id=>document.getElementById("f_"+id).value; const id=g("clientId"); const cl=findClientOrAccount(id);
-  return Object.assign({},existing||{},{soDate:g("soDate"),rep:g("rep"),clientId:id,company:cl?cl.company:(existing&&existing.company)||"",quoteNo:g("quoteNo"),poNumber:g("poNumber"),product:g("product"),qty:num(g("qty")),unitPrice:num(g("unitPrice")),status:g("status"),expectedDelivery:g("expectedDelivery"),notes:g("notes"),projectName:g("projectName"),projectNumber:g("projectNumber"),siteAddress:g("siteAddress")}); }
+  return Object.assign({},existing||{},{soDate:g("soDate"),rep:g("rep"),clientId:id,company:cl?cl.company:(existing&&existing.company)||"",quoteNo:g("quoteNo"),poNumber:g("poNumber"),product:g("product"),qty:num(g("qty")),unitPrice:num(g("unitPrice")),status:g("status"),expectedDelivery:g("expectedDelivery"),notes:g("notes"),projectId:(document.getElementById("f_projectId")||{}).value||"",projectName:g("projectName"),projectNumber:g("projectNumber"),siteAddress:g("siteAddress")}); }
 function addSalesOrder(){ openModal("New Sales Order", salesOrderForm({rep:myRep()||""}), async()=>{ const so=readSalesOrder(); if(!so.clientId){toast("Pick a client");return false;} so.id=nextId("SO",so.rep); if(!so.projectNumber){ const yr=new Date().getFullYear(); const ex=state.salesOrders.filter(x=>x.projectNumber&&x.projectNumber.startsWith("PSG-"+yr+"-")).length; so.projectNumber="PSG-"+yr+"-"+String(ex+1).padStart(3,"0"); } state.salesOrders.push(so); await upsert("salesOrders",so); syncStageFromSalesOrder(so); closeModal(); toast("Sales order added"); go("salesOrders"); }); }
 function edit_salesOrder(id){ const so=state.salesOrders.find(x=>x.id===id); if(!so)return; openModal("Edit Sales Order", salesOrderForm(so), async()=>{ Object.assign(so,readSalesOrder(so)); await upsert("salesOrders",so); syncStageFromSalesOrder(so);
     // Pipeline-born SOs do NOT auto-push to production on save — the rep sends it manually
@@ -3040,14 +3514,15 @@ function materialRequisitionForm(mr){ mr=mr||{};
     <div class="field"><label>MR Date</label><input id="f_mrDate" type="date" value="${esc(mr.mrDate||today())}"></div>
     <div class="field"><label>MR No</label><input id="f_mrNo" value="${esc(mr.mrNo||"")}"></div>
     <div class="field full"><label>Sales Order</label><select id="f_soId"><option value="">(None)</option>${state.salesOrders.map(s=>`<option value="${esc(s.id)}" ${s.id===mr.soId?"selected":""}>${esc(s.id)}${s.projectNumber?" · "+s.projectNumber:""} — ${esc(s.company)}</option>`).join("")}</select></div>
+    <div class="field full"><label>Project</label>${projectPickerHtml(mr.projectId||"","","f_projectId")}</div>
     <div class="field full"><label>Materials Required</label><textarea id="f_items">${esc(mr.items||"")}</textarea></div>
     <div class="field"><label>Requested By</label><input id="f_requestedBy" value="${esc(mr.requestedBy||"")}"></div>
     <div class="field"><label>Status</label><select id="f_status">${statusOpts.map(o=>`<option ${o===mr.status?"selected":""}>${o}</option>`).join("")}</select></div>
     <div class="field full"><label>Notes</label><textarea id="f_notes">${esc(mr.notes||"")}</textarea></div>
   </div>`;
 }
-function readMaterialRequisition(existing){ const g=id=>document.getElementById("f_"+id).value;
-  return Object.assign({},existing||{},{mrDate:g("mrDate"),mrNo:g("mrNo"),soId:g("soId"),items:g("items"),requestedBy:g("requestedBy"),status:g("status"),notes:g("notes")}); }
+function readMaterialRequisition(existing){ const g=id=>document.getElementById("f_"+id).value; const pjEl=document.getElementById("f_projectId");
+  return Object.assign({},existing||{},{mrDate:g("mrDate"),mrNo:g("mrNo"),soId:g("soId"),projectId:pjEl?pjEl.value||null:null,items:g("items"),requestedBy:g("requestedBy"),status:g("status"),notes:g("notes")}); }
 function addMaterialRequisition(){ openModal("New Material Requisition", materialRequisitionForm({}), async()=>{ const mr=readMaterialRequisition(); mr.id=nextId("MR",myRep()||""); if(!mr.mrNo){ mr.mrNo="MR-"+String(state.materialRequisitions.length+1).padStart(4,"0"); } state.materialRequisitions.push(mr); await upsert("materialRequisitions",mr); closeModal(); toast("Material requisition added"); go("materialRequisitions"); }); }
 function edit_materialRequisition(id){ const mr=state.materialRequisitions.find(x=>x.id===id); if(!mr)return; openModal("Edit Material Requisition", materialRequisitionForm(mr), async()=>{ Object.assign(mr,readMaterialRequisition(mr)); await upsert("materialRequisitions",mr); closeModal(); toast("MR updated"); go("materialRequisitions"); }); }
 function del_materialRequisition(id){ confirmDel("Delete this material requisition?", async()=>{ state.materialRequisitions=state.materialRequisitions.filter(x=>x.id!==id); await remove("materialRequisitions",id); toast("Deleted"); go("materialRequisitions"); }); }
@@ -3074,13 +3549,14 @@ function receivingForm(rv){ rv=rv||{};
     <div class="field"><label>Receive Date</label><input id="f_receiveDate" type="date" value="${esc(rv.receiveDate||today())}"></div>
     <div class="field full"><label>Purchase Order</label><select id="f_poId"><option value="">(None)</option>${state.purchaseOrders.map(p=>`<option value="${esc(p.id)}" ${p.id===rv.poId?"selected":""}>${esc(p.id)} — ${esc(p.vendor)} · ${esc((p.item||"").substring(0,30))}</option>`).join("")}</select></div>
     <div class="field full"><label>Linked MR (optional)</label><select id="f_mrId"><option value="">(None)</option>${state.materialRequisitions.map(m=>`<option value="${esc(m.id)}" ${m.id===rv.mrId?"selected":""}>${esc(m.mrNo||m.id)} — ${esc((m.items||"").substring(0,30))}</option>`).join("")}</select></div>
+    <div class="field full"><label>Project</label>${projectPickerHtml(rv.projectId||"","","f_projectId")}</div>
     <div class="field full"><label>Items Received</label><textarea id="f_itemsReceived">${esc(rv.itemsReceived||"")}</textarea></div>
     <div class="field"><label>Received By</label><input id="f_receivedBy" value="${esc(rv.receivedBy||"")}"></div>
     <div class="field full"><label>Notes</label><textarea id="f_notes">${esc(rv.notes||"")}</textarea></div>
   </div>`;
 }
-function readReceiving(existing){ const g=id=>document.getElementById("f_"+id).value;
-  return Object.assign({},existing||{},{receiveDate:g("receiveDate"),poId:g("poId"),mrId:g("mrId"),itemsReceived:g("itemsReceived"),receivedBy:g("receivedBy"),notes:g("notes")}); }
+function readReceiving(existing){ const g=id=>document.getElementById("f_"+id).value; const pjEl=document.getElementById("f_projectId");
+  return Object.assign({},existing||{},{receiveDate:g("receiveDate"),poId:g("poId"),mrId:g("mrId"),projectId:pjEl?pjEl.value||null:null,itemsReceived:g("itemsReceived"),receivedBy:g("receivedBy"),notes:g("notes")}); }
 function addReceiving(){ openModal("Record Receiving", receivingForm({}), async()=>{ const rv=readReceiving(); rv.id=nextId("RV",myRep()||""); state.receivings.push(rv); await upsert("receivings",rv); if(rv.poId){ const po=state.purchaseOrders.find(x=>x.id===rv.poId); if(po&&po.status==="Ordered"){ po.status="Received"; await upsert("purchaseOrders",po); } } closeModal(); toast("Receiving recorded"); go("receivings"); }); }
 function edit_receiving(id){ const rv=state.receivings.find(x=>x.id===id); if(!rv)return; openModal("Edit Receiving", receivingForm(rv), async()=>{ Object.assign(rv,readReceiving(rv)); await upsert("receivings",rv); closeModal(); toast("Receiving updated"); go("receivings"); }); }
 function del_receiving(id){ confirmDel("Delete this receiving record?", async()=>{ state.receivings=state.receivings.filter(x=>x.id!==id); await remove("receivings",id); toast("Deleted"); go("receivings"); }); }
@@ -3470,6 +3946,7 @@ function renderPipeline(v){
       <div class="kcard-title">${esc(d.title)}</div>
       ${acctMap[d.accountId]?`<div class="kcard-acct">${esc(acctMap[d.accountId])}</div>`:''}
       ${d.productPath?`<div class="help" style="font-size:11px;margin-top:2px" title="${esc(d.productPath)}">🗂 ${esc(d.productPath)}</div>`:''}
+      ${d.projectId?`<div class="help" style="font-size:11px;margin-top:2px"><span class="pill sm" style="font-size:10px">📁 ${esc(d.projectId)}</span></div>`:''}
       <div class="kcard-foot">
         <span class="kcard-id">${esc(d.id)}</span>
         ${d.priority?`<span class="pill ${PRI_CLR[d.priority]||''} sm">${esc(d.priority)}</span>`:''}
@@ -3573,6 +4050,7 @@ function pdForm(d){d=d||{};
     <div class="field"><label>Assigned To</label><select id="pd_assignedTo">${repOpts}</select></div>
     <div class="field"><label>Lead Source</label><select id="pd_leadSource">${lsOpts}</select></div>
     <div class="field"><label>Est. Revenue (PKR)</label><input id="pd_rev" type="number" value="${esc(d.rev||'')}"></div>
+    <div class="field full"><label>Project</label>${projectPickerHtml(d.projectId,d.accountId,'pd_projectId')}</div>
     <div class="field full"><label>Notes</label><textarea id="pd_notes">${esc(d.notes||'')}</textarea></div>
   </div>`;
 }
@@ -3581,9 +4059,10 @@ function pdRefreshCt(acctId){
   const prev=sel.value;
   const opts=state.contacts.filter(c=>c.accountId===acctId).map(c=>`<option value="${esc(c.id)}" ${c.id===prev?'selected':''}>${esc(c.name)}</option>`).join('');
   sel.innerHTML='<option value="">—</option>'+opts;
+  refreshProjectPicker('pd_projectId',acctId);
 }
 function readPD(){const g=id=>document.getElementById('pd_'+id)?.value||'';
-  return{title:g('title').trim(),accountId:g('accountId'),contactId:g('contactId'),stage:g('stage'),priority:g('priority'),assignedTo:g('assignedTo'),leadSource:g('leadSource'),rev:g('rev'),notes:g('notes')};}
+  return{title:g('title').trim(),accountId:g('accountId'),contactId:g('contactId'),stage:g('stage'),priority:g('priority'),assignedTo:g('assignedTo'),leadSource:g('leadSource'),rev:g('rev'),projectId:g('projectId'),notes:g('notes')};}
 function chatBtn(id){
   if(!cfg.waWorkerUrl) return '';
   return '<button class="btn sm ghost" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();openChatPanel(\'' + id + '\')" style="padding:2px 6px;font-size:11px;line-height:1;background:#0070c9;color:#fff;border:none;border-radius:4px">📨 Chat</button>';
@@ -3714,7 +4193,12 @@ async function maybeConvertToClient(deal){
 // quotes created against an Account store the account's id in the legacy clientId field).
 function bestQuoteForDeal(d){
   if(!d||!d.accountId) return null;
-  const qs=(state.quotes||[]).filter(x=>x.clientId===d.accountId);
+  let qs=(state.quotes||[]).filter(x=>x.clientId===d.accountId);
+  // If deal has a project, prefer quotes scoped to that project
+  if(d.projectId){
+    const projQs=qs.filter(x=>x.projectId===d.projectId);
+    if(projQs.length) qs=projQs;
+  }
   if(!qs.length) return null;
   const byRecency=(a,b)=>(b.serialNo||0)-(a.serialNo||0)||(b.revision||0)-(a.revision||0)||(b.quoteDate||"").localeCompare(a.quoteDate||"");
   return qs.filter(x=>x.status==="Sent"||x.status==="Accepted").sort(byRecency)[0] || qs.slice().sort(byRecency)[0];
@@ -3916,6 +4400,7 @@ function invoiceForm(inv){ inv=inv||{}; const rep=myRep();
     <div class="field"><label>Due Date</label><input id="f_dueDate" type="date" value="${esc(inv.dueDate||"")}"></div>
     <div class="field ${rep?'locked':''}"><label>Sales Rep</label><input id="f_rep" value="${esc(inv.rep||rep||"")}" ${rep?"readonly":""}></div>
     <div class="field full"><label>Client</label><select id="f_clientId">${clientOptions(inv.clientId)}</select></div>
+    <div class="field full"><label>Project</label>${projectPickerHtml(inv.projectId||"","","f_projectId")}</div>
     <div class="field"><label>Sales Order #</label><input id="f_salesOrderId" value="${esc(inv.salesOrderId||"")}"></div>
     <div class="field"><label>Payment Type</label><select id="f_paymentType">${paymentOpts.map(o=>`<option ${o===(inv.paymentType||"Full")?"selected":""}>${o}</option>`).join("")}</select></div>
     <div class="field"><label>Amount (PKR)</label><input id="f_amount" type="number" step="any" value="${esc(inv.amount||"")}" oninput="calcInvoice()"></div>
@@ -3926,8 +4411,8 @@ function invoiceForm(inv){ inv=inv||{}; const rep=myRep();
   </div>`;
 }
 function calcInvoice(){ const amt=num(document.getElementById("f_amount").value), paid=num(document.getElementById("f_amountPaid").value); document.getElementById("f_balance").value=PKR(amt-paid); }
-function readInvoice(existing){ const g=id=>document.getElementById("f_"+id).value; const id=g("clientId"); const cl=findClientOrAccount(id);
-  return Object.assign({},existing||{},{invoiceDate:g("invoiceDate"),dueDate:g("dueDate"),rep:g("rep"),clientId:id,company:cl?cl.company:(existing&&existing.company)||"",salesOrderId:g("salesOrderId"),paymentType:g("paymentType"),amount:num(g("amount")),amountPaid:num(g("amountPaid")),status:g("status"),notes:g("notes")}); }
+function readInvoice(existing){ const g=id=>document.getElementById("f_"+id).value; const id=g("clientId"); const cl=findClientOrAccount(id); const pjEl=document.getElementById("f_projectId");
+  return Object.assign({},existing||{},{invoiceDate:g("invoiceDate"),dueDate:g("dueDate"),rep:g("rep"),clientId:id,company:cl?cl.company:(existing&&existing.company)||"",salesOrderId:g("salesOrderId"),projectId:pjEl?pjEl.value||null:null,paymentType:g("paymentType"),amount:num(g("amount")),amountPaid:num(g("amountPaid")),status:g("status"),notes:g("notes")}); }
 function addInvoice(){ openModal("New Invoice", invoiceForm({rep:myRep()||""}), async()=>{ const inv=readInvoice(); if(!inv.clientId){toast("Pick a client");return false;} inv.id=nextId("IV",inv.rep); state.invoices.push(inv); await upsert("invoices",inv); promoteInvoiceStage(inv); const opened=await maybeCreateSalesOrderFromPayment(inv); if(!opened){ closeModal(); toast("Invoice added"); go("invoices"); } }, calcInvoice); }
 function edit_invoice(id){ const inv=state.invoices.find(x=>x.id===id); if(!inv)return; openModal("Edit Invoice", invoiceForm(inv), async()=>{ Object.assign(inv,readInvoice(inv)); await upsert("invoices",inv); promoteInvoiceStage(inv); const opened=await maybeCreateSalesOrderFromPayment(inv); if(!opened){ closeModal(); toast("Invoice updated"); go("invoices"); } }, calcInvoice); }
 function del_invoice(id){ confirmDel("Delete this invoice?", async()=>{ state.invoices=state.invoices.filter(x=>x.id!==id); await remove("invoices",id); toast("Deleted"); go("invoices"); }); }
@@ -3962,14 +4447,15 @@ function purchaseOrderForm(po){ po=po||{};
     <div class="field"><label>Total Cost (auto)</label><input id="f_totalCost" class="calc" readonly value="${PKR(poTotalCost(po))}"></div>
     <div class="field"><label>Status</label><select id="f_status">${statusOpts.map(o=>`<option ${o===po.status?"selected":""}>${o}</option>`).join("")}</select></div>
     <div class="field"><label>Expected Delivery</label><input id="f_expectedDelivery" type="date" value="${esc(po.expectedDelivery||"")}"></div>
+    <div class="field full"><label>Project</label>${projectPickerHtml(po.projectId||"","","f_projectId")}</div>
     <div class="field full"><label>Linked Sales Order</label><select id="f_linkedSalesOrderId"><option value="">(None)</option>${state.salesOrders.map(s=>`<option value="${esc(s.id)}" ${s.id===po.linkedSalesOrderId?"selected":""}>${esc(s.id)}${s.projectNumber?" · "+s.projectNumber:""} — ${esc(s.company)}</option>`).join("")}</select></div>
     <div class="field full"><label>Linked Material Requisition</label><select id="f_mrId"><option value="">(None)</option>${state.materialRequisitions.map(m=>`<option value="${esc(m.id)}" ${m.id===po.mrId?"selected":""}>${esc(m.mrNo||m.id)} — ${esc((m.items||"").substring(0,40))}</option>`).join("")}</select></div>
     <div class="field full"><label>Notes</label><textarea id="f_notes">${esc(po.notes||"")}</textarea></div>
   </div>`;
 }
 function calcPO(){ const qty=num(document.getElementById("f_qty").value), cost=num(document.getElementById("f_unitCost").value); document.getElementById("f_totalCost").value=PKR(qty*cost); }
-function readPurchaseOrder(existing){ const g=id=>document.getElementById("f_"+id).value;
-  return Object.assign({},existing||{},{poDate:g("poDate"),vendor:g("vendor"),item:g("item"),qty:num(g("qty")),unitCost:num(g("unitCost")),status:g("status"),expectedDelivery:g("expectedDelivery"),linkedSalesOrderId:g("linkedSalesOrderId"),mrId:g("mrId"),notes:g("notes")}); }
+function readPurchaseOrder(existing){ const g=id=>document.getElementById("f_"+id).value; const pjEl=document.getElementById("f_projectId");
+  return Object.assign({},existing||{},{poDate:g("poDate"),vendor:g("vendor"),item:g("item"),qty:num(g("qty")),unitCost:num(g("unitCost")),status:g("status"),expectedDelivery:g("expectedDelivery"),linkedSalesOrderId:g("linkedSalesOrderId"),mrId:g("mrId"),projectId:pjEl?pjEl.value||null:null,notes:g("notes")}); }
 function addPurchaseOrder(){ openModal("New Purchase Order", purchaseOrderForm({}), async()=>{ const po=readPurchaseOrder(); if(!po.vendor){toast("Enter a vendor");return false;} po.id=nextId("PO",""); state.purchaseOrders.push(po); await upsert("purchaseOrders",po); closeModal(); toast("Purchase order added"); go("purchaseOrders"); }, calcPO); }
 function edit_purchaseOrder(id){ const po=state.purchaseOrders.find(x=>x.id===id); if(!po)return; openModal("Edit Purchase Order", purchaseOrderForm(po), async()=>{ Object.assign(po,readPurchaseOrder(po)); await upsert("purchaseOrders",po); closeModal(); toast("Purchase order updated"); go("purchaseOrders"); }, calcPO); }
 function del_purchaseOrder(id){ confirmDel("Delete this purchase order?", async()=>{ state.purchaseOrders=state.purchaseOrders.filter(x=>x.id!==id); await remove("purchaseOrders",id); toast("Deleted"); go("purchaseOrders"); }); }
@@ -4854,7 +5340,248 @@ function quoteAttachFile(input){
   reader.readAsDataURL(f);
 }
 function quoteRemoveFile(){ window.__quotePdfData=""; window.__quotePdfName=""; const s=document.getElementById("qi_pdfname"); if(s)s.textContent="No file attached"; const inp=document.getElementById("qi_pdf"); if(inp)inp.value=""; }
-function fillCompanyQuote(){ const id=document.getElementById("qf_clientId").value; const cts=(state.contacts||[]).filter(ct=>ct.accountId===id); const sel=document.getElementById("qf_contact"); if(sel&&sel.tagName==="SELECT"){ const prev=sel.value; sel.innerHTML='<option value="">— Select contact —</option>'+cts.map(ct=>`<option value="${esc(ct.name)}">${esc(ct.name)}${ct.designation?' ('+esc(ct.designation)+')':''}</option>`).join(''); if(prev&&cts.find(ct=>ct.name===prev)) sel.value=prev; else if(cts.length===1) sel.value=cts[0].name; const ctObj=cts.find(ct=>ct.name===sel.value); const genderSel=document.getElementById("qf_contactGender"); if(ctObj&&genderSel&&!genderSel.value) genderSel.value=ctObj.gender||""; } const acct=(state.accounts||[]).find(a=>a.id===id); if(acct){ const ntn=document.getElementById("qf_ntn"); if(ntn&&!ntn.value) ntn.value=acct.ntn||""; const gst=document.getElementById("qf_gst"); if(gst&&!gst.value) gst.value=acct.gst||""; } }
+function fillCompanyQuote(){ const id=document.getElementById("qf_clientId").value; const cts=(state.contacts||[]).filter(ct=>ct.accountId===id); const sel=document.getElementById("qf_contact"); if(sel&&sel.tagName==="SELECT"){ const prev=sel.value; sel.innerHTML='<option value="">— Select contact —</option>'+cts.map(ct=>`<option value="${esc(ct.name)}">${esc(ct.name)}${ct.designation?' ('+esc(ct.designation)+')':''}</option>`).join(''); if(prev&&cts.find(ct=>ct.name===prev)) sel.value=prev; else if(cts.length===1) sel.value=cts[0].name; const ctObj=cts.find(ct=>ct.name===sel.value); const genderSel=document.getElementById("qf_contactGender"); if(ctObj&&genderSel&&!genderSel.value) genderSel.value=ctObj.gender||""; } const acct=(state.accounts||[]).find(a=>a.id===id); if(acct){ const ntn=document.getElementById("qf_ntn"); if(ntn&&!ntn.value) ntn.value=acct.ntn||""; const gst=document.getElementById("qf_gst"); if(gst&&!gst.value) gst.value=acct.gst||""; } refreshProjectPicker('qf_projectId',id); }
+/* ══════════════════════════════════════════════════════════════════
+   CUT LIST OPTIMIZER — Guillotine 2D bin-packing for glass sheets
+   Groups quote glass items by material, packs onto standard sheets,
+   shows visual layout with waste %.
+   ══════════════════════════════════════════════════════════════════ */
+const CUT_STOCK_SHEETS=[
+  {w:1525,h:2850,label:'1525×2850 (5\'×9\'4")'},
+  {w:1800,h:3050,label:'1800×3050 (5\'11"×10\')'},
+  {w:2134,h:3660,label:'2134×3660 (7\'×12\')'},
+  {w:2440,h:2850,label:'2440×2850 (8\'×9\'4")'},
+  {w:2440,h:3660,label:'2440×3660 (8\'×12\')'},
+  {w:2591,h:3660,label:'2591×3660 (8\'6"×12\')'}
+];
+const CUT_GAP=3; // 3mm blade kerf
+
+// Guillotine node: a free rectangle on a sheet that can be split
+function cutGuillotinePack(sheetW,sheetH,pieces,gap){
+  // pieces = [{w,h,id,label},...] already sorted largest-area-first
+  // Returns {placed:[{x,y,w,h,id,label,rotated},...], freeNodes, wasteArea}
+  gap=gap||CUT_GAP;
+  let nodes=[{x:0,y:0,w:sheetW,h:sheetH}];
+  const placed=[];
+  for(const pc of pieces){
+    let bestIdx=-1,bestNode=null,bestRot=false,bestScore=Infinity;
+    const pw=pc.w+gap, ph=pc.h+gap;
+    const prw=pc.h+gap, prh=pc.w+gap; // rotated
+    for(let ni=0;ni<nodes.length;ni++){
+      const nd=nodes[ni];
+      // Try normal orientation
+      if(pw<=nd.w+0.1&&ph<=nd.h+0.1){
+        const score=Math.min(nd.w-pw,nd.h-ph); // best short-side fit
+        if(score<bestScore){bestScore=score;bestIdx=ni;bestNode=nd;bestRot=false;}
+      }
+      // Try rotated (only if not square)
+      if(pc.w!==pc.h&&prw<=nd.w+0.1&&prh<=nd.h+0.1){
+        const score=Math.min(nd.w-prw,nd.h-prh);
+        if(score<bestScore){bestScore=score;bestIdx=ni;bestNode=nd;bestRot=true;}
+      }
+    }
+    if(bestIdx<0) continue; // doesn't fit this sheet
+    const rw=bestRot?pc.h:pc.w, rh=bestRot?pc.w:pc.h;
+    placed.push({x:bestNode.x,y:bestNode.y,w:rw,h:rh,id:pc.id,label:pc.label,rotated:bestRot});
+    // Split the node: guillotine cut — choose split direction that leaves larger remainder
+    const remW=bestNode.w-(rw+gap), remH=bestNode.h-(rh+gap);
+    nodes.splice(bestIdx,1);
+    if(remW*bestNode.h>=bestNode.w*remH){
+      // Split vertically first (right remainder is taller)
+      if(remH>gap) nodes.push({x:bestNode.x,y:bestNode.y+rh+gap,w:rw+gap,h:remH});
+      if(remW>gap) nodes.push({x:bestNode.x+rw+gap,y:bestNode.y,w:remW,h:bestNode.h});
+    } else {
+      // Split horizontally first (bottom remainder is wider)
+      if(remW>gap) nodes.push({x:bestNode.x+rw+gap,y:bestNode.y,w:remW,h:rh+gap});
+      if(remH>gap) nodes.push({x:bestNode.x,y:bestNode.y+rh+gap,w:bestNode.w,h:remH});
+    }
+  }
+  const usedArea=placed.reduce((s,p)=>s+p.w*p.h,0);
+  return{placed,wasteArea:sheetW*sheetH-usedArea};
+}
+
+function cutOptimize(items,stockSheet){
+  // items = [{w,h,qty,label,id},...] — scaled dimensions in mm
+  // Expand qty into individual pieces, sort by area descending
+  const pieces=[];
+  items.forEach(it=>{
+    for(let q=0;q<(it.qty||1);q++){
+      pieces.push({w:it.w,h:it.h,id:it.id,label:it.label+(it.qty>1?' #'+(q+1):'')});
+    }
+  });
+  pieces.sort((a,b)=>(b.w*b.h)-(a.w*a.h));
+  const sheets=[];
+  let remaining=[...pieces];
+  let safety=0;
+  while(remaining.length>0&&safety<200){
+    safety++;
+    const result=cutGuillotinePack(stockSheet.w,stockSheet.h,remaining,CUT_GAP);
+    if(!result.placed.length){
+      // Remaining pieces don't fit any sheet — mark as oversize
+      sheets.push({placed:[],oversize:remaining,sheetW:stockSheet.w,sheetH:stockSheet.h});
+      break;
+    }
+    const placedIds=new Set(result.placed.map(p=>p.id+'_'+result.placed.indexOf(p)));
+    // Remove placed pieces from remaining (by matching id, order-sensitive)
+    const usedMap={};
+    result.placed.forEach(p=>{usedMap[p.id]=(usedMap[p.id]||0)+1;});
+    const newRemaining=[];
+    const usedCount={};
+    for(const r of remaining){
+      usedCount[r.id]=(usedCount[r.id]||0);
+      if(usedMap[r.id]&&usedCount[r.id]<usedMap[r.id]){usedCount[r.id]++;continue;}
+      newRemaining.push(r);
+    }
+    remaining=newRemaining;
+    const sheetArea=stockSheet.w*stockSheet.h;
+    const usedArea=result.placed.reduce((s,p)=>s+p.w*p.h,0);
+    sheets.push({
+      placed:result.placed,
+      sheetW:stockSheet.w,sheetH:stockSheet.h,
+      usedArea,wasteArea:sheetArea-usedArea,
+      wastePct:Math.round((1-usedArea/sheetArea)*10000)/100
+    });
+  }
+  return sheets;
+}
+
+function cutSheetSvg(sheet,idx,maxW){
+  const sc=maxW/Math.max(sheet.sheetW,sheet.sheetH);
+  const svgW=Math.round(sheet.sheetW*sc), svgH=Math.round(sheet.sheetH*sc);
+  const colors=['#4caf50','#2196f3','#ff9800','#e91e63','#9c27b0','#00bcd4','#ff5722','#795548','#607d8b','#cddc39','#3f51b5','#f44336'];
+  let rects='';
+  (sheet.placed||[]).forEach((p,pi)=>{
+    const x=Math.round(p.x*sc), y=Math.round(p.y*sc);
+    const w=Math.round(p.w*sc), h=Math.round(p.h*sc);
+    const col=colors[pi%colors.length];
+    const fontSize=Math.min(w/6,h/3,14);
+    rects+=`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${col}" fill-opacity="0.25" stroke="${col}" stroke-width="1.5" rx="2"/>`;
+    if(fontSize>=6){
+      rects+=`<text x="${x+w/2}" y="${y+h/2-fontSize*0.3}" text-anchor="middle" fill="${col}" font-size="${fontSize}" font-weight="600">${p.w}×${p.h}</text>`;
+      rects+=`<text x="${x+w/2}" y="${y+h/2+fontSize*0.8}" text-anchor="middle" fill="#555" font-size="${Math.max(fontSize*0.7,7)}">${esc(p.label)}${p.rotated?' ↻':''}</text>`;
+    }
+  });
+  return `<div style="margin:8px 0">
+    <div style="font-weight:600;font-size:13px;margin-bottom:4px">Sheet ${idx+1} — ${sheet.placed.length} piece${sheet.placed.length!==1?'s':''} · Waste ${sheet.wastePct}%</div>
+    <svg width="${svgW}" height="${svgH}" viewBox="0 0 ${svgW} ${svgH}" style="border:2px solid #333;background:#f9f9f9;border-radius:4px;max-width:100%">
+      <rect width="${svgW}" height="${svgH}" fill="#e8e8e8" rx="2"/>
+      ${rects}
+    </svg>
+  </div>`;
+}
+
+function openCutOptimizer(){
+  const items=(window.__quoteItems||[]).filter(it=>(it.type||'Glass')==='Glass'&&num(it.scaledW)>0&&num(it.scaledH)>0&&num(it.pieces)>0);
+  if(!items.length){ toast('Add glass items with dimensions and quantities first'); return; }
+  // Group by first Glass layer material (thickness+color)
+  const groups={};
+  items.forEach((it,idx)=>{
+    const mats=(it.materials||[]).filter(m=>m.type==='Glass');
+    const key=mats.length?(mats[0].thickness||'?')+'mm '+(mats[0].color||'?'):'Ungrouped';
+    if(!groups[key])groups[key]=[];
+    groups[key].push({
+      w:Math.round(num(it.scaledW)),h:Math.round(num(it.scaledH)),
+      qty:Math.round(num(it.pieces)),
+      label:'#'+(idx+1),id:'item_'+idx
+    });
+  });
+  const stockOpts=CUT_STOCK_SHEETS.map((s,si)=>`<option value="${si}"${si===2?' selected':''}>${esc(s.label)}</option>`).join('');
+  // Build per-material-group sections
+  let sections='';
+  for(const [mat,grpItems] of Object.entries(groups)){
+    const totalPieces=grpItems.reduce((s,it)=>s+it.qty,0);
+    sections+=`<div style="margin:12px 0;padding:10px;background:var(--panel2);border-radius:8px;border:1px solid var(--line)">
+      <div style="font-weight:700;font-size:14px;margin-bottom:6px">📦 ${esc(mat)} — ${totalPieces} piece${totalPieces!==1?'s':''}</div>
+      <table style="width:100%;font-size:12px;border-collapse:collapse">
+        <thead><tr style="background:var(--panel);font-weight:600"><th style="padding:4px 8px;text-align:left">#</th><th>Width(mm)</th><th>Height(mm)</th><th>Sqft ea.</th><th>Qty</th></tr></thead>
+        <tbody>${grpItems.map(it=>`<tr><td style="padding:3px 8px">${esc(it.label)}</td><td class="num">${it.w}</td><td class="num">${it.h}</td><td class="num">${Math.round(it.w*it.h/92903.04*100)/100}</td><td class="num">${it.qty}</td></tr>`).join('')}</tbody>
+      </table>
+    </div>`;
+  }
+  const html=`<div style="max-height:70vh;overflow-y:auto;padding:4px">
+    <div class="formgrid"><div class="field"><label>Stock Sheet Size</label><select id="cut_stockSheet">${stockOpts}</select></div>
+    <div class="field"><label>Blade Kerf (mm)</label><input id="cut_kerf" type="number" value="3" step="0.5" min="0" max="10" style="width:80px"></div></div>
+    <div class="help" style="margin:6px 0">Glass items from this quote, grouped by material:</div>
+    ${sections}
+    <button class="btn" style="background:var(--accent);color:#fff;margin:10px 0" onclick="runCutOptimizer()">▶ Optimize Cutting Plan</button>
+    <div id="cut_results"></div>
+  </div>`;
+  openModal('🔲 Cut List Optimizer',html,null);
+}
+
+function runCutOptimizer(){
+  const items=(window.__quoteItems||[]).filter(it=>(it.type||'Glass')==='Glass'&&num(it.scaledW)>0&&num(it.scaledH)>0&&num(it.pieces)>0);
+  const ssIdx=parseInt(document.getElementById('cut_stockSheet').value)||2;
+  const stock=CUT_STOCK_SHEETS[ssIdx]||CUT_STOCK_SHEETS[2];
+  const kerf=num(document.getElementById('cut_kerf').value)||CUT_GAP;
+  // Group by material
+  const groups={};
+  items.forEach((it,idx)=>{
+    const mats=(it.materials||[]).filter(m=>m.type==='Glass');
+    const key=mats.length?(mats[0].thickness||'?')+'mm '+(mats[0].color||'?'):'Ungrouped';
+    if(!groups[key])groups[key]=[];
+    groups[key].push({
+      w:Math.round(num(it.scaledW)),h:Math.round(num(it.scaledH)),
+      qty:Math.round(num(it.pieces)),
+      label:'#'+(idx+1),id:'item_'+idx
+    });
+  });
+  let out='';
+  let grandSheets=0,grandUsed=0,grandTotal=0;
+  for(const [mat,grpItems] of Object.entries(groups)){
+    // Check for oversize pieces
+    const oversize=[];
+    const fittable=[];
+    grpItems.forEach(it=>{
+      const fits=(it.w<=stock.w&&it.h<=stock.h)||(it.h<=stock.w&&it.w<=stock.h);
+      if(fits) fittable.push(it); else oversize.push(it);
+    });
+    const sheets=cutOptimize(fittable,stock);
+    const totalSheets=sheets.filter(s=>s.placed&&s.placed.length).length;
+    const totalUsed=sheets.reduce((s,sh)=>s+(sh.usedArea||0),0);
+    const totalArea=totalSheets*stock.w*stock.h;
+    const avgWaste=totalArea>0?Math.round((1-totalUsed/totalArea)*10000)/100:0;
+    grandSheets+=totalSheets;grandUsed+=totalUsed;grandTotal+=totalArea;
+    out+=`<div style="margin:16px 0;border-top:2px solid var(--accent);padding-top:12px">
+      <h4 style="color:var(--accent)">📦 ${esc(mat)}</h4>
+      <div style="display:flex;gap:20px;flex-wrap:wrap;margin:8px 0;font-size:13px">
+        <div><b>${totalSheets}</b> sheet${totalSheets!==1?'s':''} of ${stock.w}×${stock.h}mm</div>
+        <div>Avg waste: <b style="color:${avgWaste>30?'var(--danger)':avgWaste>15?'var(--amber)':'var(--green)'}">${avgWaste}%</b></div>
+        <div>Total sheet area: <b>${Math.round(totalArea/92903.04)} sqft</b></div>
+      </div>`;
+    sheets.forEach((sh,si)=>{
+      if(sh.placed&&sh.placed.length) out+=cutSheetSvg(sh,si,Math.min(600,window.innerWidth-100));
+    });
+    if(oversize.length){
+      out+=`<div style="margin:8px 0;padding:8px;background:#fff3e0;border:1px solid #ff9800;border-radius:6px;font-size:12px">
+        <b>⚠ Oversize pieces</b> (don't fit ${stock.w}×${stock.h}mm sheet):<br>
+        ${oversize.map(it=>`${esc(it.label)}: ${it.w}×${it.h}mm × ${it.qty} pc${it.qty>1?'s':''}`).join('<br>')}
+      </div>`;
+    }
+    out+=`</div>`;
+  }
+  // Grand summary
+  const grandWaste=grandTotal>0?Math.round((1-grandUsed/grandTotal)*10000)/100:0;
+  const summary=`<div style="margin:12px 0;padding:12px;background:var(--accent);color:#fff;border-radius:8px;font-size:14px">
+    <b>📊 Summary:</b> ${grandSheets} sheet${grandSheets!==1?'s':''} total ·
+    ${Math.round(grandTotal/92903.04)} sqft stock ·
+    Waste: ${grandWaste}% ·
+    Used: ${Math.round(grandUsed/92903.04)} sqft
+  </div>`;
+  document.getElementById('cut_results').innerHTML=summary+out;
+}
+function openCutOptimizerForQuote(qId){
+  const q=state.quotes.find(x=>x.id===qId);
+  if(!q||!q.items||!q.items.length){ toast('Quote has no items'); return; }
+  // Temporarily set __quoteItems so openCutOptimizer can read them
+  const prev=window.__quoteItems;
+  window.__quoteItems=q.items.map(it=>Object.assign({},it));
+  openCutOptimizer();
+  // Restore previous (in case modal was open from edit form)
+  // Don't restore immediately — optimizer reads from __quoteItems on button click
+}
+/* ═══ End Cut List Optimizer ═══ */
+
 function quoteForm(q){ q=q||{};
   window.__quoteItems=(q.items&&q.items.length)?q.items.map(it=>Object.assign({},it)):[{code:"",desc:"",sizeW:"",sizeH:"",sqft:"",pieces:"",unitPrice:"",type:"Glass"}];
   window.__quoteGqSerial=q.serialNo||((state.quotes||[]).length+1);
@@ -4867,6 +5594,7 @@ function quoteForm(q){ q=q||{};
       <div class="field"><label>Valid Until</label><input id="qf_validUntil" type="date" value="${esc(q.validUntil||"")}"></div>
       <div class="field ${rep?'locked':''}"><label>Sales Rep</label>${sel("reps",q.rep||rep,[q.rep])}</div>
       <div class="field full"><label>Client</label><select id="qf_clientId" onchange="fillCompanyQuote()">${clientOptions(q.clientId)}</select></div>
+      <div class="field full"><label>Project</label>${projectPickerHtml(q.projectId,q.clientId,'qf_projectId')}</div>
       <div class="field"><label>Contact Person</label><select id="qf_contact"><option value="">— Select contact —</option>${(q.clientId?(state.contacts||[]).filter(ct=>ct.accountId===q.clientId):[]).map(ct=>`<option value="${esc(ct.name)}" ${ct.name===(q.contact||'')?'selected':''} >${esc(ct.name)}${ct.designation?' ('+esc(ct.designation)+')':''}</option>`).join('')}</select></div>
       <div class="field"><label>Contact Gender</label><select id="qf_contactGender"><option value=""${!q.contactGender?" selected":""}>Not specified</option><option value="Male"${q.contactGender==="Male"?" selected":""}>Male</option><option value="Female"${q.contactGender==="Female"?" selected":""}>Female</option></select><div class="help">Used for the honorific (Mr./Ms.) and salutation on the printed quote.</div></div>
       <div class="field"><label>Status</label>${sel("quoteStatus",q.status||"Draft",[q.status])}</div>
@@ -4877,7 +5605,7 @@ function quoteForm(q){ q=q||{};
     </div>
     <h4 style="margin:14px 0 4px">Line items</h4>
     <div id="qi_rows"></div>
-    <div style="display:flex;gap:8px;align-items:center;margin:8px 0;flex-wrap:wrap"><button class="btn sm ghost" onclick="quoteAddItem('Glass')">＋ Glass</button><button class="btn sm ghost" onclick="quoteAddItem('Service')">＋ Service</button><button class="btn sm ghost" onclick="quoteAddItem('Hardware')">＋ Hardware</button><div class="help">Total: <b id="qi_total">${PKR(quoteTotal(window.__quoteItems))}</b></div></div>
+    <div style="display:flex;gap:8px;align-items:center;margin:8px 0;flex-wrap:wrap"><button class="btn sm ghost" onclick="quoteAddItem('Glass')">＋ Glass</button><button class="btn sm ghost" onclick="quoteAddItem('Service')">＋ Service</button><button class="btn sm ghost" onclick="quoteAddItem('Hardware')">＋ Hardware</button><button class="btn sm" style="background:#1565c0;color:#fff" onclick="openCutOptimizer()">🔲 Cut Optimizer</button><div class="help">Total: <b id="qi_total">${PKR(quoteTotal(window.__quoteItems))}</b></div></div>
     <div class="field full"><label>Notes / Terms</label><textarea id="qf_notes">${esc(q.notes||"")}</textarea></div>
     <div class="field full"><label>Attach PDF (optional — if the quotation was prepared outside the CRM)</label>
       <input id="qi_pdf" type="file" accept="application/pdf" onchange="quoteAttachFile(this)">
@@ -4900,6 +5628,7 @@ function readQuote(existing){
     customerCode:document.getElementById("qf_customerCode").value,
     ntn:document.getElementById("qf_ntn").value,
     gst:document.getElementById("qf_gst").value,
+    projectId:(document.getElementById("qf_projectId")||{}).value||"",
     items, notes:document.getElementById("qf_notes").value,
     pdfData:window.__quotePdfData||""
   });
@@ -5113,7 +5842,7 @@ function renderQuoteView(v){
   const q=state.quotes.find(x=>x.id===window.__quoteViewId);
   if(!q){ v.innerHTML='<div class="card" style="padding:20px">Quote not found. <button class="btn sm ghost" onclick="go(\'quotes\')">Back</button></div>'; return; }
   v.innerHTML=`<div class="pagehead no-print"><div><h2>Quote # ${esc(quoteDisplayId(q))}</h2><div class="sub">${quoteStatusPill(q.status)}</div></div>
-    <div class="toolbar"><button class="btn ghost sm" onclick="go('quotes')">← Back</button><button class="btn ghost sm" onclick="waQuote('${esc(q.id)}')">💬 WhatsApp</button><button class="btn ghost sm" title="Create next revision (price update)" onclick="reviseQuote('${esc(q.id)}')">↻ New Revision</button><button class="btn primary sm" onclick="printQuoteById('${esc(q.id)}')">🖨 Print / Save PDF</button></div></div>
+    <div class="toolbar"><button class="btn ghost sm" onclick="go('quotes')">← Back</button><button class="btn ghost sm" onclick="waQuote('${esc(q.id)}')">💬 WhatsApp</button><button class="btn ghost sm" title="Create next revision (price update)" onclick="reviseQuote('${esc(q.id)}')">↻ New Revision</button><button class="btn sm" style="background:#1565c0;color:#fff" onclick="openCutOptimizerForQuote('${esc(q.id)}')">🔲 Cut Plan</button><button class="btn primary sm" onclick="printQuoteById('${esc(q.id)}')">🖨 Print / Save PDF</button></div></div>
     ${quoteLetterheadHtml(q)}`;
 }
 // Chrome's "Save as PDF" uses document.title as the default filename -- without this override
@@ -5415,7 +6144,7 @@ function nextId(kind, rep){
   if(kind==="CT"){ return nextContactId(); }
   if(kind==="D"){ return nextDealId(); }
   const prefix=repCode(rep)+"-"+kind+"-";
-  const nums=state[{CL:"calls",MT:"meetings",DL:"deals",TS:"tasks",QT:"quotes",SO:"salesOrders",IV:"invoices",PO:"purchaseOrders",DC:"deliveryChallans",MR:"materialRequisitions",RV:"receivings"}[kind]].filter(x=>String(x.id).startsWith(prefix)).map(x=>num(String(x.id).split("-").pop()));
+  const nums=state[{CL:"calls",MT:"meetings",DL:"deals",TS:"tasks",QT:"quotes",SO:"salesOrders",IV:"invoices",PO:"purchaseOrders",DC:"deliveryChallans",MR:"materialRequisitions",RV:"receivings",VI:"vendorInvoices"}[kind]].filter(x=>String(x.id).startsWith(prefix)).map(x=>num(String(x.id).split("-").pop()));
   const next=(nums.length?Math.max(...nums):0)+1;
   return prefix+String(next).padStart(3,"0");
 }
