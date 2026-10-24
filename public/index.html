@@ -5346,14 +5346,8 @@ function fillCompanyQuote(){ const id=document.getElementById("qf_clientId").val
    Groups quote glass items by material, packs onto standard sheets,
    shows visual layout with waste %.
    ══════════════════════════════════════════════════════════════════ */
-const CUT_STOCK_SHEETS=[
-  {w:1525,h:2850,label:'1525×2850 (5\'×9\'4")'},
-  {w:1800,h:3050,label:'1800×3050 (5\'11"×10\')'},
-  {w:2134,h:3660,label:'2134×3660 (7\'×12\')'},
-  {w:2440,h:2850,label:'2440×2850 (8\'×9\'4")'},
-  {w:2440,h:3660,label:'2440×3660 (8\'×12\')'},
-  {w:2591,h:3660,label:'2591×3660 (8\'6"×12\')'}
-];
+// Sheet sizes now loaded live from inventory_glass (filtered by material thickness+type)
+// CUT_STOCK_SHEETS removed — see openCutOptimizer() for the async inventory fetch
 const CUT_GAP=3; // 3mm blade kerf
 
 // Guillotine node: a free rectangle on a sheet that can be split
@@ -5470,115 +5464,281 @@ function cutSheetSvg(sheet,idx,maxW){
   </div>`;
 }
 
-function openCutOptimizer(){
-  const items=(window.__quoteItems||[]).filter(it=>(it.type||'Glass')==='Glass'&&num(it.scaledW)>0&&num(it.scaledH)>0&&num(it.pieces)>0);
-  if(!items.length){ toast('Add glass items with dimensions and quantities first'); return; }
-  // Group by first Glass layer material (thickness+color)
-  const groups={};
-  items.forEach((it,idx)=>{
-    const mats=(it.materials||[]).filter(m=>m.type==='Glass');
-    const key=mats.length?(mats[0].thickness||'?')+'mm '+(mats[0].color||'?'):'Ungrouped';
-    if(!groups[key])groups[key]=[];
+// ── Multi-size optimizer: for each new sheet load, tries all selected sizes and
+// picks the one that packs the most pieces most efficiently (greedy best-fit)
+function cutOptimizeMulti(items, stockSheets) {
+  const pieces = [];
+  items.forEach(it => {
+    for (let q = 0; q < (it.qty || 1); q++) {
+      pieces.push({w:it.w, h:it.h, id:it.id, label:it.label+(it.qty>1?' #'+(q+1):'')});
+    }
+  });
+  pieces.sort((a,b) => (b.w*b.h)-(a.w*a.h));
+  const sheets = [];
+  let remaining = [...pieces];
+  let safety = 0;
+  while (remaining.length > 0 && safety < 200) {
+    safety++;
+    let bestResult = null, bestStock = null, bestScore = -1;
+    for (const stock of stockSheets) {
+      const anyFits = remaining.some(p =>
+        (p.w<=stock.w && p.h<=stock.h) || (p.h<=stock.w && p.w<=stock.h)
+      );
+      if (!anyFits) continue;
+      const result = cutGuillotinePack(stock.w, stock.h, remaining, CUT_GAP);
+      if (!result.placed.length) continue;
+      const usedArea = result.placed.reduce((s,p) => s+p.w*p.h, 0);
+      const score = result.placed.length * 10000 + Math.round(usedArea/(stock.w*stock.h)*10000);
+      if (score > bestScore) { bestScore=score; bestResult=result; bestStock=stock; }
+    }
+    if (!bestResult) break;
+    const usedCount = {};
+    bestResult.placed.forEach(p => { usedCount[p.id]=(usedCount[p.id]||0)+1; });
+    const consumed = {}, newRemaining = [];
+    for (const r of remaining) {
+      consumed[r.id] = consumed[r.id]||0;
+      if (usedCount[r.id] && consumed[r.id]<usedCount[r.id]) { consumed[r.id]++; continue; }
+      newRemaining.push(r);
+    }
+    remaining = newRemaining;
+    const sheetArea = bestStock.w*bestStock.h;
+    const usedArea = bestResult.placed.reduce((s,p) => s+p.w*p.h, 0);
+    sheets.push({
+      placed: bestResult.placed, sheetW: bestStock.w, sheetH: bestStock.h,
+      stockLabel: bestStock.label, invId: bestStock.invId,
+      usedArea, wasteArea: sheetArea-usedArea,
+      wastePct: Math.round((1-usedArea/sheetArea)*10000)/100
+    });
+  }
+  return sheets;
+}
+
+async function openCutOptimizer() {
+  const items = (window.__quoteItems||[]).filter(it =>
+    (it.type||'Glass')==='Glass' && num(it.scaledW)>0 && num(it.scaledH)>0 && num(it.pieces)>0
+  );
+  if (!items.length) { toast('Add glass items with dimensions and quantities first'); return; }
+  const groups = {};
+  items.forEach((it,idx) => {
+    const mats = (it.materials||[]).filter(m=>m.type==='Glass');
+    const key = mats.length ? (mats[0].thickness||'?')+'mm '+(mats[0].color||'?') : 'Ungrouped';
+    if (!groups[key]) groups[key]=[];
     groups[key].push({
-      w:Math.round(num(it.scaledW)),h:Math.round(num(it.scaledH)),
-      qty:Math.round(num(it.pieces)),
-      label:'#'+(idx+1),id:'item_'+idx
+      w:Math.round(num(it.scaledW)), h:Math.round(num(it.scaledH)),
+      qty:Math.round(num(it.pieces)), label:'#'+(idx+1), id:'item_'+idx
     });
   });
-  const stockOpts=CUT_STOCK_SHEETS.map((s,si)=>`<option value="${si}"${si===2?' selected':''}>${esc(s.label)}</option>`).join('');
-  // Build per-material-group sections
-  let sections='';
-  for(const [mat,grpItems] of Object.entries(groups)){
-    const totalPieces=grpItems.reduce((s,it)=>s+it.qty,0);
-    sections+=`<div style="margin:12px 0;padding:10px;background:var(--panel2);border-radius:8px;border:1px solid var(--line)">
+  window.__cutGroups = groups;
+  window.__cutInventory = {};
+  let sections = '';
+  for (const [mat,grpItems] of Object.entries(groups)) {
+    const totalPieces = grpItems.reduce((s,it)=>s+it.qty,0);
+    sections += `<div style="margin:10px 0;padding:10px;background:var(--panel2);border-radius:8px;border:1px solid var(--line)">
       <div style="font-weight:700;font-size:14px;margin-bottom:6px">📦 ${esc(mat)} — ${totalPieces} piece${totalPieces!==1?'s':''}</div>
       <table style="width:100%;font-size:12px;border-collapse:collapse">
-        <thead><tr style="background:var(--panel);font-weight:600"><th style="padding:4px 8px;text-align:left">#</th><th>Width(mm)</th><th>Height(mm)</th><th>Sqft ea.</th><th>Qty</th></tr></thead>
+        <thead><tr style="background:var(--panel);font-weight:600"><th style="padding:4px 8px;text-align:left">#</th><th>W(mm)</th><th>H(mm)</th><th>Sqft</th><th>Qty</th></tr></thead>
         <tbody>${grpItems.map(it=>`<tr><td style="padding:3px 8px">${esc(it.label)}</td><td class="num">${it.w}</td><td class="num">${it.h}</td><td class="num">${Math.round(it.w*it.h/92903.04*100)/100}</td><td class="num">${it.qty}</td></tr>`).join('')}</tbody>
       </table>
     </div>`;
   }
-  const html=`<div style="max-height:70vh;overflow-y:auto;padding:4px">
-    <div class="formgrid"><div class="field"><label>Stock Sheet Size</label><select id="cut_stockSheet">${stockOpts}</select></div>
-    <div class="field"><label>Blade Kerf (mm)</label><input id="cut_kerf" type="number" value="3" step="0.5" min="0" max="10" style="width:80px"></div></div>
-    <div class="help" style="margin:6px 0">Glass items from this quote, grouped by material:</div>
+  const html = `<div style="max-height:75vh;overflow-y:auto;padding:4px">
+    <div class="formgrid"><div class="field"><label>Blade Kerf (mm)</label><input id="cut_kerf" type="number" value="3" step="0.5" min="0" max="10" style="width:80px"></div></div>
+    <div class="help" style="margin:4px 0 10px">Glass items grouped by material — sheet sizes loaded live from inventory:</div>
     ${sections}
-    <button class="btn" style="background:var(--accent);color:#fff;margin:10px 0" onclick="runCutOptimizer()">▶ Optimize Cutting Plan</button>
+    <div id="cut_inv_section"><div style="text-align:center;padding:20px;color:var(--muted)">⏳ Loading inventory sizes…</div></div>
     <div id="cut_results"></div>
   </div>`;
-  openModal('🔲 Cut List Optimizer',html,null);
+  openModal('🔲 Cut List Optimizer', html, null);
+  for (const [mat] of Object.entries(groups)) {
+    const parts = mat.match(/^(\d+(?:\.\d+)?)mm (.+)$/);
+    const thk = parts ? parts[1] : null;
+    const color = parts ? parts[2].trim() : null;
+    try {
+      let q = sb.from('inventory_glass')
+        .select('id,b_code,thickness,type,width_mm,height_mm,brand,qty_sheets,reserved_qty')
+        .order('width_mm', {ascending:true});
+      if (thk) q = q.ilike('thickness', thk+' mm');
+      if (color && color!=='?') q = q.eq('type', color);
+      const {data} = await q;
+      window.__cutInventory[mat] = (data||[]).map(r => ({
+        invId: r.id, b_code: r.b_code,
+        w: r.width_mm, h: r.height_mm,
+        label: r.width_mm+'×'+r.height_mm+'mm',
+        qty: r.qty_sheets||0, reserved: r.reserved_qty||0,
+        available: Math.max(0,(r.qty_sheets||0)-(r.reserved_qty||0)),
+        type: r.type, brand: r.brand, thickness: r.thickness
+      }));
+    } catch(e) { window.__cutInventory[mat]=[]; }
+  }
+  const invSection = document.getElementById('cut_inv_section');
+  if (!invSection) return;
+  let ctrlHtml = '';
+  for (const [mat, invRows] of Object.entries(window.__cutInventory)) {
+    const sk = mat.replace(/\W/g,'_');
+    const inStock = invRows.filter(r=>r.available>0);
+    const noStock = invRows.filter(r=>r.available===0);
+    ctrlHtml += `<div style="margin:10px 0;padding:10px;background:var(--panel2);border-radius:8px;border:1px solid var(--line)">
+      <div style="font-weight:700;font-size:13px;margin-bottom:8px">📐 Sheet Sizes — ${esc(mat)}</div>`;
+    if (!invRows.length) {
+      ctrlHtml += `<div style="color:var(--amber);font-size:12px;margin-bottom:8px">⚠ No inventory entries found for this glass type — add a custom size below.</div>`;
+    } else {
+      ctrlHtml += `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;font-size:12px">`;
+      for (const r of inStock) {
+        ctrlHtml += `<label style="display:flex;align-items:center;gap:5px;padding:5px 10px;background:var(--panel);border-radius:6px;border:1px solid var(--green);cursor:pointer">
+          <input type="checkbox" name="cut_sz_${esc(sk)}" checked
+            data-w="${r.w}" data-h="${r.h}" data-label="${esc(r.label)}" data-avail="${r.available}" data-invid="${esc(r.invId)}">
+          ${esc(r.label)} <span style="color:var(--green)">(${r.available} avail)</span>
+        </label>`;
+      }
+      for (const r of noStock) {
+        ctrlHtml += `<label style="display:flex;align-items:center;gap:5px;padding:5px 10px;background:var(--panel);border-radius:6px;border:1px dashed var(--muted);cursor:pointer;opacity:0.65">
+          <input type="checkbox" name="cut_sz_${esc(sk)}"
+            data-w="${r.w}" data-h="${r.h}" data-label="${esc(r.label)}" data-avail="0" data-invid="${esc(r.invId)}">
+          ${esc(r.label)} <span style="color:var(--muted)">(out of stock)</span>
+        </label>`;
+      }
+      ctrlHtml += `</div>`;
+    }
+    ctrlHtml += `<div style="display:flex;align-items:center;gap:8px;font-size:12px">
+      <span style="color:var(--muted)">➕ Custom:</span>
+      <input type="number" placeholder="W mm" id="cut_cw_${esc(sk)}" style="width:75px;padding:3px 6px;font-size:12px" min="100" max="5000">
+      <span>×</span>
+      <input type="number" placeholder="H mm" id="cut_ch_${esc(sk)}" style="width:75px;padding:3px 6px;font-size:12px" min="100" max="5000">
+    </div></div>`;
+  }
+  ctrlHtml += `<button class="btn" style="background:var(--accent);color:#fff;margin:12px 0;width:100%;padding:10px 0" onclick="runCutOptimizer()">▶ Run Cutting Optimization</button>`;
+  invSection.innerHTML = ctrlHtml;
 }
 
-function runCutOptimizer(){
-  const items=(window.__quoteItems||[]).filter(it=>(it.type||'Glass')==='Glass'&&num(it.scaledW)>0&&num(it.scaledH)>0&&num(it.pieces)>0);
-  const ssIdx=parseInt(document.getElementById('cut_stockSheet').value)||2;
-  const stock=CUT_STOCK_SHEETS[ssIdx]||CUT_STOCK_SHEETS[2];
-  const kerf=num(document.getElementById('cut_kerf').value)||CUT_GAP;
-  // Group by material
-  const groups={};
-  items.forEach((it,idx)=>{
-    const mats=(it.materials||[]).filter(m=>m.type==='Glass');
-    const key=mats.length?(mats[0].thickness||'?')+'mm '+(mats[0].color||'?'):'Ungrouped';
-    if(!groups[key])groups[key]=[];
-    groups[key].push({
-      w:Math.round(num(it.scaledW)),h:Math.round(num(it.scaledH)),
-      qty:Math.round(num(it.pieces)),
-      label:'#'+(idx+1),id:'item_'+idx
+function runCutOptimizer() {
+  const groups = window.__cutGroups||{};
+  let out='', grandSheets=0, grandUsed=0, grandTotal=0;
+  for (const [mat,grpItems] of Object.entries(groups)) {
+    const sk = mat.replace(/\W/g,'_');
+    const cbs = document.querySelectorAll(`input[name="cut_sz_${sk}"]`);
+    const selectedSizes = [];
+    cbs.forEach(cb => {
+      if (cb.checked) selectedSizes.push({
+        w:parseInt(cb.dataset.w), h:parseInt(cb.dataset.h),
+        label:cb.dataset.label, invId:cb.dataset.invid,
+        available:parseInt(cb.dataset.avail)||0
+      });
     });
-  });
-  let out='';
-  let grandSheets=0,grandUsed=0,grandTotal=0;
-  for(const [mat,grpItems] of Object.entries(groups)){
-    // Check for oversize pieces
-    const oversize=[];
-    const fittable=[];
-    grpItems.forEach(it=>{
-      const fits=(it.w<=stock.w&&it.h<=stock.h)||(it.h<=stock.w&&it.w<=stock.h);
-      if(fits) fittable.push(it); else oversize.push(it);
+    const cw = parseInt((document.getElementById('cut_cw_'+sk)||{}).value)||0;
+    const ch = parseInt((document.getElementById('cut_ch_'+sk)||{}).value)||0;
+    if (cw>0 && ch>0) selectedSizes.push({w:cw,h:ch,label:cw+'×'+ch+'mm (custom)',invId:null,available:null});
+    if (!selectedSizes.length) {
+      out += `<div style="color:var(--danger);padding:8px;margin:8px 0">⚠ ${esc(mat)}: no sheet sizes selected.</div>`;
+      continue;
+    }
+    const oversize=[], fittable=[];
+    grpItems.forEach(it => {
+      const fits = selectedSizes.some(s=>(it.w<=s.w&&it.h<=s.h)||(it.h<=s.w&&it.w<=s.h));
+      if (fits) fittable.push(it); else oversize.push(it);
     });
-    const sheets=cutOptimize(fittable,stock);
-    const totalSheets=sheets.filter(s=>s.placed&&s.placed.length).length;
-    const totalUsed=sheets.reduce((s,sh)=>s+(sh.usedArea||0),0);
-    const totalArea=totalSheets*stock.w*stock.h;
-    const avgWaste=totalArea>0?Math.round((1-totalUsed/totalArea)*10000)/100:0;
-    grandSheets+=totalSheets;grandUsed+=totalUsed;grandTotal+=totalArea;
-    out+=`<div style="margin:16px 0;border-top:2px solid var(--accent);padding-top:12px">
-      <h4 style="color:var(--accent)">📦 ${esc(mat)}</h4>
-      <div style="display:flex;gap:20px;flex-wrap:wrap;margin:8px 0;font-size:13px">
-        <div><b>${totalSheets}</b> sheet${totalSheets!==1?'s':''} of ${stock.w}×${stock.h}mm</div>
-        <div>Avg waste: <b style="color:${avgWaste>30?'var(--danger)':avgWaste>15?'var(--amber)':'var(--green)'}">${avgWaste}%</b></div>
-        <div>Total sheet area: <b>${Math.round(totalArea/92903.04)} sqft</b></div>
-      </div>`;
-    sheets.forEach((sh,si)=>{
-      if(sh.placed&&sh.placed.length) out+=cutSheetSvg(sh,si,Math.min(600,window.innerWidth-100));
+    const perSize = selectedSizes.map(stock => {
+      const fits = fittable.filter(it=>(it.w<=stock.w&&it.h<=stock.h)||(it.h<=stock.w&&it.w<=stock.h));
+      const sheets = cutOptimize(fits, stock);
+      const placed = sheets.filter(s=>s.placed&&s.placed.length);
+      const totalSheets = placed.length;
+      const totalUsed = placed.reduce((s,sh)=>s+(sh.usedArea||0),0);
+      const totalArea = totalSheets*stock.w*stock.h;
+      const avgWaste = totalArea>0?Math.round((1-totalUsed/totalArea)*10000)/100:100;
+      return {stock, sheets, totalSheets, totalUsed, totalArea, avgWaste};
     });
-    if(oversize.length){
-      out+=`<div style="margin:8px 0;padding:8px;background:#fff3e0;border:1px solid #ff9800;border-radius:6px;font-size:12px">
-        <b>⚠ Oversize pieces</b> (don't fit ${stock.w}×${stock.h}mm sheet):<br>
-        ${oversize.map(it=>`${esc(it.label)}: ${it.w}×${it.h}mm × ${it.qty} pc${it.qty>1?'s':''}`).join('<br>')}
+    let combined = null;
+    if (selectedSizes.length>1) {
+      const cs = cutOptimizeMulti(fittable, selectedSizes);
+      const cPlaced = cs.filter(s=>s.placed&&s.placed.length);
+      const cSheets = cPlaced.length;
+      const cUsed = cPlaced.reduce((s,sh)=>s+(sh.usedArea||0),0);
+      const cArea = cPlaced.reduce((s,sh)=>s+sh.sheetW*sh.sheetH,0);
+      const cWaste = cArea>0?Math.round((1-cUsed/cArea)*10000)/100:100;
+      combined = {sheets:cs, totalSheets:cSheets, totalUsed:cUsed, totalArea:cArea, avgWaste:cWaste};
+    }
+    let bestLabel=null, bestWaste=Infinity;
+    perSize.forEach((r,i)=>{ if(r.avgWaste<bestWaste){bestWaste=r.avgWaste;bestLabel='ps_'+i;} });
+    if (combined && combined.avgWaste<bestWaste) { bestWaste=combined.avgWaste; bestLabel='combined'; }
+    out += `<div style="margin:16px 0;border-top:2px solid var(--accent);padding-top:12px">
+      <h4 style="color:var(--accent);margin:0 0 8px">📦 ${esc(mat)}</h4>`;
+    perSize.forEach((r,i) => {
+      const isBest = bestLabel==='ps_'+i && selectedSizes.length>1;
+      const wc = r.avgWaste>30?'var(--danger)':r.avgWaste>15?'var(--amber)':'var(--green)';
+      let stockBadge='';
+      if (r.stock.available!==null) {
+        if (r.totalSheets>r.stock.available) {
+          const deficit=r.totalSheets-r.stock.available;
+          stockBadge=`<span style="color:var(--danger);font-weight:600">⚠ Need ${r.totalSheets}, have ${r.stock.available} — short by ${deficit}</span>`;
+        } else {
+          stockBadge=`<span style="color:var(--green)">✓ ${r.stock.available} avail</span>`;
+        }
+      }
+      const reserveBtn = (r.stock.invId && r.totalSheets>0)
+        ? `<button class="btn sm" style="background:var(--panel);border:1px solid var(--accent);font-size:11px;padding:2px 8px"
+            onclick="cutReserveStock(this,'${esc(r.stock.invId)}',${r.totalSheets},'${esc(r.stock.label)}')">🔒 Reserve ${r.totalSheets}</button>`
+        : '';
+      out += `<div style="margin:8px 0;padding:10px;background:var(--panel2);border-radius:8px;border:2px solid ${isBest?'var(--green)':'var(--line)'}">
+        <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:6px">
+          <b>${esc(r.stock.label)}</b>
+          ${isBest?'<span style="background:var(--green);color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">★ BEST</span>':''}
+          <span style="font-size:12px">${r.totalSheets} sheet${r.totalSheets!==1?'s':''} · waste <b style="color:${wc}">${r.avgWaste}%</b></span>
+          ${stockBadge} ${reserveBtn}
+        </div>`;
+      r.sheets.forEach((sh,si) => { if(sh.placed&&sh.placed.length) out+=cutSheetSvg(sh,si,Math.min(560,window.innerWidth-120)); });
+      out += `</div>`;
+      grandSheets+=r.totalSheets; grandUsed+=r.totalUsed; grandTotal+=r.totalArea;
+    });
+    if (combined) {
+      const isBest = bestLabel==='combined';
+      const wc = combined.avgWaste>30?'var(--danger)':combined.avgWaste>15?'var(--amber)':'var(--green)';
+      out += `<div style="margin:8px 0;padding:10px;background:var(--panel2);border-radius:8px;border:2px solid ${isBest?'var(--green)':'var(--accent)'}">
+        <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:6px">
+          <b>🔀 Combined (all ${selectedSizes.length} sizes)</b>
+          ${isBest?'<span style="background:var(--green);color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">★ BEST</span>':''}
+          <span style="font-size:12px">${combined.totalSheets} sheet${combined.totalSheets!==1?'s':''} · waste <b style="color:${wc}">${combined.avgWaste}%</b></span>
+        </div>`;
+      combined.sheets.forEach((sh,si) => { if(sh.placed&&sh.placed.length) out+=cutSheetSvg(sh,si,Math.min(560,window.innerWidth-120)); });
+      out += `</div>`;
+    }
+    if (oversize.length) {
+      out += `<div style="margin:8px 0;padding:8px;background:#fff3e0;border:1px solid #ff9800;border-radius:6px;font-size:12px">
+        <b>⚠ Oversize pieces</b> (won't fit any selected sheet):<br>
+        ${oversize.map(it=>`${esc(it.label)}: ${it.w}×${it.h}mm × ${it.qty}`).join('<br>')}
       </div>`;
     }
-    out+=`</div>`;
+    out += `</div>`;
   }
-  // Grand summary
-  const grandWaste=grandTotal>0?Math.round((1-grandUsed/grandTotal)*10000)/100:0;
-  const summary=`<div style="margin:12px 0;padding:12px;background:var(--accent);color:#fff;border-radius:8px;font-size:14px">
+  const grandWaste = grandTotal>0?Math.round((1-grandUsed/grandTotal)*10000)/100:0;
+  const summary = `<div style="margin:12px 0;padding:12px;background:var(--accent);color:#fff;border-radius:8px;font-size:14px">
     <b>📊 Summary:</b> ${grandSheets} sheet${grandSheets!==1?'s':''} total ·
-    ${Math.round(grandTotal/92903.04)} sqft stock ·
-    Waste: ${grandWaste}% ·
-    Used: ${Math.round(grandUsed/92903.04)} sqft
+    ${Math.round(grandTotal/92903.04)} sqft stock area · Avg waste: ${grandWaste}%
   </div>`;
-  document.getElementById('cut_results').innerHTML=summary+out;
+  document.getElementById('cut_results').innerHTML = summary+out;
 }
-function openCutOptimizerForQuote(qId){
-  const q=state.quotes.find(x=>x.id===qId);
-  if(!q||!q.items||!q.items.length){ toast('Quote has no items'); return; }
-  // Temporarily set __quoteItems so openCutOptimizer can read them
-  const prev=window.__quoteItems;
-  window.__quoteItems=q.items.map(it=>Object.assign({},it));
-  openCutOptimizer();
-  // Restore previous (in case modal was open from edit form)
-  // Don't restore immediately — optimizer reads from __quoteItems on button click
+
+async function cutReserveStock(btn, invId, sheetsNeeded, sizeLabel) {
+  if (!confirm('Reserve '+sheetsNeeded+' sheet'+(sheetsNeeded!==1?'s':'')+' of '+sizeLabel+'?\nThis marks them as allocated so they are not double-booked.')) return;
+  try {
+    const {data,error} = await sb.from('inventory_glass')
+      .select('reserved_qty,qty_sheets').eq('id',invId).single();
+    if (error||!data) throw error||new Error('row not found');
+    const newReserved = (data.reserved_qty||0)+sheetsNeeded;
+    if (newReserved>data.qty_sheets) {
+      toast('⚠ Cannot reserve more than total stock ('+data.qty_sheets+' sheets)'); return;
+    }
+    const {error:updErr} = await sb.from('inventory_glass')
+      .update({reserved_qty:newReserved}).eq('id',invId);
+    if (updErr) throw updErr;
+    toast('✓ Reserved '+sheetsNeeded+' sheet'+(sheetsNeeded!==1?'s':'')+' of '+sizeLabel);
+    if (btn) { btn.textContent='✓ Reserved'; btn.disabled=true; btn.style.opacity='0.6'; }
+  } catch(e) { toast('Reserve failed: '+(e.message||e)); }
+}
+
+function openCutOptimizerForQuote(qId) {
+  const q = state.quotes.find(x=>x.id===qId);
+  if (!q||!q.items||!q.items.length) { toast('Quote has no items'); return; }
+  window.__quoteItems = q.items.map(it=>Object.assign({},it));
+  openCutOptimizer(); // async — modal opens immediately, sizes load in background
 }
 /* ═══ End Cut List Optimizer ═══ */
 
