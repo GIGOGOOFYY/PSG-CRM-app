@@ -5443,20 +5443,23 @@ function cutSheetSvg(sheet,idx,maxW){
   const sc=maxW/Math.max(sheet.sheetW,sheet.sheetH);
   const svgW=Math.round(sheet.sheetW*sc), svgH=Math.round(sheet.sheetH*sc);
   const colors=['#4caf50','#2196f3','#ff9800','#e91e63','#9c27b0','#00bcd4','#ff5722','#795548','#607d8b','#cddc39','#3f51b5','#f44336'];
+  const idList=[...new Set((sheet.placed||[]).map(p=>p.id))];
+  const idColorMap={};
+  idList.forEach((id,i)=>{ idColorMap[id]=i; });
   let rects='';
   (sheet.placed||[]).forEach((p,pi)=>{
     const x=Math.round(p.x*sc), y=Math.round(p.y*sc);
     const w=Math.round(p.w*sc), h=Math.round(p.h*sc);
-    const col=colors[pi%colors.length];
+    const col=colors[idColorMap[p.id]%colors.length];
     const fontSize=Math.min(w/6,h/3,14);
     rects+=`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${col}" fill-opacity="0.25" stroke="${col}" stroke-width="1.5" rx="2"/>`;
     if(fontSize>=6){
       rects+=`<text x="${x+w/2}" y="${y+h/2-fontSize*0.3}" text-anchor="middle" fill="${col}" font-size="${fontSize}" font-weight="600">${p.w}×${p.h}</text>`;
-      rects+=`<text x="${x+w/2}" y="${y+h/2+fontSize*0.8}" text-anchor="middle" fill="#555" font-size="${Math.max(fontSize*0.7,7)}">${esc(p.label)}${p.rotated?' ↻':''}</text>`;
+      rects+=`<text x="${x+w/2}" y="${y+h/2+fontSize*0.8}" text-anchor="middle" fill="#555" font-size="${Math.max(fontSize*0.7,7)}">#${p.id}${p.rotated?' ↻':''}</text>`;
     }
   });
   return `<div style="margin:8px 0">
-    <div style="font-weight:600;font-size:13px;margin-bottom:4px">Sheet ${idx+1} — ${sheet.placed.length} piece${sheet.placed.length!==1?'s':''} · Waste ${sheet.wastePct}%</div>
+    <div style="font-weight:600;font-size:13px;margin-bottom:4px">Sheet ${idx+1}${sheet.stockLabel?' {'+sheet.stockLabel+'}':' {'+sheet.sheetW+'×'+sheet.sheetH+'mm}'} — ${sheet.placed.length} piece${sheet.placed.length!==1?'s':''} · Waste ${sheet.wastePct}%</div>
     <svg width="${svgW}" height="${svgH}" viewBox="0 0 ${svgW} ${svgH}" style="border:2px solid #333;background:#f9f9f9;border-radius:4px;max-width:100%">
       <rect width="${svgW}" height="${svgH}" fill="#e8e8e8" rx="2"/>
       ${rects}
@@ -5488,7 +5491,7 @@ function cutOptimizeMulti(items, stockSheets) {
       const result = cutGuillotinePack(stock.w, stock.h, remaining, CUT_GAP);
       if (!result.placed.length) continue;
       const usedArea = result.placed.reduce((s,p) => s+p.w*p.h, 0);
-      const score = result.placed.length * 10000 + Math.round(usedArea/(stock.w*stock.h)*10000);
+      const score = usedArea/(stock.w*stock.h); // highest utilization = lowest waste%
       if (score > bestScore) { bestScore=score; bestResult=result; bestStock=stock; }
     }
     if (!bestResult) break;
