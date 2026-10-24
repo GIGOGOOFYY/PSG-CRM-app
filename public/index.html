@@ -5560,14 +5560,22 @@ async function openCutOptimizer() {
       if (thk) q = q.ilike('thickness', thk+' mm');
       if (color && color!=='?') q = q.eq('type', color);
       const {data} = await q;
-      // Deduplicate by size — combine all brands/suppliers into one entry per dimension
+      // Deduplicate by size — combine all brands into one entry per dimension
+      // Local = Tariq / Ghani; Imported = everything else (China, Emirates, Guardian, Saint-Gobain…)
+      const LOCAL_BRANDS = ['tariq','ghani'];
       const sizeMap = {};
       for (const r of (data||[])) {
         const k = r.width_mm+'_'+r.height_mm;
         if (!sizeMap[k]) sizeMap[k] = { w:r.width_mm, h:r.height_mm,
-          label:r.width_mm+'×'+r.height_mm+'mm', invIds:[], qty:0, available:0 };
+          label:r.width_mm+'×'+r.height_mm+'mm',
+          invIds:[], localIds:[], importedIds:[],
+          qty:0, available:0, localAvail:0, importedAvail:0 };
         const avail = Math.max(0,(r.qty_sheets||0)-(r.reserved_qty||0));
-        sizeMap[k].invIds.push({id:r.id, avail, qty:r.qty_sheets||0});
+        const isLocal = LOCAL_BRANDS.includes((r.brand||'').toLowerCase().trim());
+        const entry = {id:r.id, avail, qty:r.qty_sheets||0};
+        sizeMap[k].invIds.push(entry);
+        if (isLocal) { sizeMap[k].localIds.push(entry); sizeMap[k].localAvail += avail; }
+        else { sizeMap[k].importedIds.push(entry); sizeMap[k].importedAvail += avail; }
         sizeMap[k].qty += r.qty_sheets||0;
         sizeMap[k].available += avail;
       }
@@ -5582,23 +5590,34 @@ async function openCutOptimizer() {
     const inStock = invRows.filter(r=>r.available>0);
     const noStock = invRows.filter(r=>r.available===0);
     ctrlHtml += `<div style="margin:10px 0;padding:10px;background:var(--panel2);border-radius:8px;border:1px solid var(--line)">
-      <div style="font-weight:700;font-size:13px;margin-bottom:8px">📐 Sheet Sizes — ${esc(mat)}</div>`;
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+        <b style="font-size:13px">📐 ${esc(mat)}</b>
+        <span style="display:flex;gap:14px;font-size:13px">
+          <label style="cursor:pointer;display:flex;align-items:center;gap:4px"><input type="radio" name="cut_src_${esc(sk)}" value="both" checked> Both</label>
+          <label style="cursor:pointer;display:flex;align-items:center;gap:4px"><input type="radio" name="cut_src_${esc(sk)}" value="local"> Local <span style="color:var(--muted);font-size:11px">(Tariq/Ghani)</span></label>
+          <label style="cursor:pointer;display:flex;align-items:center;gap:4px"><input type="radio" name="cut_src_${esc(sk)}" value="imported"> Imported</label>
+        </span>
+      </div>`;
     if (!invRows.length) {
       ctrlHtml += `<div style="color:var(--amber);font-size:12px;margin-bottom:8px">⚠ No inventory entries found for this glass type — add a custom size below.</div>`;
     } else {
-      ctrlHtml += `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;font-size:12px">`;
+      ctrlHtml += `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">`;
       for (const r of inStock) {
-        ctrlHtml += `<label style="display:flex;align-items:center;gap:5px;padding:5px 10px;background:var(--panel);border-radius:6px;border:1px solid var(--green);cursor:pointer">
+        ctrlHtml += `<label style="display:flex;align-items:center;gap:4px;padding:4px 10px;background:var(--panel);border-radius:6px;border:1px solid var(--green);cursor:pointer;font-size:13px">
           <input type="checkbox" name="cut_sz_${esc(sk)}" checked
-            data-w="${r.w}" data-h="${r.h}" data-label="${esc(r.label)}" data-avail="${r.available}" data-invids='${JSON.stringify(r.invIds)}'>
-          ${esc(r.label)} <span style="color:var(--green)">(${r.available} avail)</span>
+            data-w="${r.w}" data-h="${r.h}" data-label="${esc(r.label)}"
+            data-avail="${r.available}" data-localavail="${r.localAvail}" data-importedavail="${r.importedAvail}"
+            data-invids='${JSON.stringify(r.invIds)}' data-localids='${JSON.stringify(r.localIds)}' data-importedids='${JSON.stringify(r.importedIds)}'>
+          ${esc(r.label)}
         </label>`;
       }
       for (const r of noStock) {
-        ctrlHtml += `<label style="display:flex;align-items:center;gap:5px;padding:5px 10px;background:var(--panel);border-radius:6px;border:1px dashed var(--muted);cursor:pointer;opacity:0.65">
+        ctrlHtml += `<label style="display:flex;align-items:center;gap:4px;padding:4px 10px;background:var(--panel);border-radius:6px;border:1px dashed var(--line);cursor:pointer;opacity:0.45;font-size:13px">
           <input type="checkbox" name="cut_sz_${esc(sk)}"
-            data-w="${r.w}" data-h="${r.h}" data-label="${esc(r.label)}" data-avail="0" data-invids='${JSON.stringify(r.invIds)}'>
-          ${esc(r.label)} <span style="color:var(--muted)">(out of stock)</span>
+            data-w="${r.w}" data-h="${r.h}" data-label="${esc(r.label)}"
+            data-avail="0" data-localavail="0" data-importedavail="0"
+            data-invids='${JSON.stringify(r.invIds)}' data-localids='[]' data-importedids='[]'>
+          <s>${esc(r.label)}</s>
         </label>`;
       }
       ctrlHtml += `</div>`;
@@ -5620,18 +5639,30 @@ function runCutOptimizer() {
   for (const [mat,grpItems] of Object.entries(groups)) {
     const sk = mat.replace(/\W/g,'_');
     const cbs = document.querySelectorAll(`input[name="cut_sz_${sk}"]`);
+    const srcEl = document.querySelector(`input[name="cut_src_${sk}"]:checked`);
+    const src = srcEl ? srcEl.value : 'both';
     const selectedSizes = [];
     cbs.forEach(cb => {
-      if (cb.checked) selectedSizes.push({
-        w:parseInt(cb.dataset.w), h:parseInt(cb.dataset.h),
-        label:cb.dataset.label,
-        invIds: cb.dataset.invids ? JSON.parse(cb.dataset.invids) : [],
-        available:parseInt(cb.dataset.avail)||0
-      });
+      if (cb.checked) {
+        const localAvail = parseInt(cb.dataset.localavail)||0;
+        const importedAvail = parseInt(cb.dataset.importedavail)||0;
+        const localIds = cb.dataset.localids ? JSON.parse(cb.dataset.localids) : [];
+        const importedIds = cb.dataset.importedids ? JSON.parse(cb.dataset.importedids) : [];
+        const allIds = cb.dataset.invids ? JSON.parse(cb.dataset.invids) : [];
+        const srcAvail = src==='local' ? localAvail : src==='imported' ? importedAvail : localAvail+importedAvail;
+        const srcIds = src==='local' ? localIds : src==='imported' ? importedIds : allIds;
+        selectedSizes.push({
+          w:parseInt(cb.dataset.w), h:parseInt(cb.dataset.h),
+          label:cb.dataset.label,
+          invIds: srcIds,
+          available: srcAvail,
+          localAvail, importedAvail, localIds, importedIds
+        });
+      }
     });
     const cw = parseInt((document.getElementById('cut_cw_'+sk)||{}).value)||0;
     const ch = parseInt((document.getElementById('cut_ch_'+sk)||{}).value)||0;
-    if (cw>0 && ch>0) selectedSizes.push({w:cw,h:ch,label:cw+'×'+ch+'mm (custom)',invId:null,available:null});
+    if (cw>0 && ch>0) selectedSizes.push({w:cw,h:ch,label:cw+'×'+ch+'mm (custom)',invIds:[],available:null,localAvail:null,importedAvail:null,localIds:[],importedIds:[]});
     if (!selectedSizes.length) {
       out += `<div style="color:var(--danger);padding:8px;margin:8px 0">⚠ ${esc(mat)}: no sheet sizes selected.</div>`;
       continue;
@@ -5671,11 +5702,17 @@ function runCutOptimizer() {
       const wc = r.avgWaste>30?'var(--danger)':r.avgWaste>15?'var(--amber)':'var(--green)';
       let stockBadge='';
       if (r.stock.available!==null) {
+        const la = r.stock.localAvail||0, ia = r.stock.importedAvail||0;
+        const laHas = r.stock.localIds&&r.stock.localIds.length>0;
+        const iaHas = r.stock.importedIds&&r.stock.importedIds.length>0;
+        const laBadge = laHas ? `<span style="font-size:12px;white-space:nowrap">Local: <b style="color:${la>=r.totalSheets?'var(--green)':'var(--amber)'}">${la}</b></span>` : '';
+        const iaBadge = iaHas ? `<span style="font-size:12px;white-space:nowrap">Imported: <b style="color:${ia>=r.totalSheets?'var(--green)':'var(--amber)'}">${ia}</b></span>` : '';
+        const srcBadges = [laBadge,iaBadge].filter(Boolean).join(' <span style="color:var(--muted)">|</span> ');
         if (r.totalSheets>r.stock.available) {
           const deficit=r.totalSheets-r.stock.available;
-          stockBadge=`<span style="color:var(--danger);font-weight:600">⚠ Need ${r.totalSheets}, have ${r.stock.available} — short by ${deficit}</span>`;
+          stockBadge=`<span style="color:var(--danger);font-weight:600;font-size:12px">⚠ Short by ${deficit}</span>${srcBadges?' <span style="margin-left:6px">'+srcBadges+'</span>':''}`;
         } else {
-          stockBadge=`<span style="color:var(--green)">✓ ${r.stock.available} avail</span>`;
+          stockBadge=`<span style="color:var(--green);font-size:12px">✓ ${r.totalSheets} needed</span>${srcBadges?' <span style="margin-left:6px">'+srcBadges+'</span>':''}`;
         }
       }
       const reserveBtn = (r.stock.invIds && r.stock.invIds.length && r.totalSheets>0)
