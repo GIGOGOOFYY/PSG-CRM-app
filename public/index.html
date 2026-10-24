@@ -5439,6 +5439,24 @@ function cutOptimize(items,stockSheet){
   return sheets;
 }
 
+function sheetLayoutKey(sh){
+  var pieces=(sh.placed||[]).map(function(p){return p.id+':'+p.w+'x'+p.h+(p.rotated?'r':'');}).sort().join('|');
+  return sh.sheetW+'x'+sh.sheetH+':'+pieces;
+}
+function collapseSheets(sheets){
+  var out=[];
+  (sheets||[]).forEach(function(sh){
+    if(!sh.placed||!sh.placed.length) return;
+    var key=sheetLayoutKey(sh);
+    var last=out[out.length-1];
+    if(last&&sheetLayoutKey(last)===key){
+      last.repetitions=(last.repetitions||1)+1;
+    } else {
+      out.push(Object.assign({},sh,{repetitions:1}));
+    }
+  });
+  return out;
+}
 function cutSheetSvg(sheet,idx,maxW){
   const sc=maxW/Math.max(sheet.sheetW,sheet.sheetH);
   const svgW=Math.round(sheet.sheetW*sc), svgH=Math.round(sheet.sheetH*sc);
@@ -5458,8 +5476,11 @@ function cutSheetSvg(sheet,idx,maxW){
       rects+=`<text x="${x+w/2}" y="${y+h/2+fontSize*0.8}" text-anchor="middle" fill="#555" font-size="${Math.max(fontSize*0.7,7)}">#${p.id}${p.rotated?' ↻':''}</text>`;
     }
   });
+  const repN=sheet.repetitions||1;
+  const repBadge=repN>1?` <span style="background:#673ab7;color:#fff;padding:1px 7px;border-radius:10px;font-size:11px;font-weight:700">×${repN}</span>`:'';
+  const eachSuffix=repN>1?' each':'';
   return `<div style="margin:8px 0">
-    <div style="font-weight:600;font-size:13px;margin-bottom:4px">Sheet ${idx+1}${sheet.stockLabel?' {'+sheet.stockLabel+'}':' {'+sheet.sheetW+'×'+sheet.sheetH+'mm}'} — ${sheet.placed.length} piece${sheet.placed.length!==1?'s':''} · Waste ${sheet.wastePct}%</div>
+    <div style="font-weight:600;font-size:13px;margin-bottom:4px">Sheet ${idx+1}${sheet.stockLabel?' {'+sheet.stockLabel+'}':' {'+sheet.sheetW+'×'+sheet.sheetH+'mm}'}${repBadge} — ${sheet.placed.length} piece${sheet.placed.length!==1?'s':''} · Waste ${sheet.wastePct}%${eachSuffix}</div>
     <svg width="${svgW}" height="${svgH}" viewBox="0 0 ${svgW} ${svgH}" style="border:2px solid #333;background:#f9f9f9;border-radius:4px;max-width:100%">
       <rect width="${svgW}" height="${svgH}" fill="#e8e8e8" rx="2"/>
       ${rects}
@@ -5528,7 +5549,7 @@ async function openCutOptimizer() {
     if (!groups[key]) groups[key]=[];
     groups[key].push({
       w:Math.round(num(it.scaledW)), h:Math.round(num(it.scaledH)),
-      qty:Math.round(num(it.pieces)), label:'#'+(idx+1), id:'item_'+idx
+      qty:Math.round(num(it.pieces)), label:'#'+(idx+1), id:String(idx+1)
     });
   });
   window.__cutGroups = groups;
@@ -5730,7 +5751,7 @@ function runCutOptimizer() {
           <span style="font-size:12px">${r.totalSheets} sheet${r.totalSheets!==1?'s':''} · waste <b style="color:${wc}">${r.avgWaste}%</b></span>
           ${stockBadge} ${reserveBtn}
         </div>`;
-      r.sheets.forEach((sh,si) => { if(sh.placed&&sh.placed.length) out+=cutSheetSvg(sh,si,Math.min(560,window.innerWidth-120)); });
+      collapseSheets(r.sheets).forEach((sh,si) => { if(sh.placed&&sh.placed.length) out+=cutSheetSvg(sh,si,Math.min(560,window.innerWidth-120)); });
       out += `</div>`;
       grandSheets+=r.totalSheets; grandUsed+=r.totalUsed; grandTotal+=r.totalArea;
     });
@@ -5743,7 +5764,7 @@ function runCutOptimizer() {
           ${isBest?'<span style="background:var(--green);color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">★ BEST</span>':''}
           <span style="font-size:12px">${combined.totalSheets} sheet${combined.totalSheets!==1?'s':''} · waste <b style="color:${wc}">${combined.avgWaste}%</b></span>
         </div>`;
-      combined.sheets.forEach((sh,si) => { if(sh.placed&&sh.placed.length) out+=cutSheetSvg(sh,si,Math.min(560,window.innerWidth-120)); });
+      collapseSheets(combined.sheets).forEach((sh,si) => { if(sh.placed&&sh.placed.length) out+=cutSheetSvg(sh,si,Math.min(560,window.innerWidth-120)); });
       out += `</div>`;
     }
     if (oversize.length) {
