@@ -5560,14 +5560,18 @@ async function openCutOptimizer() {
       if (thk) q = q.ilike('thickness', thk+' mm');
       if (color && color!=='?') q = q.eq('type', color);
       const {data} = await q;
-      window.__cutInventory[mat] = (data||[]).map(r => ({
-        invId: r.id, b_code: r.b_code,
-        w: r.width_mm, h: r.height_mm,
-        label: r.width_mm+'×'+r.height_mm+'mm',
-        qty: r.qty_sheets||0, reserved: r.reserved_qty||0,
-        available: Math.max(0,(r.qty_sheets||0)-(r.reserved_qty||0)),
-        type: r.type, brand: r.brand, thickness: r.thickness
-      }));
+      // Deduplicate by size — combine all brands/suppliers into one entry per dimension
+      const sizeMap = {};
+      for (const r of (data||[])) {
+        const k = r.width_mm+'_'+r.height_mm;
+        if (!sizeMap[k]) sizeMap[k] = { w:r.width_mm, h:r.height_mm,
+          label:r.width_mm+'×'+r.height_mm+'mm', invIds:[], qty:0, available:0 };
+        const avail = Math.max(0,(r.qty_sheets||0)-(r.reserved_qty||0));
+        sizeMap[k].invIds.push({id:r.id, avail, qty:r.qty_sheets||0});
+        sizeMap[k].qty += r.qty_sheets||0;
+        sizeMap[k].available += avail;
+      }
+      window.__cutInventory[mat] = Object.values(sizeMap);
     } catch(e) { window.__cutInventory[mat]=[]; }
   }
   const invSection = document.getElementById('cut_inv_section');
@@ -5586,14 +5590,14 @@ async function openCutOptimizer() {
       for (const r of inStock) {
         ctrlHtml += `<label style="display:flex;align-items:center;gap:5px;padding:5px 10px;background:var(--panel);border-radius:6px;border:1px solid var(--green);cursor:pointer">
           <input type="checkbox" name="cut_sz_${esc(sk)}" checked
-            data-w="${r.w}" data-h="${r.h}" data-label="${esc(r.label)}" data-avail="${r.available}" data-invid="${esc(r.invId)}">
+            data-w="${r.w}" data-h="${r.h}" data-label="${esc(r.label)}" data-avail="${r.available}" data-invids='${JSON.stringify(r.invIds)}'>
           ${esc(r.label)} <span style="color:var(--green)">(${r.available} avail)</span>
         </label>`;
       }
       for (const r of noStock) {
         ctrlHtml += `<label style="display:flex;align-items:center;gap:5px;padding:5px 10px;background:var(--panel);border-radius:6px;border:1px dashed var(--muted);cursor:pointer;opacity:0.65">
           <input type="checkbox" name="cut_sz_${esc(sk)}"
-            data-w="${r.w}" data-h="${r.h}" data-label="${esc(r.label)}" data-avail="0" data-invid="${esc(r.invId)}">
+            data-w="${r.w}" data-h="${r.h}" data-label="${esc(r.label)}" data-avail="0" data-invids='${JSON.stringify(r.invIds)}'>
           ${esc(r.label)} <span style="color:var(--muted)">(out of stock)</span>
         </label>`;
       }
@@ -5620,7 +5624,8 @@ function runCutOptimizer() {
     cbs.forEach(cb => {
       if (cb.checked) selectedSizes.push({
         w:parseInt(cb.dataset.w), h:parseInt(cb.dataset.h),
-        label:cb.dataset.label, invId:cb.dataset.invid,
+        label:cb.dataset.label,
+        invIds: cb.dataset.invids ? JSON.parse(cb.dataset.invids) : [],
         available:parseInt(cb.dataset.avail)||0
       });
     });
@@ -5673,9 +5678,10 @@ function runCutOptimizer() {
           stockBadge=`<span style="color:var(--green)">✓ ${r.stock.available} avail</span>`;
         }
       }
-      const reserveBtn = (r.stock.invId && r.totalSheets>0)
+      const reserveBtn = (r.stock.invIds && r.stock.invIds.length && r.totalSheets>0)
         ? `<button class="btn sm" style="background:var(--panel);border:1px solid var(--accent);font-size:11px;padding:2px 8px"
-            onclick="cutReserveStock(this,'${esc(r.stock.invId)}',${r.totalSheets},'${esc(r.stock.label)}')">🔒 Reserve ${r.totalSheets}</button>`
+            data-invids='${JSON.stringify(r.stock.invIds)}'
+            onclick="cutReserveStock(this,this.dataset.invids,${r.totalSheets},'${esc(r.stock.label)}')">🔒 Reserve ${r.totalSheets}</button>`
         : '';
       out += `<div style="margin:8px 0;padding:10px;background:var(--panel2);border-radius:8px;border:2px solid ${isBest?'var(--green)':'var(--line)'}">
         <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:6px">
@@ -5716,19 +5722,28 @@ function runCutOptimizer() {
   document.getElementById('cut_results').innerHTML = summary+out;
 }
 
-async function cutReserveStock(btn, invId, sheetsNeeded, sizeLabel) {
+async function cutReserveStock(btn, invIdsJson, sheetsNeeded, sizeLabel) {
   if (!confirm('Reserve '+sheetsNeeded+' sheet'+(sheetsNeeded!==1?'s':'')+' of '+sizeLabel+'?\nThis marks them as allocated so they are not double-booked.')) return;
   try {
-    const {data,error} = await sb.from('inventory_glass')
-      .select('reserved_qty,qty_sheets').eq('id',invId).single();
-    if (error||!data) throw error||new Error('row not found');
-    const newReserved = (data.reserved_qty||0)+sheetsNeeded;
-    if (newReserved>data.qty_sheets) {
-      toast('⚠ Cannot reserve more than total stock ('+data.qty_sheets+' sheets)'); return;
+    const sources = JSON.parse(invIdsJson);
+    // Sort by available descending — fill highest-stock rows first
+    sources.sort((a,b)=>b.avail-a.avail);
+    let remaining = sheetsNeeded;
+    for (const src of sources) {
+      if (remaining <= 0) break;
+      const take = Math.min(remaining, src.avail);
+      if (!take) continue;
+      const {data,error} = await sb.from('inventory_glass')
+        .select('reserved_qty,qty_sheets').eq('id',src.id).single();
+      if (error||!data) throw error||new Error('row '+src.id+' not found');
+      const newReserved = (data.reserved_qty||0)+take;
+      if (newReserved>data.qty_sheets) throw new Error('Cannot reserve more than stock for row '+src.id);
+      const {error:updErr} = await sb.from('inventory_glass')
+        .update({reserved_qty:newReserved}).eq('id',src.id);
+      if (updErr) throw updErr;
+      remaining -= take;
     }
-    const {error:updErr} = await sb.from('inventory_glass')
-      .update({reserved_qty:newReserved}).eq('id',invId);
-    if (updErr) throw updErr;
+    if (remaining > 0) { toast('⚠ Only partially reserved — insufficient combined stock'); return; }
     toast('✓ Reserved '+sheetsNeeded+' sheet'+(sheetsNeeded!==1?'s':'')+' of '+sizeLabel);
     if (btn) { btn.textContent='✓ Reserved'; btn.disabled=true; btn.style.opacity='0.6'; }
   } catch(e) { toast('Reserve failed: '+(e.message||e)); }
